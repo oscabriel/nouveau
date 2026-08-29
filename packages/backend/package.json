@@ -9,6 +9,7 @@
 		"dev:setup": "convex dev --configure --until-success"
 	},
 	"dependencies": {
+		"@convex-dev/static-hosting": "^0.2.1",
 		"convex": "catalog:",
 		"dotenv": "catalog:",
 		"zod": "catalog:"
