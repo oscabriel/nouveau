@@ -31,7 +31,8 @@
 		"dev:server": "turbo run dev -F @nouveau/backend --",
 		"dev:setup": "turbo run dev:setup -F @nouveau/backend --",
 		"check": "ultracite check",
-		"fix": "ultracite fix"
+		"fix": "ultracite fix",
+		"deploy": "cd packages/backend && CONVEX_DEPLOYMENT=prod:artful-chameleon-402 npx @convex-dev/static-hosting deploy --build-command \"bun run --filter web build\" --dist ../../apps/web/dist"
 	},
 	"dependencies": {
 		"@nouveau/env": "workspace:*",
