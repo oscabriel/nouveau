@@ -16,7 +16,7 @@
 
 ## Log
 
-### 2026-08-29 - 3fc82af
+### 2026-08-29 - 4be892a
 
 Scaffolded with Better-T-Stack: a Turborepo monorepo (bun workspaces, catalog deps) with a TanStack Router + Tailwind web app (`apps/web/`), shared `ui`/`env`/`config` packages, and a Convex backend (`packages/backend/convex/`), linted by ultracite. Template demo so far: a `todos` table with a list query and create/toggle/delete mutations wired to the frontend with realtime `useQuery`/`useMutation`, plus a health-check query. Convex features: schema, queries, mutations, realtime queries (`packages/backend/convex/schema.ts`, `packages/backend/convex/todos.ts`, `apps/web/src/routes/todos.tsx`).
 
