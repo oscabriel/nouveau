@@ -12,6 +12,7 @@
       "devDependencies": {
         "@nouveau/config": "workspace:*",
         "@types/node": "catalog:",
+        "convex": "catalog:",
         "oxfmt": "latest",
         "oxlint": "latest",
         "turbo": "^2.10.12",

@@ -1,0 +1,7 @@
+{
+	"$schema": "packages/backend/node_modules/convex/schemas/convex.schema.json",
+	"functions": "packages/backend/convex",
+	"aiFiles": {
+		"enabled": false
+	}
+}
