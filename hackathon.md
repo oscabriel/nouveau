@@ -7,12 +7,12 @@
 - **Repo:** https://github.com/oscabriel/nouveau
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://artful-chameleon-402.convex.cloud
-- **Components:** @convex-dev/aggregate, @convex-dev/auth (core + Google OAuth), @convex-dev/rate-limiter, @convex-dev/static-hosting
-- **Convex features:** schema, indexes, queries, mutations, realtime queries
+- **Components:** @convex-dev/aggregate, @convex-dev/auth (core + Google OAuth), @convex-dev/rate-limiter, @convex-dev/static-hosting, @firecrawl/firecrawl-convex
+- **Convex features:** schema, indexes, queries, mutations, actions, crons, scheduled functions, file storage, realtime queries
 - **Auth:** Convex Auth
 - **AI models:** none
 - **Started:** 2026-08-29T18:06:09Z
-- **Last updated:** 2026-09-01T20:08:08Z
+- **Last updated:** 2026-09-01T21:49:58Z
 
 ## Log
 
@@ -43,3 +43,7 @@ Implemented the launch schema in `packages/backend/convex/schema.ts`: all ten lo
 ### 2026-09-01 - working tree (Convex Auth v2 + verified Google sign-in)
 
 Migrated auth to Convex Auth v2 (@convex-dev/auth 2.0.0-alpha.1). The auth core and oauthGoogle components are mounted in `convex.config.ts` (JWKS at `/auth/.well-known/jwks.json`, Google callback at `/oauth/google/callback`), the app owns its `users` table outright (`convex/users.ts`, createUser deduped by providerAccountId), `auth.config.ts` uses a customJwt provider, and the v1 authTables spread is gone from the schema. Added Google sign-in/sign-out to the web header (`ConvexAuthProvider` with `api={api.auth}`). Verified the full sign-in round trip on the dev deployment — consent, callback, session, first users row — browsing through a stable HTTPS dev domain on a local Caddy reverse proxy, with the allowed redirect origin supplied by a SITE_URL deployment env var rather than hardcoded (`convex/auth.ts`, `apps/web/vite.config.ts`). Retired the v1 JWT_PRIVATE_KEY/JWKS deployment vars and closed issue #8 (sponsor + auth env keys all set). Components: @convex-dev/auth core + Google OAuth join aggregate, rate-limiter, and static-hosting.
+
+### 2026-09-01 - working tree (extraction pipeline live on dev)
+
+Built and verified the crawl/extraction pipeline (build order step 2). The Firecrawl component is mounted in `convex.config.ts`; a 5-minute cron tick claims due crawl sources and schedules crawler actions (`convex/crons.ts`, `convex/crawlSources.ts`). products_json sources fetch Shopify `/products.json` directly with Firecrawl scrape as bot-protection fallback, now walking paginated feeds past Shopify's 250-item page cap. Pagination alone took Sey Coffee from 250 truncated products to its full 887 (`convex/crawler.ts`, `convex/extraction.ts`). html-mode sources run a durable Firecrawl crawl with structured extraction, committed by an internal-mutation completion callback. Each crawl commits in one transaction: raw body capture to file storage, catalog upserts, drop-event diffing (baseline crawl fires none), the 3-strike archive, source health, and reschedule. Crons also sweep stale sources hourly and prune raw captures daily on a 3-day retention. Verified on the dev deployment: all 20 roasters active, and the first genuine drop event (a Sey variant selling out between crawls) recorded end to end. Convex features: actions, crons, scheduled functions, file storage. Component: @firecrawl/firecrawl-convex.
