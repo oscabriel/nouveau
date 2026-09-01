@@ -11,6 +11,19 @@ export const stalenessThresholdMs = (cadenceMinutes: number): number =>
 // A lot absent from this many consecutive successful crawls flips to archived.
 export const ARCHIVE_STRIKES = 3;
 
+// Sources claimed per scheduler tick; each tick pushes their due dates out so
+// a concurrent tick cannot double-run them.
+export const TICK_BATCH = 20;
+
+// Raw capture bodies are crawl diagnostics; hourly crawls across 20 sources
+// store ~100 MB/day, so the daily prune keeps only a short window.
+export const RAW_CAPTURE_RETENTION_DAYS = 3;
+export const rawCaptureRetentionMs = (): number =>
+	RAW_CAPTURE_RETENTION_DAYS * 24 * 60 * 60_000;
+
+// Raw captures deleted per prune transaction; a full batch reschedules.
+export const PRUNE_BATCH = 200;
+
 // Submission quotas (enforced with the rate-limiter component).
 export const MAX_ACTIVE_SUBMISSIONS_PER_USER = 5;
 export const MAX_SUBMISSIONS_PER_DAY = 3;

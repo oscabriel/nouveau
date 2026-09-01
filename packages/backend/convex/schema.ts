@@ -81,6 +81,8 @@ export default defineSchema({
 		firstSeenAt: v.number(),
 		handle: v.string(),
 		lastSeenAt: v.number(),
+		// Consecutive successful crawls this product was absent from.
+		missedCrawls: v.optional(v.number()),
 		name: v.string(),
 		roasterId: v.id("roasters"),
 		// Absent from 3 consecutive successful crawls -> archived.
@@ -93,7 +95,9 @@ export default defineSchema({
 		roasterId: v.id("roasters"),
 		// products.json bodies can exceed doc limits; the raw body lives in storage.
 		storageId: v.id("_storage"),
-	}).index("by_roaster_id", ["roasterId"]),
+	})
+		.index("by_roaster_id", ["roasterId"])
+		.index("by_captured_at", ["capturedAt"]),
 
 	roasters: defineTable({
 		city: v.string(),
