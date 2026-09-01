@@ -8,8 +8,12 @@
  * @module
  */
 
+import type * as auth from "../auth.js";
+import type * as constants from "../constants.js";
 import type * as healthCheck from "../healthCheck.js";
-import type * as todos from "../todos.js";
+import type * as http from "../http.js";
+import type * as seed from "../seed.js";
+import type * as users from "../users.js";
 
 import type {
   ApiFromModules,
@@ -18,8 +22,12 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  auth: typeof auth;
+  constants: typeof constants;
   healthCheck: typeof healthCheck;
-  todos: typeof todos;
+  http: typeof http;
+  seed: typeof seed;
+  users: typeof users;
 }>;
 
 /**
@@ -50,4 +58,6 @@ export declare const internal: FilterApi<
 
 export declare const components: {
   staticHosting: import("@convex-dev/static-hosting/_generated/component.js").ComponentApi<"staticHosting">;
+  aggregate: import("@convex-dev/aggregate/_generated/component.js").ComponentApi<"aggregate">;
+  rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
 };
