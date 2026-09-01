@@ -9,6 +9,8 @@
 		"dev:setup": "convex dev --configure --until-success"
 	},
 	"dependencies": {
+		"@convex-dev/aggregate": "^0.3.0",
+		"@convex-dev/rate-limiter": "^0.3.2",
 		"@convex-dev/static-hosting": "^0.2.1",
 		"convex": "catalog:",
 		"dotenv": "catalog:",

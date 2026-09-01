@@ -1,3 +1,5 @@
+import aggregate from "@convex-dev/aggregate/convex.config";
+import rateLimiter from "@convex-dev/rate-limiter/convex.config";
 import staticHosting from "@convex-dev/static-hosting/convex.config";
 import { defineApp } from "convex/server";
 
@@ -5,5 +7,7 @@ import { defineApp } from "convex/server";
 // "/api" once we add them.
 const app = defineApp({ httpPrefix: "/api" });
 app.use(staticHosting, { httpPrefix: "/" });
+app.use(aggregate);
+app.use(rateLimiter);
 
 export default app;
