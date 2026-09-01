@@ -3,10 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { ModeToggle } from "./mode-toggle";
 
 const Header = () => {
-	const links = [
-		{ label: "Home", to: "/" },
-		{ label: "Todos", to: "/todos" },
-	] as const;
+	const links = [{ label: "Home", to: "/" }] as const;
 
 	return (
 		<div>
