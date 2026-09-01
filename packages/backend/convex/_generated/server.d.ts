@@ -34,6 +34,8 @@ type Env = {
   readonly AUTH_GOOGLE_CLIENT_SECRET: string;
   readonly AUTH_JWKS: string;
   readonly AUTH_PRIVATE_KEY: string;
+  readonly FIRECRAWL_API_KEY: string;
+  readonly FIRECRAWL_WEBHOOK_SECRET: string | undefined;
   readonly SITE_URL: string | undefined;
 };
 

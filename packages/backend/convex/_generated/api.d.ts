@@ -10,6 +10,10 @@
 
 import type * as auth from "../auth.js";
 import type * as constants from "../constants.js";
+import type * as crawlSources from "../crawlSources.js";
+import type * as crawler from "../crawler.js";
+import type * as crons from "../crons.js";
+import type * as extraction from "../extraction.js";
 import type * as healthCheck from "../healthCheck.js";
 import type * as http from "../http.js";
 import type * as seed from "../seed.js";
@@ -24,6 +28,10 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   constants: typeof constants;
+  crawlSources: typeof crawlSources;
+  crawler: typeof crawler;
+  crons: typeof crons;
+  extraction: typeof extraction;
   healthCheck: typeof healthCheck;
   http: typeof http;
   seed: typeof seed;
@@ -60,6 +68,7 @@ export declare const components: {
   staticHosting: import("@convex-dev/static-hosting/_generated/component.js").ComponentApi<"staticHosting">;
   aggregate: import("@convex-dev/aggregate/_generated/component.js").ComponentApi<"aggregate">;
   rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
+  firecrawl: import("@firecrawl/firecrawl-convex/_generated/component.js").ComponentApi<"firecrawl">;
   auth: import("@convex-dev/auth/core/_generated/component.js").ComponentApi<"auth">;
   oauthGoogle: import("@convex-dev/auth/providers/oauth/_generated/component.js").ComponentApi<"oauthGoogle">;
 };
