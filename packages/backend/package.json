@@ -13,6 +13,7 @@
 		"@convex-dev/auth": "2.0.0-alpha.1",
 		"@convex-dev/rate-limiter": "^0.3.2",
 		"@convex-dev/static-hosting": "^0.2.1",
+		"@firecrawl/firecrawl-convex": "0.1.1",
 		"convex": "catalog:",
 		"dotenv": "catalog:",
 		"jose": "^6.2.10",

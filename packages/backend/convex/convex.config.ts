@@ -3,6 +3,7 @@ import auth from "@convex-dev/auth/core/convex.config";
 import oauth from "@convex-dev/auth/providers/oauth/convex.config";
 import rateLimiter from "@convex-dev/rate-limiter/convex.config";
 import staticHosting from "@convex-dev/static-hosting/convex.config";
+import firecrawl from "@firecrawl/firecrawl-convex/convex.config";
 import { defineApp } from "convex/server";
 import { v } from "convex/values";
 
@@ -17,6 +18,9 @@ const app = defineApp({
 		AUTH_GOOGLE_CLIENT_SECRET: v.string(),
 		AUTH_JWKS: v.string(),
 		AUTH_PRIVATE_KEY: v.string(),
+		FIRECRAWL_API_KEY: v.string(),
+		// Webhook deliveries are signature-checked only when this is set.
+		FIRECRAWL_WEBHOOK_SECRET: v.optional(v.string()),
 		// Origin the OAuth flow may redirect back to (the browsed dev/prod URL).
 		SITE_URL: v.optional(v.string()),
 	},
@@ -25,6 +29,14 @@ const app = defineApp({
 app.use(staticHosting, { httpPrefix: "/" });
 app.use(aggregate);
 app.use(rateLimiter);
+// Mounts the crawl webhook route at <site>/firecrawl/webhook.
+app.use(firecrawl, {
+	env: {
+		FIRECRAWL_API_KEY: app.env.FIRECRAWL_API_KEY,
+		FIRECRAWL_WEBHOOK_SECRET: app.env.FIRECRAWL_WEBHOOK_SECRET,
+	},
+	httpPrefix: "/firecrawl/",
+});
 app.use(auth, {
 	env: {
 		AUTH_JWKS: app.env.AUTH_JWKS,
