@@ -17,6 +17,8 @@ const app = defineApp({
 		AUTH_GOOGLE_CLIENT_SECRET: v.string(),
 		AUTH_JWKS: v.string(),
 		AUTH_PRIVATE_KEY: v.string(),
+		// Origin the OAuth flow may redirect back to (the browsed dev/prod URL).
+		SITE_URL: v.optional(v.string()),
 	},
 	httpPrefix: "/api",
 });
