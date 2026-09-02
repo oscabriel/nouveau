@@ -6,7 +6,8 @@
 	"author": "",
 	"scripts": {
 		"dev": "convex dev",
-		"dev:setup": "convex dev --configure --until-success"
+		"dev:setup": "convex dev --configure --until-success",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@convex-dev/aggregate": "^0.3.0",
@@ -20,8 +21,12 @@
 		"zod": "catalog:"
 	},
 	"devDependencies": {
+		"@edge-runtime/vm": "^5.0.0",
 		"@nouveau/config": "workspace:*",
 		"@types/node": "catalog:",
-		"typescript": "catalog:"
+		"convex-test": "^0.0.56",
+		"typescript": "catalog:",
+		"vite": "^8.2.2",
+		"vitest": "^4.1.11"
 	}
 }

@@ -27,6 +27,7 @@
 		"dev": "turbo run dev",
 		"build": "turbo run build",
 		"check-types": "turbo run check-types",
+		"test": "turbo run test",
 		"dev:web": "turbo run dev -F web --",
 		"dev:server": "turbo run dev -F @nouveau/backend --",
 		"dev:setup": "turbo run dev:setup -F @nouveau/backend --",
