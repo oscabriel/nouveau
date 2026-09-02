@@ -238,7 +238,7 @@ export const parseHtmlPage = (
 	json: unknown,
 	pageUrl: string
 ): ExtractedProduct[] => {
-	const extraction = (json as HtmlExtraction).products;
+	const extraction = (json as HtmlExtraction | null | undefined)?.products;
 	if (!Array.isArray(extraction)) {
 		return [];
 	}
