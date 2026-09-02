@@ -78,7 +78,18 @@ const AuthControls = () => {
 };
 
 const Header = () => {
-	const links = [{ label: "Home", to: "/" }] as const;
+	const { isAuthenticated } = useConvexAuth();
+	const links = isAuthenticated
+		? [
+				{ label: "Home", to: "/" },
+				{ label: "Live feed", to: "/feed" },
+				{ label: "Roasters", to: "/roasters" },
+				{ label: "Watches", to: "/watches" },
+			]
+		: [
+				{ label: "Home", to: "/" },
+				{ label: "Roasters", to: "/roasters" },
+			];
 
 	return (
 		<div>
