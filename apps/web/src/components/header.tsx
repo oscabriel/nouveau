@@ -5,7 +5,8 @@ import {
 import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
 import { Link } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
+import { useEffect } from "react";
 
 import { ModeToggle } from "./mode-toggle";
 
@@ -42,6 +43,12 @@ const SignInButton = () => {
 const SignOutButton = () => {
 	const { signOut } = useAuthActions();
 	const user = useQuery(api.users.getCurrentUser);
+	// Backfills the per-user alert inbox (§8.3) for sign-ins that predate it;
+	// the mutation is a no-op when the inbox already exists.
+	const ensureInbox = useMutation(api.notifications.ensureInbox);
+	useEffect(() => {
+		void ensureInbox();
+	}, [ensureInbox]);
 	const endSession = async () => {
 		try {
 			await signOut();
