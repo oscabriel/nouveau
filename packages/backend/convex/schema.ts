@@ -1,15 +1,13 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+import { healthValidator } from "./health";
+
 export default defineSchema({
 	crawlSources: defineTable({
 		cadenceMinutes: v.number(),
 		consecutiveFailures: v.number(),
-		health: v.union(
-			v.literal("watching"),
-			v.literal("stale"),
-			v.literal("crawl_failed")
-		),
+		health: healthValidator,
 		lastCheckedAt: v.optional(v.number()),
 		lastErrorAt: v.optional(v.number()),
 		lastErrorMessage: v.optional(v.string()),
@@ -41,7 +39,9 @@ export default defineSchema({
 		variantId: v.optional(v.id("productVariants")),
 	})
 		.index("by_roaster_and_detected_at", ["roasterId", "detectedAt"])
-		.index("by_product", ["productId"]),
+		.index("by_product", ["productId"])
+		// The global feed merges one desc scan per alert-worthy type.
+		.index("by_type_and_detected_at", ["type", "detectedAt"]),
 
 	localScenes: defineTable({
 		createdAt: v.number(),
@@ -136,5 +136,6 @@ export default defineSchema({
 		userId: v.id("users"),
 	})
 		.index("by_user_id", ["userId"])
-		.index("by_roaster_id", ["roasterId"]),
+		.index("by_roaster_id", ["roasterId"])
+		.index("by_user_and_roaster_id", ["userId", "roasterId"]),
 });

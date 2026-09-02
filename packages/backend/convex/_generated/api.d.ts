@@ -14,10 +14,16 @@ import type * as crawlSources from "../crawlSources.js";
 import type * as crawler from "../crawler.js";
 import type * as crons from "../crons.js";
 import type * as extraction from "../extraction.js";
+import type * as feed from "../feed.js";
+import type * as followerCounts from "../followerCounts.js";
+import type * as health from "../health.js";
 import type * as healthCheck from "../healthCheck.js";
 import type * as http from "../http.js";
+import type * as identity from "../identity.js";
+import type * as roasters from "../roasters.js";
 import type * as seed from "../seed.js";
 import type * as users from "../users.js";
+import type * as watches from "../watches.js";
 
 import type {
   ApiFromModules,
@@ -32,10 +38,16 @@ declare const fullApi: ApiFromModules<{
   crawler: typeof crawler;
   crons: typeof crons;
   extraction: typeof extraction;
+  feed: typeof feed;
+  followerCounts: typeof followerCounts;
+  health: typeof health;
   healthCheck: typeof healthCheck;
   http: typeof http;
+  identity: typeof identity;
+  roasters: typeof roasters;
   seed: typeof seed;
   users: typeof users;
+  watches: typeof watches;
 }>;
 
 /**

@@ -41,3 +41,7 @@ export const ALERT_WORTHY_TYPES = [
 	"back_in_stock",
 	"price_drop",
 ] as const;
+
+// Upper bound on watches read per user in feed and watch-list queries. Well
+// above the 20-roaster seed list; revisit when user submissions grow it.
+export const MAX_WATCHES_PER_USER = 200;
