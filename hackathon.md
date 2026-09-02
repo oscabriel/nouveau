@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** none
 - **Started:** 2026-08-29T18:06:09Z
-- **Last updated:** 2026-09-01T21:49:58Z
+- **Last updated:** 2026-09-02T17:52:57Z
 
 ## Log
 
@@ -47,3 +47,7 @@ Migrated auth to Convex Auth v2 (@convex-dev/auth 2.0.0-alpha.1). The auth core 
 ### 2026-09-01 - working tree (extraction pipeline live on dev)
 
 Built and verified the crawl/extraction pipeline (build order step 2). The Firecrawl component is mounted in `convex.config.ts`; a 5-minute cron tick claims due crawl sources and schedules crawler actions (`convex/crons.ts`, `convex/crawlSources.ts`). products_json sources fetch Shopify `/products.json` directly with Firecrawl scrape as bot-protection fallback, now walking paginated feeds past Shopify's 250-item page cap. Pagination alone took Sey Coffee from 250 truncated products to its full 887 (`convex/crawler.ts`, `convex/extraction.ts`). html-mode sources run a durable Firecrawl crawl with structured extraction, committed by an internal-mutation completion callback. Each crawl commits in one transaction: raw body capture to file storage, catalog upserts, drop-event diffing (baseline crawl fires none), the 3-strike archive, source health, and reschedule. Crons also sweep stale sources hourly and prune raw captures daily on a 3-day retention. Verified on the dev deployment: all 20 roasters active, and the first genuine drop event (a Sey variant selling out between crawls) recorded end to end. Convex features: actions, crons, scheduled functions, file storage. Component: @firecrawl/firecrawl-convex.
+
+### 2026-09-02 - 12d8107
+
+Hardened the extraction pipeline with a test suite and two live-found fixes (commits 7ed9ce9–12d8107). Added a convex-test + vitest suite (54 tests) over the pure extraction helpers and the crawl commit path: wholesale filter, Shopify pagination walk (raw feed count drives continuation; a lost page discards the catalog), baseline rule, all five drop-event types, variant-name dedupe, the 3-strike archive and resurrection, stale sweep, raw-capture prune, and the scheduler tick (`convex/extraction.test.ts`, `convex/crawlSources.test.ts`). Checking live health surfaced two defects: Proud Mary's 722-product / 5,500-variant catalog exceeded Convex's per-transaction read limit, so its crawls had failed silently for a day (the hourly stale sweep caught it) — the commit now runs as batched `applyProductBatch` mutations plus a `finalizeCrawl` step, driven from the crawler action; and Shopify Markets served Madcap's feed in AED at a floating rate, flapping 154 spurious price events, so every storefront fetch now pins the US market. Added `rebaselineSource` and `purgeRoasterEvents` operator mutations for repairing a source after a coverage or currency fix, and used them on dev: all 20 sources watching, 19 genuine drop events, Proud Mary and Madcap re-baselined in USD. Webhook-mode html crawls (Passenger) confirmed completing end to end via the Firecrawl component's completion callback. Convex features: actions, mutations, scheduled functions, file storage.
