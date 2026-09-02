@@ -14,8 +14,8 @@ import {
 	htmlExtractionSchema,
 	parseHtmlPage,
 	parseProductsJson,
-	PRODUCTS_JSON_PAGE_SIZE,
 	shopifyProductsUrl,
+	walkFeedPages,
 } from "./extraction";
 import type { ExtractedProduct, ProductsJsonPage } from "./extraction";
 
@@ -24,9 +24,6 @@ const firecrawl = new FirecrawlClient(components.firecrawl);
 // products.json bodies can exceed doc limits, so the raw capture only keeps
 // bodies under this; bigger feeds skip the capture rather than fail the crawl.
 const MAX_RAW_BODY_BYTES = 512 * 1024;
-// Stop walking products.json pages here even if the feed is still full
-// (4 x 250 = 1000 products; the biggest seeded roasters sit around 300).
-const MAX_PRODUCTS_JSON_PAGES = 4;
 // Bound the durable crawl for an HTML-mode source (product grids paginate).
 // Also caps what onFirecrawlCrawlComplete reads back inside one mutation:
 // each stored page can approach 1 MB against the 16 MB transaction read
@@ -74,63 +71,6 @@ const parsePage = (text: string): ProductsJsonPage | null => {
 	}
 };
 
-interface FeedWalkResult {
-	pageError: string | null;
-	products: ExtractedProduct[];
-}
-
-/**
- * Walk the feed pages after the first while the raw feed reports a full page,
- * merging products by externalId. A page lost mid-walk fails the whole walk
- * instead of returning a partial catalog, which would miss-count the tail
- * products toward the 3-strike archive.
- */
-const walkFeedPages = async (
-	ctx: ActionCtx,
-	input: {
-		firstPage: ProductsJsonPage;
-		viaFirecrawl: boolean;
-		websiteUrl: string;
-	}
-): Promise<FeedWalkResult> => {
-	const collected = new Map<string, ExtractedProduct>();
-	for (const product of input.firstPage.products) {
-		collected.set(product.externalId, product);
-	}
-	let { feedCount } = input.firstPage;
-	let page = 1;
-	while (
-		feedCount === PRODUCTS_JSON_PAGE_SIZE &&
-		page < MAX_PRODUCTS_JSON_PAGES
-	) {
-		page += 1;
-		const url = shopifyProductsUrl(input.websiteUrl, page);
-		// Pages are sequential by design: each full page decides whether the
-		// next one exists.
-		// eslint-disable-next-line no-await-in-loop
-		const text = await (input.viaFirecrawl
-			? scrapePageText(ctx, url)
-			: fetchPageText(url));
-		const parsed = text === null ? null : parsePage(text);
-		if (parsed === null) {
-			return {
-				pageError: `products.json page ${page} unavailable; partial catalog discarded`,
-				products: [],
-			};
-		}
-		for (const product of parsed.products) {
-			collected.set(product.externalId, product);
-		}
-		({ feedCount } = parsed);
-	}
-	if (feedCount === PRODUCTS_JSON_PAGE_SIZE) {
-		console.warn(
-			`${input.websiteUrl}: products.json still full at page ${page}; catalog may exceed the crawl cap`
-		);
-	}
-	return { pageError: null, products: [...collected.values()] };
-};
-
 /**
  * products_json mode: plain fetch first (ADR-0001 primary), Firecrawl scrape
  * as fallback for bot-protected feeds. Shopify caps the feed at 250 items per
@@ -162,9 +102,11 @@ const crawlProductsJson = async (
 	let products: ExtractedProduct[] | null = null;
 	let pageError: string | null = null;
 	if (firstPage !== null && firstPage.products.length > 0) {
-		const walked = await walkFeedPages(ctx, {
+		// Whichever fetcher worked for page 1 also fetches the later pages.
+		const walked = await walkFeedPages({
+			fetchPage: (url) =>
+				viaFirecrawl ? scrapePageText(ctx, url) : fetchPageText(url),
 			firstPage,
-			viaFirecrawl,
 			websiteUrl: input.websiteUrl,
 		});
 		({ pageError } = walked);
