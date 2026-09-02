@@ -164,18 +164,105 @@ const applyVariants = async (
 	);
 };
 
+interface UpsertProductInput {
+	eventsAllowed: boolean;
+	fetchedAt: number;
+	product: ExtractedProduct;
+	roasterId: Id<"roasters">;
+}
+
+/** Insert or refresh one product (by roaster + externalId) and its variants. */
+const upsertProduct = async (
+	ctx: MutationCtx,
+	input: UpsertProductInput
+): Promise<void> => {
+	const { fetchedAt: now, product, roasterId } = input;
+	const current = await ctx.db
+		.query("products")
+		.withIndex("by_roaster_and_external_id", (q) =>
+			q.eq("roasterId", roasterId).eq("externalId", product.externalId)
+		)
+		.unique();
+	let productId: Id<"products">;
+	if (current === null) {
+		productId = await ctx.db.insert("products", {
+			externalId: product.externalId,
+			firstSeenAt: now,
+			handle: product.handle,
+			lastSeenAt: now,
+			missedCrawls: 0,
+			name: product.name,
+			roasterId,
+			status: "current",
+		});
+	} else {
+		productId = current._id;
+		await ctx.db.patch(productId, {
+			lastSeenAt: now,
+			missedCrawls: 0,
+			name: product.name,
+			status: "current",
+		});
+	}
+	await applyVariants(ctx, {
+		eventsAllowed: input.eventsAllowed,
+		fetchedAt: now,
+		product,
+		productId,
+		roasterId,
+	});
+};
+
 /**
- * Commit one crawl outcome in a single transaction: raw capture, catalog
- * upserts, Drop event diffing, 3-strike archiving, health, and the next due
- * date. Called by the crawler action (products_json mode) and by the Firecrawl
- * completion callback (html mode).
+ * Commit one batch of a crawl's catalog: product upserts, variant diffing,
+ * and Drop event emission. A whole catalog no longer fits one transaction
+ * (Proud Mary: 722 products, 5,500 variants), so the crawler action slices
+ * it into COMMIT_BATCH_PRODUCTS-sized calls and then runs finalizeCrawl.
+ * Re-running a batch is idempotent: diffs against already-updated variants
+ * emit nothing.
  */
-export const applyCrawlResult = internalMutation({
+export const applyProductBatch = internalMutation({
+	args: {
+		crawlSourceId: v.id("crawlSources"),
+		// Decided once per crawl by the action (baseline crawls fire nothing)
+		// so every batch of the same crawl agrees.
+		eventsAllowed: v.boolean(),
+		fetchedAt: v.number(),
+		products: v.array(extractedProduct),
+	},
+	handler: async (ctx, args) => {
+		const source = await ctx.db.get(args.crawlSourceId);
+		if (source === null) {
+			return null;
+		}
+		await Promise.all(
+			args.products.map((product) =>
+				upsertProduct(ctx, {
+					eventsAllowed: args.eventsAllowed,
+					fetchedAt: args.fetchedAt,
+					product,
+					roasterId: source.roasterId,
+				})
+			)
+		);
+		return null;
+	},
+	returns: v.null(),
+});
+
+/**
+ * Close out one crawl after its batches: raw capture, failure bookkeeping or
+ * the 3-strike archive, roaster activation, health, and the next due date.
+ * The archive pass reads the roaster's whole catalog (one index range), which
+ * is fine up to a few thousand products.
+ */
+export const finalizeCrawl = internalMutation({
 	args: {
 		crawlSourceId: v.id("crawlSources"),
 		errorMessage: v.optional(v.string()),
 		fetchedAt: v.number(),
-		products: v.optional(v.array(extractedProduct)),
+		// externalIds of every product the crawl saw; drives the archive rule.
+		fetchedExternalIds: v.optional(v.array(v.string())),
 		rawCapture: v.optional(
 			v.object({
 				extractionOk: v.boolean(),
@@ -189,6 +276,7 @@ export const applyCrawlResult = internalMutation({
 		if (source === null) {
 			return null;
 		}
+		const now = args.fetchedAt;
 		const cadenceMs = source.cadenceMinutes * 60_000;
 
 		// The body itself lives in file storage (stored by the action; doc
@@ -196,7 +284,7 @@ export const applyCrawlResult = internalMutation({
 		// succeeded, so a failed parse still leaves a diagnostic capture.
 		if (args.rawCapture !== undefined) {
 			await ctx.db.insert("rawCaptures", {
-				capturedAt: args.fetchedAt,
+				capturedAt: now,
 				extractionOk: args.rawCapture.extractionOk,
 				roasterId: source.roasterId,
 				storageId: args.rawCapture.storageId,
@@ -204,78 +292,26 @@ export const applyCrawlResult = internalMutation({
 		}
 
 		if (!args.success) {
-			const failures = source.consecutiveFailures + 1;
 			await ctx.db.patch(source._id, {
-				consecutiveFailures: failures,
+				consecutiveFailures: source.consecutiveFailures + 1,
 				health: "crawl_failed",
-				lastCheckedAt: args.fetchedAt,
-				lastErrorAt: args.fetchedAt,
+				lastCheckedAt: now,
+				lastErrorAt: now,
 				lastErrorMessage: args.errorMessage ?? "Unknown crawl error",
-				nextCrawlDueAt: args.fetchedAt + cadenceMs,
+				nextCrawlDueAt: now + cadenceMs,
 			});
 			return null;
 		}
 
-		const products = args.products ?? [];
-		const now = args.fetchedAt;
-		// Baseline = first successful crawl: populates the catalog and fires
-		// no Drop events (alerts start from crawl #2).
-		const isBaseline = source.lastSuccessAt === undefined;
-
-		// Every product this roaster currently has. Bounded by one roaster's
-		// catalog via the composite index, not the whole table.
+		// 3-strike archive: a current product absent from 3 consecutive
+		// successful crawls flips to archived (keeps firstSeenAt/lastSeenAt).
+		const fetchedIds = new Set(args.fetchedExternalIds);
 		const existing = await ctx.db
 			.query("products")
 			.withIndex("by_roaster_and_external_id", (q) =>
 				q.eq("roasterId", source.roasterId)
 			)
 			.collect();
-		const existingByExternalId = new Map(
-			existing.map((doc) => [doc.externalId, doc])
-		);
-
-		await Promise.all(
-			products.map(async (product) => {
-				const current = existingByExternalId.get(product.externalId);
-				if (current === undefined) {
-					const productId = await ctx.db.insert("products", {
-						externalId: product.externalId,
-						firstSeenAt: now,
-						handle: product.handle,
-						lastSeenAt: now,
-						missedCrawls: 0,
-						name: product.name,
-						roasterId: source.roasterId,
-						status: "current",
-					});
-					await applyVariants(ctx, {
-						eventsAllowed: !isBaseline,
-						fetchedAt: now,
-						product,
-						productId,
-						roasterId: source.roasterId,
-					});
-					return;
-				}
-				await applyVariants(ctx, {
-					eventsAllowed: !isBaseline,
-					fetchedAt: now,
-					product,
-					productId: current._id,
-					roasterId: source.roasterId,
-				});
-				await ctx.db.patch(current._id, {
-					lastSeenAt: now,
-					missedCrawls: 0,
-					name: product.name,
-					status: "current",
-				});
-			})
-		);
-
-		// 3-strike archive: a current product absent from 3 consecutive
-		// successful crawls flips to archived (keeps firstSeenAt/lastSeenAt).
-		const fetchedIds = new Set(products.map((product) => product.externalId));
 		await Promise.all(
 			existing
 				.filter(
@@ -304,6 +340,21 @@ export const applyCrawlResult = internalMutation({
 			lastSuccessAt: now,
 			nextCrawlDueAt: now + cadenceMs,
 		});
+		return null;
+	},
+	returns: v.null(),
+});
+
+/**
+ * Operator tool: make a source's next successful crawl a baseline again.
+ * Any change that expands a source's coverage (pagination, better html
+ * extraction, a raised page cap) would otherwise fire a "new" Drop event for
+ * every product in the newly visible tail. Run this before that crawl lands.
+ */
+export const rebaselineSource = internalMutation({
+	args: { crawlSourceId: v.id("crawlSources") },
+	handler: async (ctx, args) => {
+		await ctx.db.patch(args.crawlSourceId, { lastSuccessAt: undefined });
 		return null;
 	},
 	returns: v.null(),

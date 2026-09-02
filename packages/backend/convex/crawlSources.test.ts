@@ -4,7 +4,11 @@ import { describe, expect, test } from "vitest";
 
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { rawCaptureRetentionMs, stalenessThresholdMs } from "./constants";
+import {
+	COMMIT_BATCH_PRODUCTS,
+	rawCaptureRetentionMs,
+	stalenessThresholdMs,
+} from "./constants";
 import type { ExtractedProduct } from "./extraction";
 import schema from "./schema";
 
@@ -63,16 +67,28 @@ const product = (
 	variants,
 });
 
+/** Drive the real commit path: batched applyProductBatch + finalizeCrawl. */
 const crawl = (
 	fx: Fixture,
 	fetchedAt: number,
 	products: ExtractedProduct[]
 ): Promise<null> =>
-	fx.t.mutation(internal.crawlSources.applyCrawlResult, {
+	fx.t.action(internal.crawler.commitExtractedCatalog, {
 		crawlSourceId: fx.crawlSourceId,
 		fetchedAt,
 		products,
-		success: true,
+	});
+
+const fail = (
+	fx: Fixture,
+	fetchedAt: number,
+	errorMessage?: string
+): Promise<null> =>
+	fx.t.mutation(internal.crawlSources.finalizeCrawl, {
+		crawlSourceId: fx.crawlSourceId,
+		fetchedAt,
+		success: false,
+		...(errorMessage === undefined ? {} : { errorMessage }),
 	});
 
 const readAll = (fx: Fixture) =>
@@ -109,7 +125,7 @@ const readEvents = async (fx: Fixture) => {
 	return state.events;
 };
 
-describe("applyCrawlResult: baseline rule", () => {
+describe("commit: baseline rule", () => {
 	test("first successful crawl populates the catalog and fires no events", async () => {
 		const fx = await setup();
 		await crawl(fx, T0, [product("a"), product("b")]);
@@ -185,7 +201,7 @@ describe("applyCrawlResult: baseline rule", () => {
 	});
 });
 
-describe("applyCrawlResult: variant diffing", () => {
+describe("commit: variant diffing", () => {
 	const diff = async (
 		before: ExtractedProduct["variants"][number],
 		after: ExtractedProduct["variants"][number]
@@ -288,7 +304,7 @@ describe("applyCrawlResult: variant diffing", () => {
 	});
 });
 
-describe("applyCrawlResult: 3-strike archive", () => {
+describe("commit: 3-strike archive", () => {
 	test("a product absent from 3 consecutive successful crawls is archived", async () => {
 		const fx = await setup();
 		await crawl(fx, T0, [product("a"), product("b")]);
@@ -351,12 +367,7 @@ describe("applyCrawlResult: 3-strike archive", () => {
 	test("failed crawls do not count as strikes", async () => {
 		const fx = await setup();
 		await crawl(fx, T0, [product("a"), product("b")]);
-		await fx.t.mutation(internal.crawlSources.applyCrawlResult, {
-			crawlSourceId: fx.crawlSourceId,
-			errorMessage: "boom",
-			fetchedAt: T0 + CADENCE_MS,
-			success: false,
-		});
+		await fail(fx, T0 + CADENCE_MS, "boom");
 		const b = await readProduct(fx, "b");
 		expect(b).toMatchObject({ missedCrawls: 0, status: "current" });
 	});
@@ -383,21 +394,12 @@ describe("applyCrawlResult: 3-strike archive", () => {
 	});
 });
 
-describe("applyCrawlResult: failures and captures", () => {
+describe("commit: failures and captures", () => {
 	test("a failed crawl records the error and bumps consecutiveFailures", async () => {
 		const fx = await setup();
 		await crawl(fx, T0, [product("a")]);
-		await fx.t.mutation(internal.crawlSources.applyCrawlResult, {
-			crawlSourceId: fx.crawlSourceId,
-			errorMessage: "products.json unavailable",
-			fetchedAt: T0 + CADENCE_MS,
-			success: false,
-		});
-		await fx.t.mutation(internal.crawlSources.applyCrawlResult, {
-			crawlSourceId: fx.crawlSourceId,
-			fetchedAt: T0 + 2 * CADENCE_MS,
-			success: false,
-		});
+		await fail(fx, T0 + CADENCE_MS, "products.json unavailable");
+		await fail(fx, T0 + 2 * CADENCE_MS);
 
 		const { source } = await readAll(fx);
 		expect(source).toMatchObject({
@@ -425,19 +427,18 @@ describe("applyCrawlResult: failures and captures", () => {
 		const storageId = await fx.t.run((ctx) =>
 			ctx.storage.store(new Blob(['{"products":[]}']))
 		);
-		await fx.t.mutation(internal.crawlSources.applyCrawlResult, {
+		await fx.t.mutation(internal.crawlSources.finalizeCrawl, {
 			crawlSourceId: fx.crawlSourceId,
 			errorMessage: "empty feed",
 			fetchedAt: T0,
 			rawCapture: { extractionOk: false, storageId },
 			success: false,
 		});
-		await fx.t.mutation(internal.crawlSources.applyCrawlResult, {
+		await fx.t.action(internal.crawler.commitExtractedCatalog, {
 			crawlSourceId: fx.crawlSourceId,
 			fetchedAt: T0 + CADENCE_MS,
 			products: [product("a")],
 			rawCapture: { extractionOk: true, storageId },
-			success: true,
 		});
 
 		const captures = await fx.t.run((ctx) =>
@@ -461,6 +462,104 @@ describe("applyCrawlResult: failures and captures", () => {
 		expect(await fx.t.run((ctx) => ctx.db.query("products").collect())).toEqual(
 			[]
 		);
+	});
+});
+
+describe("commit: batching", () => {
+	const bigCatalog = (count: number) =>
+		Array.from({ length: count }, (_, i) =>
+			product(`p${i}`, [
+				{ available: true, name: "250g", priceCents: 1800 },
+				{ available: true, name: "1kg", priceCents: 5600 },
+			])
+		);
+
+	test("a catalog larger than one batch commits whole and finalizes once", async () => {
+		const count = COMMIT_BATCH_PRODUCTS * 2 + 7;
+		const fx = await setup();
+		await crawl(fx, T0, bigCatalog(count));
+
+		const state = await readAll(fx);
+		expect(state.products).toHaveLength(count);
+		expect(state.variants).toHaveLength(count * 2);
+		expect(state.events).toEqual([]);
+		expect(state.source).toMatchObject({
+			health: "watching",
+			lastSuccessAt: T0,
+		});
+
+		// Second crawl over the same catalog: every batch diffs to nothing, and
+		// the archive rule sees every product.
+		await crawl(fx, T0 + CADENCE_MS, bigCatalog(count));
+		const after = await readAll(fx);
+		expect(after.events).toEqual([]);
+		expect(after.products.every((p) => p.missedCrawls === 0)).toBe(true);
+	});
+
+	test("a failing batch ends the crawl as crawl_failed without touching lastSuccessAt", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [product("a")]);
+		// Two stored rows for one externalId make the per-product lookup throw
+		// inside the second batch, after the first batch has committed.
+		await fx.t.run(async (ctx) => {
+			for (const _ of [0, 1]) {
+				// eslint-disable-next-line no-await-in-loop
+				await ctx.db.insert("products", {
+					externalId: "dup",
+					firstSeenAt: T0,
+					handle: "dup",
+					lastSeenAt: T0,
+					missedCrawls: 0,
+					name: "Dup",
+					roasterId: fx.roasterId,
+					status: "current",
+				});
+			}
+		});
+		await crawl(fx, T0 + CADENCE_MS, [
+			...bigCatalog(COMMIT_BATCH_PRODUCTS),
+			product("dup"),
+		]);
+
+		const state = await readAll(fx);
+		expect(state.source).toMatchObject({
+			consecutiveFailures: 1,
+			health: "crawl_failed",
+			lastSuccessAt: T0,
+		});
+		expect(state.source?.lastErrorMessage).toContain("catalog commit failed");
+		// The first batch landed (idempotent against the next crawl); the
+		// archive rule did not run, so "a" was not struck.
+		expect(state.products.length).toBeGreaterThan(1);
+		const a = await readProduct(fx, "a");
+		expect(a?.missedCrawls).toBe(0);
+	});
+});
+
+describe("rebaselineSource", () => {
+	test("makes the next crawl a silent baseline", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [product("a")]);
+		await fx.t.mutation(internal.crawlSources.rebaselineSource, {
+			crawlSourceId: fx.crawlSourceId,
+		});
+		const reset = await readSource(fx);
+		expect(reset?.lastSuccessAt).toBeUndefined();
+
+		// Coverage expands (b appears) but fires nothing.
+		await crawl(fx, T0 + CADENCE_MS, [product("a"), product("b")]);
+		expect(await readEvents(fx)).toEqual([]);
+		const rebaselined = await readSource(fx);
+		expect(rebaselined?.lastSuccessAt).toBe(T0 + CADENCE_MS);
+
+		// Alerts resume from the crawl after.
+		await crawl(fx, T0 + 2 * CADENCE_MS, [
+			product("a"),
+			product("b"),
+			product("c"),
+		]);
+		const events = await readEvents(fx);
+		expect(events.map((e) => e.type)).toEqual(["new"]);
 	});
 });
 

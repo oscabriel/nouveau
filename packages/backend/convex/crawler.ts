@@ -9,7 +9,9 @@ import { internal, components } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { env, internalAction, internalMutation } from "./_generated/server";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
+import { COMMIT_BATCH_PRODUCTS } from "./constants";
 import {
+	extractedProduct,
 	HTML_EXTRACTION_PROMPT,
 	htmlExtractionSchema,
 	parseHtmlPage,
@@ -32,9 +34,73 @@ const HTML_CRAWL_PAGE_LIMIT = 10;
 // Bound the page iterations when collecting a finished crawl's results.
 const MAX_CRAWL_PAGE_ITERATIONS = 10;
 
+interface RawCapture {
+	extractionOk: boolean;
+	storageId: Id<"_storage">;
+}
+
+interface CommitInput {
+	crawlSourceId: Id<"crawlSources">;
+	fetchedAt: number;
+	// Baseline = first successful crawl: populates the catalog and fires no
+	// Drop events (alerts start from crawl #2). Decided here, once, so every
+	// batch of the crawl agrees.
+	isBaseline: boolean;
+	products: ExtractedProduct[];
+	rawCapture?: RawCapture;
+}
+
+/**
+ * Commit an extracted catalog in COMMIT_BATCH_PRODUCTS-sized transactions,
+ * then finalize (archive rule, health, next due). A batch that fails ends
+ * the crawl as crawl_failed; the batches already committed are idempotent
+ * against the next crawl.
+ */
+const commitCatalog = async (
+	ctx: ActionCtx,
+	input: CommitInput
+): Promise<void> => {
+	const { crawlSourceId, fetchedAt, products, rawCapture } = input;
+	const capture = rawCapture === undefined ? {} : { rawCapture };
+	try {
+		for (
+			let start = 0;
+			start < products.length;
+			start += COMMIT_BATCH_PRODUCTS
+		) {
+			// Sequential on purpose: the batches share one source and keeping
+			// them serial bounds concurrent load on the catalog tables.
+			// eslint-disable-next-line no-await-in-loop
+			await ctx.runMutation(internal.crawlSources.applyProductBatch, {
+				crawlSourceId,
+				eventsAllowed: !input.isBaseline,
+				fetchedAt,
+				products: products.slice(start, start + COMMIT_BATCH_PRODUCTS),
+			});
+		}
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		await ctx.runMutation(internal.crawlSources.finalizeCrawl, {
+			crawlSourceId,
+			errorMessage: `catalog commit failed: ${message}`,
+			fetchedAt,
+			success: false,
+			...capture,
+		});
+		return;
+	}
+	await ctx.runMutation(internal.crawlSources.finalizeCrawl, {
+		crawlSourceId,
+		fetchedAt,
+		fetchedExternalIds: products.map((product) => product.externalId),
+		success: true,
+		...capture,
+	});
+};
+
 interface ProductsJsonInput {
 	crawlSourceId: Id<"crawlSources">;
-	roasterId: Id<"roasters">;
+	isBaseline: boolean;
 	websiteUrl: string;
 }
 
@@ -114,7 +180,7 @@ const crawlProductsJson = async (
 	}
 
 	// The page-1 body is stored because only actions can write file storage;
-	// applyCrawlResult records the capture row. Later pages are not captured.
+	// finalizeCrawl records the capture row. Later pages are not captured.
 	const captureText = bodyText ?? fallbackText;
 	const rawCapture =
 		captureText !== null && captureText.length <= MAX_RAW_BODY_BYTES
@@ -127,7 +193,7 @@ const crawlProductsJson = async (
 			: undefined;
 
 	if (products === null) {
-		await ctx.runMutation(internal.crawlSources.applyCrawlResult, {
+		await ctx.runMutation(internal.crawlSources.finalizeCrawl, {
 			crawlSourceId: input.crawlSourceId,
 			errorMessage:
 				pageError ?? "products.json unavailable or empty after HTML fallback",
@@ -138,11 +204,11 @@ const crawlProductsJson = async (
 		return;
 	}
 
-	await ctx.runMutation(internal.crawlSources.applyCrawlResult, {
+	await commitCatalog(ctx, {
 		crawlSourceId: input.crawlSourceId,
 		fetchedAt,
+		isBaseline: input.isBaseline,
 		products,
-		success: true,
 		...(rawCapture === undefined ? {} : { rawCapture }),
 	});
 };
@@ -245,8 +311,44 @@ export const crawlSource = internalAction({
 
 		await crawlProductsJson(ctx, {
 			crawlSourceId: source._id,
-			roasterId: source.roasterId,
+			isBaseline: source.lastSuccessAt === undefined,
 			websiteUrl: roaster.websiteUrl,
+		});
+		return null;
+	},
+	returns: v.null(),
+});
+
+/**
+ * Commit an already-extracted catalog for a source. The html-mode completion
+ * callback schedules this (a mutation cannot run the batched commit itself);
+ * tests drive the commit path through it too.
+ */
+export const commitExtractedCatalog = internalAction({
+	args: {
+		crawlSourceId: v.id("crawlSources"),
+		fetchedAt: v.number(),
+		products: v.array(extractedProduct),
+		rawCapture: v.optional(
+			v.object({
+				extractionOk: v.boolean(),
+				storageId: v.id("_storage"),
+			})
+		),
+	},
+	handler: async (ctx, args) => {
+		const loaded = await ctx.runQuery(internal.crawlSources.getSource, {
+			crawlSourceId: args.crawlSourceId,
+		});
+		if (loaded === null) {
+			return null;
+		}
+		await commitCatalog(ctx, {
+			crawlSourceId: args.crawlSourceId,
+			fetchedAt: args.fetchedAt,
+			isBaseline: loaded.source.lastSuccessAt === undefined,
+			products: args.products,
+			...(args.rawCapture === undefined ? {} : { rawCapture: args.rawCapture }),
 		});
 		return null;
 	},
@@ -256,8 +358,8 @@ export const crawlSource = internalAction({
 /**
  * Firecrawl terminal callback — must be an internal mutation (the component
  * mints a mutation handle for it), run exactly once at a terminal state.
- * Guards status, warns on unstored pages, then commits what the crawl
- * extracted.
+ * Guards status, warns on unstored pages, then hands what the crawl
+ * extracted to the batched commit.
  */
 export const onFirecrawlCrawlComplete = internalMutation({
 	args: {
@@ -285,7 +387,7 @@ export const onFirecrawlCrawlComplete = internalMutation({
 		}
 
 		if (args.status !== "completed") {
-			await ctx.runMutation(internal.crawlSources.applyCrawlResult, {
+			await ctx.runMutation(internal.crawlSources.finalizeCrawl, {
 				crawlSourceId,
 				errorMessage: args.error ?? `Crawl ${args.status}`,
 				fetchedAt: Date.now(),
@@ -302,7 +404,7 @@ export const onFirecrawlCrawlComplete = internalMutation({
 		const products = await collectCrawlProducts(ctx, { crawlId: args.crawlId });
 		const fetchedAt = Date.now();
 		if (products.length === 0) {
-			await ctx.runMutation(internal.crawlSources.applyCrawlResult, {
+			await ctx.runMutation(internal.crawlSources.finalizeCrawl, {
 				crawlSourceId,
 				errorMessage: "HTML extraction found no products",
 				fetchedAt,
@@ -310,11 +412,10 @@ export const onFirecrawlCrawlComplete = internalMutation({
 			});
 			return null;
 		}
-		await ctx.runMutation(internal.crawlSources.applyCrawlResult, {
+		await ctx.scheduler.runAfter(0, internal.crawler.commitExtractedCatalog, {
 			crawlSourceId,
 			fetchedAt,
 			products,
-			success: true,
 		});
 		return null;
 	},

@@ -24,6 +24,12 @@ export const rawCaptureRetentionMs = (): number =>
 // Raw captures deleted per prune transaction; a full batch reschedules.
 export const PRUNE_BATCH = 200;
 
+// Products upserted per commit transaction. Each product costs one lookup
+// plus one variant query, and writes a row per variant plus a Drop event, so
+// this keeps a many-variant catalog (Proud Mary: ~8 variants per product)
+// well under the per-transaction read and write limits.
+export const COMMIT_BATCH_PRODUCTS = 50;
+
 // Submission quotas (enforced with the rate-limiter component).
 export const MAX_ACTIVE_SUBMISSIONS_PER_USER = 5;
 export const MAX_SUBMISSIONS_PER_DAY = 3;
