@@ -20,6 +20,7 @@ import type * as health from "../health.js";
 import type * as healthCheck from "../healthCheck.js";
 import type * as http from "../http.js";
 import type * as identity from "../identity.js";
+import type * as notifications from "../notifications.js";
 import type * as roasters from "../roasters.js";
 import type * as seed from "../seed.js";
 import type * as users from "../users.js";
@@ -44,6 +45,7 @@ declare const fullApi: ApiFromModules<{
   healthCheck: typeof healthCheck;
   http: typeof http;
   identity: typeof identity;
+  notifications: typeof notifications;
   roasters: typeof roasters;
   seed: typeof seed;
   users: typeof users;
@@ -78,6 +80,7 @@ export declare const internal: FilterApi<
 
 export declare const components: {
   staticHosting: import("@convex-dev/static-hosting/_generated/component.js").ComponentApi<"staticHosting">;
+  agentmail: import("@agentmail/convex/_generated/component.js").ComponentApi<"agentmail">;
   aggregate: import("@convex-dev/aggregate/_generated/component.js").ComponentApi<"aggregate">;
   rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
   firecrawl: import("@firecrawl/firecrawl-convex/_generated/component.js").ComponentApi<"firecrawl">;

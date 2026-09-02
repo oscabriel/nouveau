@@ -1,6 +1,7 @@
 import { vGoogleProfile } from "@convex-dev/auth/providers/oauth/google";
 import { v } from "convex/values";
 
+import { internal } from "./_generated/api";
 import { internalMutation, query } from "./_generated/server";
 
 /**
@@ -24,13 +25,19 @@ export const createUser = internalMutation({
 		if (existing !== null) {
 			return existing._id;
 		}
-		return await ctx.db.insert("users", {
+		const userId = await ctx.db.insert("users", {
 			email: args.profile.email,
 			emailVerified: args.profile.emailVerified,
 			imageUrl: args.profile.picture,
 			name: args.profile.name,
 			providerAccountId: args.providerAccountId,
 		});
+		// Provision the per-user AgentMail alert inbox (§8.3). At-least-once:
+		// the provisioning action re-checks the user before creating anything.
+		await ctx.scheduler.runAfter(0, internal.notifications.provisionInbox, {
+			userId,
+		});
+		return userId;
 	},
 	returns: v.id("users"),
 });

@@ -123,6 +123,11 @@ export default defineSchema({
 		.index("by_status_and_state", ["status", "state"]),
 
 	users: defineTable({
+		// The per-user AgentMail inbox (build spec §8.3) that sends this
+		// user's alerts; provisioned after signup, so optional.
+		agentmailInbox: v.optional(
+			v.object({ address: v.string(), inboxId: v.string() })
+		),
 		email: v.optional(v.string()),
 		emailVerified: v.optional(v.boolean()),
 		imageUrl: v.optional(v.string()),

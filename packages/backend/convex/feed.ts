@@ -1,5 +1,8 @@
+import { AgentMail } from "@agentmail/convex";
+import type { OutboundId, OutboundStatus } from "@agentmail/convex";
 import { v } from "convex/values";
 
+import { components } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { query } from "./_generated/server";
@@ -81,6 +84,24 @@ const toCard = async (
 };
 
 const nonNull = <T>(value: T | null): value is T => value !== null;
+
+const agentmail = new AgentMail(components.agentmail);
+
+/**
+ * Map the AgentMail lifecycle onto the ledger's vocabulary; bounced,
+ * complained and rejected all mean the alert did not land.
+ */
+const deliveryFromComponent = (
+	status: OutboundStatus
+): "pending" | "sent" | "delivered" | "failed" => {
+	if (status === "delivered") {
+		return "delivered";
+	}
+	if (status === "sent") {
+		return "sent";
+	}
+	return status === "pending" ? "pending" : "failed";
+};
 
 /** Merge already-descending-sorted lists into one descending list. */
 const mergeDesc = <T>(lists: T[][], by: (item: T) => number): T[] => {
@@ -198,9 +219,22 @@ export const personalizedFeed = query({
 						q.eq("userId", userId).eq("dropEventId", event._id)
 					)
 					.first();
+				let deliveryStatus: "pending" | "sent" | "delivered" | "failed" | null =
+					notification?.deliveryStatus ?? null;
+				// With an outboundId, the component's reactive lifecycle is the
+				// truth; the ledger row only carries the pre-send state.
+				if (notification?.outboundId !== undefined) {
+					const status = await agentmail.status(
+						ctx,
+						notification.outboundId as OutboundId
+					);
+					if (status !== null) {
+						deliveryStatus = deliveryFromComponent(status.status);
+					}
+				}
 				return {
 					...card,
-					deliveryStatus: notification?.deliveryStatus ?? null,
+					deliveryStatus,
 				};
 			})
 		);

@@ -45,3 +45,7 @@ export const ALERT_WORTHY_TYPES = [
 // Upper bound on watches read per user in feed and watch-list queries. Well
 // above the 20-roaster seed list; revisit when user submissions grow it.
 export const MAX_WATCHES_PER_USER = 200;
+
+// Watchers alerted per Drop event, capping the fanout's reads and writes
+// (one ledger row + one email enqueue per recipient) inside one transaction.
+export const MAX_ALERT_RECIPIENTS_PER_EVENT = 200;

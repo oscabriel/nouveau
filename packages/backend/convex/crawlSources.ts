@@ -16,6 +16,7 @@ import {
 } from "./constants";
 import { extractedProduct } from "./extraction";
 import type { ExtractedProduct } from "./extraction";
+import { notifyWatchersOfEvent } from "./notifications";
 import schema from "./schema";
 
 /** Source + roaster fields the crawler action needs. */
@@ -76,7 +77,7 @@ const diffVariant = async (
 	};
 
 	if (variant.available !== next.available) {
-		await ctx.db.insert("dropEvents", {
+		const eventId = await ctx.db.insert("dropEvents", {
 			detectedAt: input.fetchedAt,
 			...priceFields,
 			productId: input.productId,
@@ -84,10 +85,11 @@ const diffVariant = async (
 			type: next.available ? "back_in_stock" : "sold_out",
 			variantId: variant._id,
 		});
+		await notifyWatchersOfEvent(ctx, eventId);
 		return;
 	}
 	if (priceChanged) {
-		await ctx.db.insert("dropEvents", {
+		const eventId = await ctx.db.insert("dropEvents", {
 			detectedAt: input.fetchedAt,
 			...priceFields,
 			productId: input.productId,
@@ -95,6 +97,7 @@ const diffVariant = async (
 			type: next.priceCents < variant.priceCents ? "price_drop" : "price_rise",
 			variantId: variant._id,
 		});
+		await notifyWatchersOfEvent(ctx, eventId);
 	}
 };
 
@@ -141,7 +144,7 @@ const applyVariants = async (
 					productId: input.productId,
 				});
 				if (input.eventsAllowed) {
-					await ctx.db.insert("dropEvents", {
+					const eventId = await ctx.db.insert("dropEvents", {
 						detectedAt: input.fetchedAt,
 						newPriceCents: variant.priceCents,
 						productId: input.productId,
@@ -149,6 +152,7 @@ const applyVariants = async (
 						type: "new",
 						variantId,
 					});
+					await notifyWatchersOfEvent(ctx, eventId);
 				}
 				return;
 			}

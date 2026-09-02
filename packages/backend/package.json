@@ -10,6 +10,7 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
+		"@agentmail/convex": "0.1.0",
 		"@convex-dev/aggregate": "^0.3.0",
 		"@convex-dev/auth": "2.0.0-alpha.1",
 		"@convex-dev/rate-limiter": "^0.3.2",
@@ -21,6 +22,7 @@
 		"zod": "catalog:"
 	},
 	"devDependencies": {
+		"@convex-dev/workpool": "0.3.2",
 		"@edge-runtime/vm": "^5.0.0",
 		"@nouveau/config": "workspace:*",
 		"@types/node": "catalog:",

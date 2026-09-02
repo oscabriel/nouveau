@@ -1,3 +1,4 @@
+import agentmail from "@agentmail/convex/convex.config";
 import aggregate from "@convex-dev/aggregate/convex.config";
 import auth from "@convex-dev/auth/core/convex.config";
 import oauth from "@convex-dev/auth/providers/oauth/convex.config";
@@ -27,6 +28,9 @@ const app = defineApp({
 	httpPrefix: "/api",
 });
 app.use(staticHosting, { httpPrefix: "/" });
+// Email alerts (build order step 4). Credentials are plain deployment env
+// vars (AGENTMAIL_API_KEY, AGENTMAIL_WEBHOOK_SECRET), read component-side.
+app.use(agentmail);
 app.use(aggregate);
 app.use(rateLimiter);
 // Mounts the crawl webhook route at <site>/firecrawl/webhook.
