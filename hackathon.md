@@ -7,12 +7,12 @@
 - **Repo:** https://github.com/oscabriel/nouveau
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://artful-chameleon-402.convex.cloud
-- **Components:** @convex-dev/aggregate, @convex-dev/auth (core + Google OAuth), @convex-dev/rate-limiter, @convex-dev/static-hosting, @firecrawl/firecrawl-convex
-- **Convex features:** schema, indexes, queries, mutations, actions, crons, scheduled functions, file storage, realtime queries
+- **Components:** @agentmail/convex, @convex-dev/aggregate, @convex-dev/auth (core + Google OAuth), @convex-dev/rate-limiter, @convex-dev/static-hosting, @firecrawl/firecrawl-convex
+- **Convex features:** schema, indexes, queries, mutations, actions, crons, scheduled functions, file storage, realtime queries, HTTP actions
 - **Auth:** Convex Auth
 - **AI models:** none
 - **Started:** 2026-08-29T18:06:09Z
-- **Last updated:** 2026-09-02T20:26:42Z
+- **Last updated:** 2026-09-02T21:44:00Z
 
 ## Log
 
@@ -55,3 +55,7 @@ Hardened the extraction pipeline with a test suite and two live-found fixes (com
 ### 2026-09-02 - edfcd59
 
 Shipped the watch and feed layer (build order step 3; commits 250997c–edfcd59). Signed-in users can watch and unwatch roasters and mute a watch; the mutations resolve the caller from the session identity in `convex/identity.ts` and never take a userId argument. Follower counts run through a @convex-dev/aggregate `TableAggregate` namespaced by roaster and update in the same transaction as every watch write (`convex/followerCounts.ts`, `convex/watches.ts`). Three feed queries return only alert-worthy events (new, back in stock, price drop), newest first, each card linking "See the lot" to the roaster's own product page: a global feed merged from one descending index scan per event type, a per-roaster drop history, and a personalized feed that joins the notifications ledger for a delivery footer (`convex/feed.ts`, new `by_type_and_detected_at` index). Watch status chips derive from crawl-source health with the locked copy ("Watching — last checked 4 min ago" / "Stale — …, still checking" / "Crawl failed — …") and appear on the directory, roaster page and watches page (`convex/health.ts`, `apps/web/src/components/status-chip.tsx`). New web screens: the signed-out home with the live global feed and a roaster teaser, the signed-in home with "Your roasters", delivery footers and an unhealthy-watch banner, plus `/feed`, `/roasters`, `/roasters/$slug` and `/watches`. 15 new convex-test cases bring the suite to 69. Verified live on the dev deployment: Google sign-in, browsing roasters, and adding a watch. Components: @convex-dev/aggregate. Convex features: queries, mutations, indexes, realtime queries.
+
+### 2026-09-02 - 400f9a8
+
+Shipped the alert email layer (build order step 4; commits 567b489–400f9a8). Mounted @agentmail/convex 0.1.0 in `convex.config.ts`; every Drop event now fans out inside the same transaction that emitted it to that roaster's unmuted watchers: one notifications-ledger row per (user, event) doubles as the one-email-per-event dedup guard (§5), and the email is enqueued from the mutation via the component's durable send (workpool retries) (`convex/notifications.ts`, fanout wired at all three event-emission sites in `convex/crawlSources.ts`). Emails render the locked §8.2 template as plain text — subject variants "New at / Back at / Price drop at", lead line, OpenAI tasting-note slot (renders `aiSummary` when present; generation deferred), grams · price · "See the lot" linking the roaster's own product page, roaster page link, and a mute footer (alert-settings link omitted until that stub exists). Per-user AgentMail inboxes (§8.3): signup schedules inbox provisioning from the auth createUser callback, the web header backfills users who predate the feature via a new `ensureInbox` mutation (`convex/users.ts`, `apps/web/src/components/header.tsx`, `agentmailInbox` on the users row), and alerts are sent from the user's own inbox to their email. The personalized feed's delivery footer now reads the component's reactive pending → sent → delivered lifecycle through the stored outboundId (bounced/complained/rejected map to failed). Mounted the AgentMail Svix webhook at `/api/agentmail/webhook` (`convex/http.ts`); it serves 500s on dev until `AGENTMAIL_WEBHOOK_SECRET` is set. 9 new convex-test cases (template, fanout, mute/inbox/dedup/type-gating, live status hydration) bring the suite to 78, with the component registered under its nested workpool paths. Pushed to dev `cool-giraffe-632` (feed query and webhook route verified live); prod still awaits the deploy. Components: @agentmail/convex. Convex features: HTTP actions, scheduled functions.
