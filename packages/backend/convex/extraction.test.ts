@@ -6,6 +6,7 @@ import {
 	parseHtmlPage,
 	parseProductsJson,
 	PRODUCTS_JSON_PAGE_SIZE,
+	SHOPIFY_FETCH_HEADERS,
 	shopifyProductsUrl,
 	walkFeedPages,
 } from "./extraction";
@@ -53,6 +54,13 @@ describe("shopifyProductsUrl", () => {
 		expect(shopifyProductsUrl("https://shop.example.com", 3)).toBe(
 			"https://shop.example.com/products.json?limit=250&page=3"
 		);
+	});
+});
+
+describe("SHOPIFY_FETCH_HEADERS", () => {
+	test("pins the US market so Shopify Markets cannot convert prices", () => {
+		expect(SHOPIFY_FETCH_HEADERS.cookie).toBe("localization=US");
+		expect(SHOPIFY_FETCH_HEADERS.accept).toBe("application/json");
 	});
 });
 

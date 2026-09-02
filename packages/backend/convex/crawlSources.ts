@@ -361,6 +361,36 @@ export const rebaselineSource = internalMutation({
 });
 
 /**
+ * Operator tool: delete a roaster's Drop events, optionally only those
+ * detected at or after `since`. Pairs with rebaselineSource when a crawl
+ * defect (e.g. a feed served in the wrong currency) has already emitted
+ * events that never happened. Batched; reschedules while a full batch keeps
+ * coming back.
+ */
+export const purgeRoasterEvents = internalMutation({
+	args: { roasterId: v.id("roasters"), since: v.optional(v.number()) },
+	handler: async (ctx, args) => {
+		const since = args.since ?? 0;
+		const events = await ctx.db
+			.query("dropEvents")
+			.withIndex("by_roaster_and_detected_at", (q) =>
+				q.eq("roasterId", args.roasterId).gte("detectedAt", since)
+			)
+			.take(PRUNE_BATCH);
+		await Promise.all(events.map((event) => ctx.db.delete(event._id)));
+		if (events.length === PRUNE_BATCH) {
+			await ctx.scheduler.runAfter(
+				0,
+				internal.crawlSources.purgeRoasterEvents,
+				args
+			);
+		}
+		return null;
+	},
+	returns: v.null(),
+});
+
+/**
  * Scheduler tick: claim every source whose crawl is due and hand it to the
  * crawler action. The claim (due date pushed to now + cadence) keeps a
  * concurrent tick from double-running the same source; applyCrawlResult sets

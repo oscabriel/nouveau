@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -536,6 +536,69 @@ describe("commit: batching", () => {
 	});
 });
 
+describe("purgeRoasterEvents", () => {
+	test("deletes only the roaster's events at or after `since`", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [
+			product("a", [{ available: true, name: "250g", priceCents: 1800 }]),
+		]);
+		await crawl(fx, T0 + CADENCE_MS, [
+			product("a", [{ available: true, name: "250g", priceCents: 1700 }]),
+		]);
+		await crawl(fx, T0 + 2 * CADENCE_MS, [
+			product("a", [{ available: true, name: "250g", priceCents: 1900 }]),
+		]);
+		// Another roaster's event must survive.
+		const otherId = await fx.t.run(async (ctx) => {
+			const roasterId = await ctx.db.insert("roasters", {
+				city: "Portland",
+				claimed: false,
+				domain: "other.example.com",
+				name: "Other",
+				productPageUrl: "https://other.example.com/shop",
+				slug: "other",
+				source: "curated",
+				state: "OR",
+				status: "active",
+				websiteUrl: "https://other.example.com",
+			});
+			const productId = await ctx.db.insert("products", {
+				externalId: "x",
+				firstSeenAt: T0,
+				handle: "x",
+				lastSeenAt: T0,
+				name: "X",
+				roasterId,
+				status: "current",
+			});
+			return ctx.db.insert("dropEvents", {
+				detectedAt: T0 + 2 * CADENCE_MS,
+				productId,
+				roasterId,
+				type: "sold_out",
+			});
+		});
+		expect(await readEvents(fx)).toHaveLength(3);
+
+		await fx.t.mutation(internal.crawlSources.purgeRoasterEvents, {
+			roasterId: fx.roasterId,
+			since: T0 + 2 * CADENCE_MS,
+		});
+		let events = await readEvents(fx);
+		expect(events).toHaveLength(2);
+		expect(events.map((e) => e.type)).toEqual(
+			expect.arrayContaining(["price_drop", "sold_out"])
+		);
+		expect(events.some((e) => e._id === otherId)).toBe(true);
+
+		await fx.t.mutation(internal.crawlSources.purgeRoasterEvents, {
+			roasterId: fx.roasterId,
+		});
+		events = await readEvents(fx);
+		expect(events.map((e) => e._id)).toEqual([otherId]);
+	});
+});
+
 describe("rebaselineSource", () => {
 	test("makes the next crawl a silent baseline", async () => {
 		const fx = await setup();
@@ -674,6 +737,15 @@ describe("pruneRawCaptures", () => {
 });
 
 describe("tick", () => {
+	// Fake timers keep the scheduled crawler action from actually firing (it
+	// needs the Firecrawl component); the test asserts the schedule itself.
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	test("claims due sources, pushes their due date out, and schedules the crawler", async () => {
 		const now = Date.now();
 		const fx = await setup({ nextCrawlDueAt: now - 1 });

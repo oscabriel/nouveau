@@ -35,6 +35,18 @@ export interface ExtractedProduct {
 /** Shopify caps /products.json at this many items per page. */
 export const PRODUCTS_JSON_PAGE_SIZE = 250;
 
+/**
+ * Request headers for every Shopify storefront fetch. Shopify Markets picks a
+ * market (and converts prices) per request from geo signals that are not
+ * reliable from a server — Madcap's feed came back in AED with a floating
+ * rate, flapping price events every crawl. Nouveau tracks US roasters in USD,
+ * so the localization cookie pins the US market explicitly.
+ */
+export const SHOPIFY_FETCH_HEADERS: Record<string, string> = {
+	accept: "application/json",
+	cookie: "localization=US",
+};
+
 /** One page of the roaster's Shopify products feed (ADR-0001 primary source). */
 export const shopifyProductsUrl = (websiteUrl: string, page = 1): string => {
 	const { origin } = new URL(websiteUrl);

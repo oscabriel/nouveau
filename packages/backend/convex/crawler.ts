@@ -16,6 +16,7 @@ import {
 	htmlExtractionSchema,
 	parseHtmlPage,
 	parseProductsJson,
+	SHOPIFY_FETCH_HEADERS,
 	shopifyProductsUrl,
 	walkFeedPages,
 } from "./extraction";
@@ -107,7 +108,7 @@ interface ProductsJsonInput {
 const fetchPageText = async (url: string): Promise<string | null> => {
 	try {
 		const res = await fetch(url, {
-			headers: { accept: "application/json" },
+			headers: SHOPIFY_FETCH_HEADERS,
 			redirect: "follow",
 		});
 		if (!res.ok) {
@@ -124,7 +125,10 @@ const scrapePageText = async (
 	ctx: ActionCtx,
 	url: string
 ): Promise<string | null> => {
-	const doc = await firecrawl.scrape(ctx, url, { formats: ["rawHtml"] });
+	const doc = await firecrawl.scrape(ctx, url, {
+		formats: ["rawHtml"],
+		headers: SHOPIFY_FETCH_HEADERS,
+	});
 	const text = doc.rawHtml ?? "";
 	return text.length > 0 ? text : null;
 };
