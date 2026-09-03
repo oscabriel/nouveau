@@ -124,6 +124,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@agentmail/convex@0.1.0": "patches/@agentmail%2Fconvex@0.1.0.patch",
+  },
   "catalog": {
     "@types/node": "^26.4.0",
     "@types/react": "^19.2.18",

@@ -15,6 +15,10 @@ import { v } from "convex/values";
 // (matching the redirect URI registered with Google).
 const app = defineApp({
 	env: {
+		// AgentMail reads this component-side (its actions run in the
+		// component's isolated env namespace, which never sees the app's
+		// deployment env vars), so it must be wired through app.use below.
+		AGENTMAIL_API_KEY: v.string(),
 		AUTH_GOOGLE_CLIENT_ID: v.string(),
 		AUTH_GOOGLE_CLIENT_SECRET: v.string(),
 		AUTH_JWKS: v.string(),
@@ -28,9 +32,15 @@ const app = defineApp({
 	httpPrefix: "/api",
 });
 app.use(staticHosting, { httpPrefix: "/" });
-// Email alerts (build order step 4). Credentials are plain deployment env
-// vars (AGENTMAIL_API_KEY, AGENTMAIL_WEBHOOK_SECRET), read component-side.
-app.use(agentmail);
+// Email alerts (build order step 4). Credentials are read component-side,
+// so AGENTMAIL_API_KEY is wired from the app's deployment env into the
+// component's env namespace here; setting it on the deployment alone does
+// nothing for the component.
+app.use(agentmail, {
+	env: {
+		AGENTMAIL_API_KEY: app.env.AGENTMAIL_API_KEY,
+	},
+});
 app.use(aggregate);
 app.use(rateLimiter);
 // Mounts the crawl webhook route at <site>/firecrawl/webhook.

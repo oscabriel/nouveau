@@ -50,5 +50,8 @@
 		"typescript": "catalog:",
 		"ultracite": "7.10.7"
 	},
-	"packageManager": "bun@1.4.0"
+	"packageManager": "bun@1.4.0",
+	"patchedDependencies": {
+		"@agentmail/convex@0.1.0": "patches/@agentmail%2Fconvex@0.1.0.patch"
+	}
 }
