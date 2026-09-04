@@ -1,6 +1,6 @@
 # Nouveau
 
-A drop-alert service for home coffee brewers: watches US specialty roasters' shops, detects the moments that matter, and tells the people who care.
+A drop-alert service with a social layer for home coffee brewers: watches US specialty roasters' shops, catches the moments that matter, and gives coffee people a place to keep and share what they've tried.
 
 ## Language
 
@@ -31,3 +31,15 @@ A drop-alert service for home coffee brewers: watches US specialty roasters' sho
 **Submission**: A user's attempt to add a roaster by pasting its URL. Validated automatically; a submission becomes a roaster when its baseline crawl succeeds, or fails visibly with a retry. _Avoid_: Request, suggestion
 
 **Degraded alert**: An alert sent when structured extraction failed but the raw page shows something changed. Worse data beats no alert.
+
+**Log**: A user's record of trying a lot: the lot, an optional rating, optional personal notes, and when it was logged. The unit of the social layer; logs are public. _Avoid_: Review, check-in, entry
+
+**Rating**: A log's 1–5 star score, half steps allowed. A log can exist without one. _Avoid_: Score, stars (stars are the display, not the value)
+
+**Notes**: The taster's own words on a log. _Avoid_: Tasting notes unqualified — unqualified "tasting notes" means the roaster's (see Roaster notes), and an alert email's summary is neither
+
+**Roaster notes**: Tasting descriptors taken from the roaster's own copy — description prose and tags on the lot's shop page. Only descriptors literally present count; nothing is invented. _Avoid_: AI summary (that's the alert email's generated line)
+
+**Profile**: A user's public page: their logs, ratings and notes, plus the roasters they watch. One per user. _Avoid_: Account (that's the sign-in); Taste profile (that's the deferred matching concept)
+
+**Activity feed**: The public feed of recent logs across all users. _Avoid_: Timeline, social feed; the drop feed (§8.1 of the build spec) is the other feed and stays distinct

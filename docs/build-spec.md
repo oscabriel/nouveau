@@ -1,8 +1,10 @@
 # Nouveau — Locked Build Spec
 
-Synthesized from the wayfinder map ([#1](https://github.com/oscabriel/nouveau/issues/1)) and its closed tickets (#2–#7). Every decision here is settled; open-during-build items are listed in §13. Language per `CONTEXT.md` (Lot, Variant, Drop event, Watch, Watch status, Crawl source, Baseline crawl, Archived lot, Local scene, Submission, Degraded alert, Taste profile).
+Synthesized from the wayfinder map ([#1](https://github.com/oscabriel/nouveau/issues/1)) and its closed tickets (#2–#7). Every decision here is settled; open-during-build items are listed in §13. Language per `CONTEXT.md` (Lot, Variant, Drop event, Watch, Watch status, Crawl source, Baseline crawl, Archived lot, Local scene, Submission, Degraded alert, Taste profile, Log, Rating, Notes, Roaster notes, Profile, Activity feed).
 
 **Deadline: Sept 22, 2026, 12:00 PM PT.** Framing rule that governs every tradeoff below: build a real product usable by real people first; the demo video is written last, from the working product, and fakes nothing.
+
+**Amendment 2026-09-04 (§14, ADR-0002):** the pitch is now "Letterboxd but for coffee" — logs, ratings, public profiles and one activity feed join the drop-alert core. §14 is binding like the rest; the reframe adds scope, it does not reopen the locked sections.
 
 ---
 
@@ -14,7 +16,7 @@ At launch, matching is follow-based: everything from roasters you follow, filter
 
 ## 2. Launch scope
 
-**In:** Bet 1 (personalized crawls + user-added roasters), Bet 4 (drop-rhythm prediction card), Bet 2 (OG images — user explicitly wants it; design is open, §13).
+**In:** Bet 1 (personalized crawls + user-added roasters), Bet 4 (drop-rhythm prediction card), Bet 2 (OG images — user explicitly wants it; design is open, §13), and the social layer (§14, amendment 2026-09-04).
 
 **Out for this window:** Bets 3 (MCP/bot), 5, 6, 7. Bet 6 (watch a specific lot) is the first post-hackathon feature. Roaster claimed-listing page (schema fields survive so the market story survives). Theatrical pipeline-inspector page — replaced by the per-user watch-status panel. Digest ships only if the pipeline is stable by end of Week 2 (§13).
 
@@ -168,8 +170,9 @@ Feed cards link "See the lot" to the roaster's own product page; roaster-page li
 3. Watch + feed layer: watches, aggregate counts, global + personalized feeds, watch-status chips.
 4. Alerts: AgentMail inboxes at signup, email ledger, locked template, mute.
 5. Coverage flows: submission flow + quotas, local scenes.
-6. Bet 4 prediction card; Bet 2 OG images.
-7. Demo video last — written from the working product.
+6. Social layer (§14): logs + ratings, public profile, activity feed; roaster notes on lots (re-scopes #14).
+7. Bet 4 prediction card; Bet 2 OG images.
+8. Demo video last — written from the working product.
 
 ## 13. Open during build (fog carried from the map)
 
@@ -179,4 +182,39 @@ Feed cards link "See the lot" to the roaster's own product page; roaster-page li
 - **Digest design**: conditional on pipeline stability by end of Week 2; per-user inboxes mean digest threads can live in each user's inbox.
 - **Stats surfaces** for silently-stored sold-out / price-rise data.
 - **Taste profile + matching (v1.1)**: fields, structured vs vector matching, explanation copy; embeddings direct-to-OpenAI behind a seam.
+- **Activity feed placement**: home tab vs its own route; whether signed-in home merges the drop feed and the activity feed.
+- **Profile addressing**: URL keyed by the user row id for now; pretty handles/slugs, collision policy and rename flow deferred.
+- **Log editing**: author edit/delete of own logs assumed yes; retention of edited/deleted logs undecided.
 - **Demo arc**: written last, from the working product.
+
+## 14. Amendment 2026-09-04: the social layer (ADR-0002)
+
+Reframe: "Letterboxd but for coffee." The alert core (§1, §5–§8) is unchanged; these additions give the user something that is theirs between drops. Language per `CONTEXT.md`: Log, Rating, Notes, Roaster notes, Profile, Activity feed.
+
+### 14.1 Log
+
+- A log records that the user tried a Lot: the `products` row, optional Rating (1–5 stars, half steps), optional personal Notes (plain text, ~1000 char cap), and the logged-at date.
+- A log cites the Lot, not a Variant: the coffee is the object, the bag size isn't.
+- Lots are durable (never deleted, only archived), so logs of archived lots keep resolving; an archived lot remains loggable.
+- Logs are public in this window; a privacy toggle is deferred.
+- Authors can edit or delete their own logs; nobody else's.
+
+### 14.2 Profile
+
+- One public page per user: their logs newest-first with ratings and notes, plus the roasters they watch.
+- Addressing: keyed by the user row id for now; handles deferred (§13).
+
+### 14.3 Activity feed
+
+- One public feed of recent logs across all users, newest first, a reactive query — the same realtime Convex pattern as the drop feed (§8.1).
+- Distinct from the drop feed; the drop feed is unchanged. Placement is open (§13).
+
+### 14.4 Roaster notes on lots (re-scopes #14)
+
+- Extraction stores what the roaster publishes — `description` (HTML stripped), `tags`, `imageUrl`, and parsed `origin`/`process`/`roastLevel` from tag conventions — on `products`. Products upsert every crawl, so new optional fields fill on the next cycle; no migration.
+- `roasterNotes` is extracted only from the roaster's own text: regex over description prose first ("in the cup we find X", "notes of X", "flavors of X"), null when nothing matches. OpenAI becomes at most a strict extractor over descriptors literally present, and only if regex coverage is poor. **The AI never invents tasting notes.**
+- Product-page metafield roasters (Onyx, Heart) get a later Firecrawl page-scrape pass; not this window.
+
+### 14.5 Out of scope this window
+
+User-follows (watching a roaster stays the only relationship), comments, likes, per-user social feeds, log privacy, DMs, moderation tooling beyond the existing submission rejection.
