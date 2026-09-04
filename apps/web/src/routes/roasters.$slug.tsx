@@ -6,6 +6,7 @@ import { useQuery } from "convex/react";
 
 import { FeedCard } from "@/components/feed-card";
 import Loader from "@/components/loader";
+import { Lots } from "@/components/lots";
 import { StatusChip } from "@/components/status-chip";
 import { WatchButton } from "@/components/watch-button";
 
@@ -68,10 +69,11 @@ const RoasterComponent = () => {
 				</div>
 				{isAuthenticated && <WatchButton roasterId={roaster.id} />}
 			</header>
-			<section>
+			<section className="mb-8">
 				<h2 className="mb-2 font-semibold">Drop history</h2>
 				<DropHistory roasterId={roaster.id} />
 			</section>
+			<Lots roasterId={roaster.id} />
 		</div>
 	);
 };

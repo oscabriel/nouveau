@@ -62,6 +62,15 @@ const SignOutButton = () => {
 			<span className="text-muted-foreground text-sm">
 				{user?.name ?? "Signed in"}
 			</span>
+			{user !== undefined && user !== null && (
+				<Link
+					className="text-sm hover:underline"
+					params={{ userId: user.id }}
+					to="/profile/$userId"
+				>
+					Profile
+				</Link>
+			)}
 			<button
 				className="rounded-md border px-3 py-1.5 text-sm"
 				onClick={() => {
@@ -90,12 +99,14 @@ const Header = () => {
 		? [
 				{ label: "Home", to: "/" },
 				{ label: "Live feed", to: "/feed" },
+				{ label: "Activity", to: "/activity" },
 				{ label: "Roasters", to: "/roasters" },
 				{ label: "Watches", to: "/watches" },
 			]
 		: [
 				{ label: "Home", to: "/" },
 				{ label: "Roasters", to: "/roasters" },
+				{ label: "Activity", to: "/activity" },
 			];
 
 	return (
