@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** none
 - **Started:** 2026-08-29T18:06:09Z
-- **Last updated:** 2026-09-02T21:44:00Z
+- **Last updated:** 2026-09-04T22:25:30Z
 
 ## Log
 
@@ -59,3 +59,15 @@ Shipped the watch and feed layer (build order step 3; commits 250997c–edfcd59)
 ### 2026-09-02 - 400f9a8
 
 Shipped the alert email layer (build order step 4; commits 567b489–400f9a8). Mounted @agentmail/convex 0.1.0 in `convex.config.ts`; every Drop event now fans out inside the same transaction that emitted it to that roaster's unmuted watchers: one notifications-ledger row per (user, event) doubles as the one-email-per-event dedup guard (§5), and the email is enqueued from the mutation via the component's durable send (workpool retries) (`convex/notifications.ts`, fanout wired at all three event-emission sites in `convex/crawlSources.ts`). Emails render the locked §8.2 template as plain text — subject variants "New at / Back at / Price drop at", lead line, OpenAI tasting-note slot (renders `aiSummary` when present; generation deferred), grams · price · "See the lot" linking the roaster's own product page, roaster page link, and a mute footer (alert-settings link omitted until that stub exists). Per-user AgentMail inboxes (§8.3): signup schedules inbox provisioning from the auth createUser callback, the web header backfills users who predate the feature via a new `ensureInbox` mutation (`convex/users.ts`, `apps/web/src/components/header.tsx`, `agentmailInbox` on the users row), and alerts are sent from the user's own inbox to their email. The personalized feed's delivery footer now reads the component's reactive pending → sent → delivered lifecycle through the stored outboundId (bounced/complained/rejected map to failed). Mounted the AgentMail Svix webhook at `/api/agentmail/webhook` (`convex/http.ts`); it serves 500s on dev until `AGENTMAIL_WEBHOOK_SECRET` is set. 9 new convex-test cases (template, fanout, mute/inbox/dedup/type-gating, live status hydration) bring the suite to 78, with the component registered under its nested workpool paths. Pushed to dev `cool-giraffe-632` (feed query and webhook route verified live); prod still awaits the deploy. Components: @agentmail/convex. Convex features: HTTP actions, scheduled functions.
+
+### 2026-09-03 - d4cf616
+
+Debugged the alert inbox path on dev: `provisionInbox` died with "Couldn't resolve agentmail.lib.createInbox". Probing the deployed component showed public functions resolved while every `internal*` one didn't — Convex never exposes a component's internal functions to the parent app, and @agentmail/convex 0.1.0 built its whole client API on internal functions. Patched the package via bun patchedDependencies: the seven parent-called functions (createInbox, listInboxes, getInboxRemote, deleteInbox, listThreads, getThread, getMessage) become public actions, and the AGENTMAIL_* env vars are declared in `defineComponent` so the mount accepts them — the component reads its own namespaced env, so a deployment-level var alone is invisible to it. convex-test doesn't model that visibility boundary, so the 78-test suite stayed green until the live push caught it. The run then reached the AgentMail API and failed with 403 missing_permission: the dev key lacks inbox_create (broader key tracked on #13).
+
+### 2026-09-04 - af813f0
+
+First production deploy, live at https://artful-chameleon-402.convex.site. Added `scripts/deploy-prod.sh`, an eight-stage wizard that walks the human through the steps only they can do — a prod Google OAuth client, copying the per-account sponsor keys from dev, generating a fresh RS256 auth key pair, SITE_URL, `bun run deploy`, seeding, the prod AgentMail webhook, and a sign-in check — with every prod-affecting command announcing its target behind a confirm gate. Verified after: site 200, an unsigned webhook POST rejected 401, all 20 roasters seeded with 19 active after the baseline crawl (3,543 products), and the first real user signed in with Google and received their AgentMail inbox.
+
+### 2026-09-04 - cdcb679
+
+Fixed the first prod-found bug (issue #16): every fresh signup fired two concurrent `provisionInbox` actions — one scheduled by `createUser` at signup, one by `ensureInbox` at sign-in — and both passed the re-check inside the action, so the loser died with an AgentMail 403 on every signup. Inbox provisioning now serializes through a claim mutation: a claim timestamp on the users row decides the winner inside a transaction (mutations serialize; actions don't), the claim clears on success, releases on failure so the next sign-in retries immediately, and a 5-minute TTL retakes claims from crashed actions. Four new convex-test cases cover the race, claim expiry, failure release, and the already-provisioned no-op (suite at 82). Deployed to prod the same day; the fix removes the double-schedule that produced the 403, and no fresh signup has exercised it there yet.
