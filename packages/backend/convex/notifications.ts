@@ -16,12 +16,12 @@ import {
 	env,
 	internalAction,
 	internalMutation,
-	internalQuery,
 	mutation,
 } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import {
 	ALERT_WORTHY_TYPES,
+	INBOX_CLAIM_TTL_MS,
 	MAX_ALERT_RECIPIENTS_PER_EVENT,
 } from "./constants";
 import { requireUserId } from "./identity";
@@ -220,35 +220,58 @@ export const fanoutEvent = internalMutation({
 	returns: v.null(),
 });
 
-/** Inbox + name needed by the provisioning action (actions have no ctx.db). */
-export const inboxCandidate = internalQuery({
+/**
+ * Atomically claim the right to provision this user's inbox. createUser and
+ * ensureInbox can both schedule provisionInbox for a fresh signup, and
+ * actions don't serialize, so the exclusivity check lives here in a
+ * mutation: the transaction system orders concurrent claims and only the
+ * winner returns won: true.
+ *
+ * A claim older than INBOX_CLAIM_TTL_MS counts as stale (its action crashed
+ * before the release mutation) and can be retaken.
+ */
+export const claimInboxProvisioning = internalMutation({
 	args: { userId: v.id("users") },
 	handler: async (ctx, args) => {
 		const user = await ctx.db.get(args.userId);
-		if (user === null) {
-			return null;
+		if (user === null || user.agentmailInbox !== undefined) {
+			return { name: undefined, won: false };
 		}
-		return { agentmailInbox: user.agentmailInbox, name: user.name };
+		const now = Date.now();
+		const claimedAt = user.agentmailInboxClaimedAt;
+		if (claimedAt !== undefined && now - claimedAt < INBOX_CLAIM_TTL_MS) {
+			return { name: undefined, won: false };
+		}
+		await ctx.db.patch(args.userId, { agentmailInboxClaimedAt: now });
+		return { name: user.name, won: true };
 	},
-	returns: v.union(
-		v.null(),
-		v.object({
-			agentmailInbox: v.optional(
-				v.object({ address: v.string(), inboxId: v.string() })
-			),
-			name: v.optional(v.string()),
-		})
-	),
+	returns: v.object({
+		name: v.optional(v.string()),
+		won: v.boolean(),
+	}),
 });
 
-/** Store a provisioned inbox on the user row. */
+/** Give up an unfulfilled provisioning claim so a retry can take it. */
+export const releaseInboxProvisioningClaim = internalMutation({
+	args: { userId: v.id("users") },
+	handler: async (ctx, args) => {
+		await ctx.db.patch(args.userId, { agentmailInboxClaimedAt: undefined });
+		return null;
+	},
+	returns: v.null(),
+});
+
+/** Store a provisioned inbox on the user row and clear the claim. */
 export const setAgentmailInbox = internalMutation({
 	args: {
 		inbox: v.object({ address: v.string(), inboxId: v.string() }),
 		userId: v.id("users"),
 	},
 	handler: async (ctx, args) => {
-		await ctx.db.patch(args.userId, { agentmailInbox: args.inbox });
+		await ctx.db.patch(args.userId, {
+			agentmailInbox: args.inbox,
+			agentmailInboxClaimedAt: undefined,
+		});
 		return null;
 	},
 	returns: v.null(),
@@ -256,36 +279,47 @@ export const setAgentmailInbox = internalMutation({
 
 /**
  * Create the user's AgentMail inbox (§8.3). Scheduled by createUser at
- * signup and by ensureInbox for users who predate the feature. Re-checks the
- * user so a repeated schedule is a no-op once a first run has completed;
- * two concurrent runs can still both create, which only wastes an inbox.
+ * signup and by ensureInbox for users who predate the feature. The two
+ * schedules race on fresh signups, so a claim mutation decides which run
+ * actually calls AgentMail; the loser returns without doing anything.
  */
 export const provisionInbox = internalAction({
 	args: { userId: v.id("users") },
 	handler: async (ctx, args) => {
-		const user = await ctx.runQuery(internal.notifications.inboxCandidate, {
-			userId: args.userId,
-		});
-		if (user === null || user.agentmailInbox !== undefined) {
+		const claim = await ctx.runMutation(
+			internal.notifications.claimInboxProvisioning,
+			{ userId: args.userId }
+		);
+		if (!claim.won) {
 			return null;
 		}
-		const inbox: unknown = await agentmail.createInbox(
-			ctx,
-			user.name === undefined ? {} : { displayName: user.name }
-		);
-		// createInbox returns the AgentMail inbox object (snake_case fields).
-		const raw = inbox as { email?: unknown; inbox_id?: unknown } | null;
-		const inboxId = typeof raw?.inbox_id === "string" ? raw.inbox_id : null;
-		const address = typeof raw?.email === "string" ? raw.email : null;
-		if (inboxId === null || address === null) {
-			throw new Error(
-				`AgentMail inbox response missing inbox_id/email: ${JSON.stringify(inbox)}`
+		try {
+			const inbox: unknown = await agentmail.createInbox(
+				ctx,
+				claim.name === undefined ? {} : { displayName: claim.name }
 			);
+			// createInbox returns the AgentMail inbox object (snake_case fields).
+			const raw = inbox as { email?: unknown; inbox_id?: unknown } | null;
+			const inboxId = typeof raw?.inbox_id === "string" ? raw.inbox_id : null;
+			const address = typeof raw?.email === "string" ? raw.email : null;
+			if (inboxId === null || address === null) {
+				throw new Error(
+					`AgentMail inbox response missing inbox_id/email: ${JSON.stringify(inbox)}`
+				);
+			}
+			await ctx.runMutation(internal.notifications.setAgentmailInbox, {
+				inbox: { address, inboxId },
+				userId: args.userId,
+			});
+		} catch (error) {
+			// Release the claim so the next signup or sign-in can retry
+			// immediately instead of waiting out the claim TTL.
+			await ctx.runMutation(
+				internal.notifications.releaseInboxProvisioningClaim,
+				{ userId: args.userId }
+			);
+			throw error;
 		}
-		await ctx.runMutation(internal.notifications.setAgentmailInbox, {
-			inbox: { address, inboxId },
-			userId: args.userId,
-		});
 		return null;
 	},
 	returns: v.null(),
@@ -293,7 +327,8 @@ export const provisionInbox = internalAction({
 
 /**
  * Public backfill entry: signed-in users whose row predates step 4 get an
- * inbox provisioned on next sign-in. Idempotent; the action re-checks.
+ * inbox provisioned on next sign-in. Idempotent: the provisioning action's
+ * claim mutation makes a repeated or concurrent schedule a no-op.
  */
 export const ensureInbox = mutation({
 	args: {},

@@ -49,3 +49,8 @@ export const MAX_WATCHES_PER_USER = 200;
 // Watchers alerted per Drop event, capping the fanout's reads and writes
 // (one ledger row + one email enqueue per recipient) inside one transaction.
 export const MAX_ALERT_RECIPIENTS_PER_EVENT = 200;
+
+// How long an inbox-provisioning claim stays valid. Covers an action that
+// crashes before reaching its release mutation; the normal paths clear the
+// claim on both success and failure.
+export const INBOX_CLAIM_TTL_MS = 5 * 60_000;

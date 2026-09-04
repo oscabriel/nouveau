@@ -128,6 +128,10 @@ export default defineSchema({
 		agentmailInbox: v.optional(
 			v.object({ address: v.string(), inboxId: v.string() })
 		),
+		// Claim stamp for inbox provisioning: claimInboxProvisioning sets it so
+		// concurrent scheduled provisions don't both call AgentMail (the prod
+		// 403 bug); expired claims are treated as stale and can be retaken.
+		agentmailInboxClaimedAt: v.optional(v.number()),
 		email: v.optional(v.string()),
 		emailVerified: v.optional(v.boolean()),
 		imageUrl: v.optional(v.string()),

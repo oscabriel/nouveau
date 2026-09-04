@@ -32,8 +32,9 @@ export const createUser = internalMutation({
 			name: args.profile.name,
 			providerAccountId: args.providerAccountId,
 		});
-		// Provision the per-user AgentMail alert inbox (§8.3). At-least-once:
-		// the provisioning action re-checks the user before creating anything.
+		// Provision the per-user AgentMail alert inbox (§8.3). createUser and
+		// ensureInbox both schedule this on first sign-in; the action's claim
+		// mutation makes the duplicate schedule a no-op.
 		await ctx.scheduler.runAfter(0, internal.notifications.provisionInbox, {
 			userId,
 		});

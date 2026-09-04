@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { INBOX_CLAIM_TTL_MS } from "./constants";
 import { alertBody, alertSubject, formatPrice } from "./notifications";
 import schema from "./schema";
 import { asUser } from "./test.helpers";
@@ -277,5 +278,128 @@ describe("alert fanout", () => {
 			ctx.db.query("notifications").collect()
 		);
 		expect(rows).toHaveLength(0);
+	});
+});
+
+interface ProvisionFixture {
+	t: ReturnType<typeof convexTest>;
+	userId: Id<"users">;
+}
+
+const inboxResponse = {
+	email: "provisioned@agentmail.to",
+	inbox_id: "inb_provisioned",
+};
+
+// A user with no inbox yet: exactly the row a fresh signup gets, which is
+// where createUser and ensureInbox both schedule provisionInbox.
+const setupProvisioning = async (): Promise<ProvisionFixture> => {
+	const t = convexTest(schema, modules);
+	t.registerComponent("agentmail", agentmailTest.schema, agentmailModules);
+	registerWorkpool(t, "agentmail/sendPool");
+	registerWorkpool(t, "agentmail/callbackPool");
+	const userId = await t.run((ctx) =>
+		ctx.db.insert("users", { providerAccountId: "google-123" })
+	);
+	return { t, userId };
+};
+
+describe("inbox provisioning race", () => {
+	beforeEach(() => {
+		process.env.AGENTMAIL_API_KEY = "test-key";
+	});
+
+	afterEach(() => {
+		delete process.env.AGENTMAIL_API_KEY;
+		vi.restoreAllMocks();
+	});
+
+	test("two concurrent provisions call AgentMail once and clear the claim", async () => {
+		const fetchSpy = vi.fn().mockResolvedValue(jsonResponse(inboxResponse));
+		vi.stubGlobal("fetch", fetchSpy);
+		const { t, userId } = await setupProvisioning();
+
+		await Promise.all([
+			t.action(internal.notifications.provisionInbox, { userId }),
+			t.action(internal.notifications.provisionInbox, { userId }),
+		]);
+
+		expect(fetchSpy).toHaveBeenCalledTimes(1);
+		const user = await t.run((ctx) => ctx.db.get(userId));
+		expect(user?.agentmailInbox).toMatchObject({
+			address: inboxResponse.email,
+			inboxId: inboxResponse.inbox_id,
+		});
+		expect(user?.agentmailInboxClaimedAt).toBeUndefined();
+	});
+
+	test("a live claim blocks provisioning; an expired claim lets a retry through", async () => {
+		const fetchSpy = vi.fn().mockResolvedValue(jsonResponse(inboxResponse));
+		vi.stubGlobal("fetch", fetchSpy);
+		const { t, userId } = await setupProvisioning();
+
+		// Someone else claimed a moment ago: this run must stand down.
+		await t.run(async (ctx) => {
+			await ctx.db.patch(userId, {
+				agentmailInboxClaimedAt: Date.now() - (INBOX_CLAIM_TTL_MS - 1000),
+			});
+		});
+		await t.action(internal.notifications.provisionInbox, { userId });
+		expect(fetchSpy).not.toHaveBeenCalled();
+
+		// The claim is stale (its action died before releasing): retake it.
+		await t.run(async (ctx) => {
+			await ctx.db.patch(userId, {
+				agentmailInboxClaimedAt: Date.now() - (INBOX_CLAIM_TTL_MS + 1000),
+			});
+		});
+		await t.action(internal.notifications.provisionInbox, { userId });
+		expect(fetchSpy).toHaveBeenCalledTimes(1);
+		const user = await t.run((ctx) => ctx.db.get(userId));
+		expect(user?.agentmailInbox).toMatchObject({
+			inboxId: inboxResponse.inbox_id,
+		});
+	});
+
+	test("a failed AgentMail call releases the claim so a retry can win", async () => {
+		const fetchSpy = vi.fn().mockRejectedValue(new Error("boom"));
+		vi.stubGlobal("fetch", fetchSpy);
+		const { t, userId } = await setupProvisioning();
+
+		await expect(
+			t.action(internal.notifications.provisionInbox, { userId })
+		).rejects.toThrow("boom");
+		let user = await t.run((ctx) => ctx.db.get(userId));
+		expect(user?.agentmailInbox).toBeUndefined();
+		expect(user?.agentmailInboxClaimedAt).toBeUndefined();
+
+		// The released claim means the retry is not gated on the TTL.
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(jsonResponse(inboxResponse))
+		);
+		await t.action(internal.notifications.provisionInbox, { userId });
+		user = await t.run((ctx) => ctx.db.get(userId));
+		expect(user?.agentmailInbox).toMatchObject({
+			inboxId: inboxResponse.inbox_id,
+		});
+	});
+
+	test("an already-provisioned user never calls AgentMail again", async () => {
+		const fetchSpy = vi.fn().mockResolvedValue(jsonResponse(inboxResponse));
+		vi.stubGlobal("fetch", fetchSpy);
+		const { t, userId } = await setupProvisioning();
+		await t.run(async (ctx) => {
+			await ctx.db.patch(userId, {
+				agentmailInbox: {
+					address: "existing@agentmail.to",
+					inboxId: "inb_existing",
+				},
+			});
+		});
+
+		await t.action(internal.notifications.provisionInbox, { userId });
+
+		expect(fetchSpy).not.toHaveBeenCalled();
 	});
 });
