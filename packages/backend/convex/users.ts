@@ -58,6 +58,18 @@ export const getCurrentUser = query({
 		if (user === null) {
 			return null;
 		}
-		return { imageUrl: user.imageUrl, name: user.name };
+		return {
+			id: user._id,
+			...(user.imageUrl !== undefined && { imageUrl: user.imageUrl }),
+			...(user.name !== undefined && { name: user.name }),
+		};
 	},
+	returns: v.union(
+		v.null(),
+		v.object({
+			id: v.id("users"),
+			imageUrl: v.optional(v.string()),
+			name: v.optional(v.string()),
+		})
+	),
 });

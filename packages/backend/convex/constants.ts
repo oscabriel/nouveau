@@ -54,3 +54,10 @@ export const MAX_ALERT_RECIPIENTS_PER_EVENT = 200;
 // crashes before reaching its release mutation; the normal paths clear the
 // claim on both success and failure.
 export const INBOX_CLAIM_TTL_MS = 5 * 60_000;
+
+// Logs returned by the global activity feed (build spec §14.3).
+export const LOG_FEED_LIMIT = 30;
+
+// Logs rendered on a public profile (§14.2); the profile is a highlight, not
+// an archive dump.
+export const MAX_PROFILE_LOGS = 50;

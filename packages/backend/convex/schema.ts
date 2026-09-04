@@ -54,6 +54,20 @@ export default defineSchema({
 		userId: v.id("users"),
 	}).index("by_user_id", ["userId"]),
 
+	// A user's record of trying a lot (build spec §14.1, ADR-0002): the
+	// durable social object. Logs are public and cite the lot, never a
+	// variant; archived lots stay loggable because lots are never deleted.
+	logs: defineTable({
+		loggedAt: v.number(),
+		notes: v.optional(v.string()),
+		productId: v.id("products"),
+		rating: v.optional(v.number()),
+		userId: v.id("users"),
+	})
+		.index("by_logged_at", ["loggedAt"])
+		.index("by_user_and_logged_at", ["userId", "loggedAt"])
+		.index("by_user_and_product", ["userId", "productId"]),
+
 	notifications: defineTable({
 		deliveryStatus: v.union(
 			v.literal("pending"),
