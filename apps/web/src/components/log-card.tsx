@@ -1,8 +1,8 @@
 import { api } from "@nouveau/backend/convex/_generated/api";
-import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
 import { Button } from "@nouveau/ui/components/button";
 import { Link } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -11,20 +11,10 @@ import { LogForm } from "@/components/log-form";
 import { Stars } from "@/components/stars";
 import { relativeTime } from "@/lib/format";
 
-/** One hydrated log, as returned by recentLogs and profile (spec §14). */
-export interface LogCardData {
-	loggedAt: number;
-	logId: Id<"logs">;
-	lot: { handle: string; id: Id<"products">; name: string };
-	notes: string | null;
-	rating: number | null;
-	roaster: { name: string; slug: string };
-	user: {
-		id: Id<"users">;
-		imageUrl?: string;
-		name?: string;
-	};
-}
+/** One hydrated log, exactly as recentLogs and profile return it (spec §14). */
+export type LogCardData = FunctionReturnType<
+	typeof api.logs.recentLogs
+>[number];
 
 /**
  * One log row. The activity feed shows the taster (showUser); the profile
@@ -41,9 +31,11 @@ export const LogCard = ({
 	showUser?: boolean;
 }) => {
 	const [editing, setEditing] = useState(false);
+	const [deleting, setDeleting] = useState(false);
 	const remove = useMutation(api.logs.deleteLog);
 
 	const deleteLog = async () => {
+		setDeleting(true);
 		try {
 			await remove({ logId: log.logId });
 			toast.success("Log deleted.");
@@ -51,6 +43,7 @@ export const LogCard = ({
 			toast.error(
 				error instanceof Error ? error.message : "Something went wrong."
 			);
+			setDeleting(false);
 		}
 	};
 
@@ -68,15 +61,23 @@ export const LogCard = ({
 						</Link>
 					)}
 					<span className="text-muted-foreground text-sm">tried</span>
-					<Link
+					<a
 						className="truncate font-medium hover:underline"
-						params={{ slug: log.roaster.slug }}
-						to="/roasters/$slug"
+						href={log.lot.url}
+						rel="noopener noreferrer"
+						target="_blank"
 					>
 						{log.lot.name}
-					</Link>
+					</a>
 					<span className="text-muted-foreground truncate text-sm">
-						from {log.roaster.name}
+						from{" "}
+						<Link
+							className="hover:underline"
+							params={{ slug: log.roaster.slug }}
+							to="/roasters/$slug"
+						>
+							{log.roaster.name}
+						</Link>
 					</span>
 				</div>
 				<time
@@ -103,6 +104,7 @@ export const LogCard = ({
 					</Button>
 					<Button
 						aria-label="Delete log"
+						disabled={deleting}
 						onClick={() => {
 							deleteLog();
 						}}

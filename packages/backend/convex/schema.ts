@@ -65,8 +65,7 @@ export default defineSchema({
 		userId: v.id("users"),
 	})
 		.index("by_logged_at", ["loggedAt"])
-		.index("by_user_and_logged_at", ["userId", "loggedAt"])
-		.index("by_user_and_product", ["userId", "productId"]),
+		.index("by_user_and_logged_at", ["userId", "loggedAt"]),
 
 	notifications: defineTable({
 		deliveryStatus: v.union(
@@ -101,7 +100,14 @@ export default defineSchema({
 		roasterId: v.id("roasters"),
 		// Absent from 3 consecutive successful crawls -> archived.
 		status: v.union(v.literal("current"), v.literal("archived")),
-	}).index("by_roaster_and_external_id", ["roasterId", "externalId"]),
+	})
+		.index("by_roaster_and_external_id", ["roasterId", "externalId"])
+		// Lot discovery on the roaster page (§14.1): a taster finds the lot they
+		// tried by name; big catalogs (Sey ~887 lots) make paging alone useless.
+		.searchIndex("search_name", {
+			filterFields: ["roasterId"],
+			searchField: "name",
+		}),
 
 	rawCaptures: defineTable({
 		capturedAt: v.number(),

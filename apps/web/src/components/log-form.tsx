@@ -1,6 +1,7 @@
 import { api } from "@nouveau/backend/convex/_generated/api";
 import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
 import { Button } from "@nouveau/ui/components/button";
+import { Checkbox } from "@nouveau/ui/components/checkbox";
 import { Label } from "@nouveau/ui/components/label";
 import { Textarea } from "@nouveau/ui/components/textarea";
 import { useMutation } from "convex/react";
@@ -8,6 +9,9 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { Stars } from "@/components/stars";
+
+const NOTES_MAX_LENGTH = 1000;
+const DEFAULT_RATING = 3;
 
 /**
  * Create or edit a Log (build spec §14.1). Inline rather than a modal — the
@@ -30,14 +34,17 @@ export const LogForm = ({
 	const [rateIt, setRateIt] = useState(
 		existing?.rating !== undefined && existing.rating !== null
 	);
-	const [rating, setRating] = useState(existing?.rating ?? 3);
+	const [rating, setRating] = useState(existing?.rating ?? DEFAULT_RATING);
 	const [notes, setNotes] = useState(existing?.notes ?? "");
+	const [saving, setSaving] = useState(false);
 
 	const create = useMutation(api.logs.createLog);
 	const update = useMutation(api.logs.updateLog);
+	const checkboxId = `rate-${existing?.logId ?? lotId}`;
 
 	const save = async () => {
 		const trimmed = notes.trim();
+		setSaving(true);
 		try {
 			if (existing === undefined) {
 				await create({
@@ -59,21 +66,21 @@ export const LogForm = ({
 			toast.error(
 				error instanceof Error ? error.message : "Something went wrong."
 			);
+			setSaving(false);
 		}
 	};
 
 	return (
 		<div className="my-2 flex flex-col gap-3 rounded-md border p-3">
 			<div className="flex items-center gap-3">
-				<input
+				<Checkbox
 					checked={rateIt}
-					id={`rate-${existing?.logId ?? lotId}`}
-					onChange={(event) => {
-						setRateIt(event.target.checked);
+					id={checkboxId}
+					onCheckedChange={(checked) => {
+						setRateIt(checked);
 					}}
-					type="checkbox"
 				/>
-				<Label htmlFor={`rate-${existing?.logId ?? lotId}`}>Rate it</Label>
+				<Label htmlFor={checkboxId}>Rate it</Label>
 				{rateIt && (
 					<div className="flex items-center gap-2">
 						<input
@@ -96,7 +103,7 @@ export const LogForm = ({
 			</div>
 			<Textarea
 				aria-label="Notes"
-				maxLength={1000}
+				maxLength={NOTES_MAX_LENGTH}
 				onChange={(event) => {
 					setNotes(event.target.value);
 				}}
@@ -106,6 +113,7 @@ export const LogForm = ({
 			/>
 			<div className="flex gap-2">
 				<Button
+					disabled={saving}
 					onClick={() => {
 						save();
 					}}
@@ -113,7 +121,7 @@ export const LogForm = ({
 				>
 					{existing === undefined ? "Save log" : "Update log"}
 				</Button>
-				<Button onClick={onDone} size="sm" variant="ghost">
+				<Button disabled={saving} onClick={onDone} size="sm" variant="ghost">
 					Cancel
 				</Button>
 			</div>

@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { LOG_FEED_LIMIT } from "./constants";
+import { LOG_FEED_LIMIT, MAX_PROFILE_LOGS } from "./constants";
 import { isValidRating } from "./logs";
 import schema from "./schema";
 import { asUser } from "./test.helpers";
@@ -98,7 +98,10 @@ describe("logs", () => {
 		const feed = await t.query(api.logs.recentLogs, {});
 		expect(feed).toHaveLength(1);
 		expect(feed[0]).toMatchObject({
-			lot: { handle: "mullugeta", name: "Ethiopia Mullugeta Muntasha" },
+			lot: {
+				name: "Ethiopia Mullugeta Muntasha",
+				url: "https://sey.example.com/products/mullugeta",
+			},
 			notes: "Jasmine and apricot, better at 1:16.",
 			rating: 4.5,
 			roaster: { name: "Sey", slug: "sey" },
@@ -272,5 +275,84 @@ describe("logs", () => {
 		const other = await t.query(api.logs.profile, { userId: userB });
 		expect(other?.user).toMatchObject({ name: "Taster Two" });
 		expect(other?.logs).toHaveLength(0);
+		expect(other?.logsTruncated).toBe(false);
+	});
+
+	test("profile resolves a malformed or unknown id to null, not an error", async () => {
+		const { t, userId } = await setup();
+		expect(await t.query(api.logs.profile, { userId: "not-an-id" })).toBeNull();
+		const deleted = await t.run(async (ctx) => {
+			const ghost = await ctx.db.insert("users", {
+				providerAccountId: "google-ghost",
+			});
+			await ctx.db.delete("users", ghost);
+			return ghost;
+		});
+		expect(await t.query(api.logs.profile, { userId: deleted })).toBeNull();
+		expect(await t.query(api.logs.profile, { userId })).not.toBeNull();
+	});
+
+	test("profile caps logs and says when it did", async () => {
+		const { lotId, t, userId } = await setup();
+		await t.run(async (ctx) => {
+			for (let i = 0; i <= MAX_PROFILE_LOGS; i += 1) {
+				// oxlint-disable-next-line no-await-in-loop -- seeding, order irrelevant
+				await ctx.db.insert("logs", {
+					loggedAt: i,
+					productId: lotId,
+					userId,
+				});
+			}
+		});
+		const profile = await t.query(api.logs.profile, { userId });
+		expect(profile?.logs).toHaveLength(MAX_PROFILE_LOGS);
+		expect(profile?.logsTruncated).toBe(true);
+	});
+
+	test("lot search finds a lot by name within one roaster only", async () => {
+		const { roasterId, t } = await setup();
+		const otherRoaster = await t.run(async (ctx) => {
+			const roasterB = await ctx.db.insert("roasters", {
+				city: "Portland",
+				claimed: false,
+				domain: "heart.example.com",
+				name: "Heart",
+				productPageUrl: "https://heart.example.com/coffee",
+				slug: "heart",
+				source: "curated",
+				state: "OR",
+				status: "active",
+				websiteUrl: "https://heart.example.com",
+			});
+			await ctx.db.insert("products", {
+				externalId: "h1",
+				firstSeenAt: 1000,
+				handle: "heart-ethiopia",
+				lastSeenAt: 1000,
+				missedCrawls: 0,
+				name: "Ethiopia Heart Blend",
+				roasterId: roasterB,
+				status: "current",
+			});
+			return roasterB;
+		});
+
+		const hits = await t.query(api.roasters.searchLots, {
+			roasterId,
+			term: "ethiopia",
+		});
+		expect(hits.map((lot) => lot.name)).toEqual([
+			"Ethiopia Mullugeta Muntasha",
+		]);
+
+		const otherHits = await t.query(api.roasters.searchLots, {
+			roasterId: otherRoaster,
+			term: "ethiopia",
+		});
+		expect(otherHits.map((lot) => lot.name)).toEqual(["Ethiopia Heart Blend"]);
+
+		expect(
+			await t.query(api.roasters.searchLots, { roasterId, term: "   " })
+		).toEqual([]);
 	});
 });

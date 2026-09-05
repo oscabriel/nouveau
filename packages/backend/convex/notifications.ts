@@ -293,33 +293,38 @@ export const provisionInbox = internalAction({
 		if (!claim.won) {
 			return null;
 		}
+		let inbox: unknown;
 		try {
-			const inbox: unknown = await agentmail.createInbox(
+			inbox = await agentmail.createInbox(
 				ctx,
 				claim.name === undefined ? {} : { displayName: claim.name }
 			);
-			// createInbox returns the AgentMail inbox object (snake_case fields).
-			const raw = inbox as { email?: unknown; inbox_id?: unknown } | null;
-			const inboxId = typeof raw?.inbox_id === "string" ? raw.inbox_id : null;
-			const address = typeof raw?.email === "string" ? raw.email : null;
-			if (inboxId === null || address === null) {
-				throw new Error(
-					`AgentMail inbox response missing inbox_id/email: ${JSON.stringify(inbox)}`
-				);
-			}
-			await ctx.runMutation(internal.notifications.setAgentmailInbox, {
-				inbox: { address, inboxId },
-				userId: args.userId,
-			});
 		} catch (error) {
-			// Release the claim so the next signup or sign-in can retry
-			// immediately instead of waiting out the claim TTL.
+			// The remote call failed, so no inbox exists: release the claim and
+			// the next signup or sign-in retries immediately instead of waiting
+			// out the TTL.
 			await ctx.runMutation(
 				internal.notifications.releaseInboxProvisioningClaim,
 				{ userId: args.userId }
 			);
 			throw error;
 		}
+		// From here the inbox exists at AgentMail. A failure below is left to
+		// surface with the claim intact: releasing would only make the retry
+		// create a second inbox we can't tie back to this one.
+		// createInbox returns the AgentMail inbox object (snake_case fields).
+		const raw = inbox as { email?: unknown; inbox_id?: unknown } | null;
+		const inboxId = typeof raw?.inbox_id === "string" ? raw.inbox_id : null;
+		const address = typeof raw?.email === "string" ? raw.email : null;
+		if (inboxId === null || address === null) {
+			throw new Error(
+				`AgentMail inbox response missing inbox_id/email: ${JSON.stringify(inbox)}`
+			);
+		}
+		await ctx.runMutation(internal.notifications.setAgentmailInbox, {
+			inbox: { address, inboxId },
+			userId: args.userId,
+		});
 		return null;
 	},
 	returns: v.null(),

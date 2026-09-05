@@ -2,6 +2,7 @@
 // rate them in 1–5 half steps, and keep their own notes. Logs are public and
 // surface on one global activity feed and on per-user profiles.
 
+import type { Infer } from "convex/values";
 import { v } from "convex/values";
 
 import type { Doc } from "./_generated/dataModel";
@@ -13,6 +14,7 @@ import {
 	MAX_WATCHES_PER_USER,
 } from "./constants";
 import { requireUserId } from "./identity";
+import { roasterCardValidator } from "./roasters";
 
 /** Ratings are 1–5 in half steps (spec §14.1); anything else is rejected. */
 export const isValidRating = (rating: number): boolean =>
@@ -20,63 +22,38 @@ export const isValidRating = (rating: number): boolean =>
 
 const NOTES_MAX_LENGTH = 1000;
 
-// Same shape as roasters.ts's roasterCardValidator, declared locally: that
-// validator sits inside the roasters ↔ watches import cycle (via
-// followerCounts), and importing it here changes module load order enough to
-// make it resolve undefined at registration time (the deploy-blocking
-// "undefined validator" trap). Duplicate the five fields, don't import them.
-const roasterCard = {
-	city: v.string(),
-	id: v.id("roasters"),
-	name: v.string(),
-	slug: v.string(),
-	state: v.string(),
-};
-
 const checkInput = (
 	rating: number | undefined,
-	notes: string | null | undefined
+	notes: string | undefined
 ): void => {
-	if (rating !== undefined && rating !== null && !isValidRating(rating)) {
+	if (rating !== undefined && !isValidRating(rating)) {
 		throw new Error("Rating must be 1–5 in half steps");
 	}
-	if (typeof notes === "string" && notes.length > NOTES_MAX_LENGTH) {
+	if (notes !== undefined && notes.length > NOTES_MAX_LENGTH) {
 		throw new Error(`Notes are capped at ${NOTES_MAX_LENGTH} characters`);
 	}
 };
 
+const tasterValidator = v.object({
+	id: v.id("users"),
+	imageUrl: v.optional(v.string()),
+	name: v.optional(v.string()),
+});
+
 /** A hydrated log card: everything the activity feed and profile render. */
-const logCard = {
+const logCardValidator = v.object({
 	logId: v.id("logs"),
 	loggedAt: v.number(),
-	lot: v.object({
-		handle: v.string(),
-		id: v.id("products"),
-		name: v.string(),
-	}),
+	// url is the roaster's own product page, the same link the drop feed's
+	// "See the lot" uses (feed.ts).
+	lot: v.object({ id: v.id("products"), name: v.string(), url: v.string() }),
 	notes: v.union(v.string(), v.null()),
 	rating: v.union(v.number(), v.null()),
 	roaster: v.object({ name: v.string(), slug: v.string() }),
-	user: v.object({
-		id: v.id("users"),
-		imageUrl: v.optional(v.string()),
-		name: v.optional(v.string()),
-	}),
-};
+	user: tasterValidator,
+});
 
-interface LogCard {
-	loggedAt: number;
-	logId: Doc<"logs">["_id"];
-	lot: { handle: string; id: Doc<"products">["_id"]; name: string };
-	notes: string | null;
-	rating: number | null;
-	roaster: { name: string; slug: string };
-	user: {
-		id: Doc<"users">["_id"];
-		imageUrl?: string;
-		name?: string;
-	};
-}
+type LogCard = Infer<typeof logCardValidator>;
 
 /** Hydrate a log into a card; null when its lot, roaster or user vanished. */
 const hydrateLog = async (
@@ -98,18 +75,14 @@ const hydrateLog = async (
 		logId: log._id,
 		loggedAt: log.loggedAt,
 		lot: {
-			handle: product.handle,
 			id: product._id,
 			name: product.name,
+			url: `${roaster.websiteUrl}/products/${product.handle}`,
 		},
 		notes: log.notes ?? null,
 		rating: log.rating ?? null,
 		roaster: { name: roaster.name, slug: roaster.slug },
-		user: {
-			id: user._id,
-			imageUrl: user.imageUrl,
-			name: user.name,
-		},
+		user: { id: user._id, imageUrl: user.imageUrl, name: user.name },
 	};
 };
 
@@ -135,25 +108,34 @@ export const recentLogs = query({
 			.take(LOG_FEED_LIMIT);
 		return hydrateAll(ctx, logs);
 	},
-	returns: v.array(v.object(logCard)),
+	returns: v.array(logCardValidator),
 });
 
-/** One public profile (§14.2): the taster, their logs, their watches. */
+/**
+ * One public profile (§14.2): the taster, their logs, their watches. The id
+ * arrives as a string straight from the URL, so a malformed one resolves to
+ * null (the "no taster here" page) instead of failing argument validation.
+ * `logs` is capped at MAX_PROFILE_LOGS; `logsTruncated` says when the cap hit.
+ */
 export const profile = query({
-	args: { userId: v.id("users") },
+	args: { userId: v.string() },
 	handler: async (ctx, args) => {
-		const user = await ctx.db.get(args.userId);
+		const userId = ctx.db.normalizeId("users", args.userId);
+		if (userId === null) {
+			return null;
+		}
+		const user = await ctx.db.get(userId);
 		if (user === null) {
 			return null;
 		}
 		const logs = await ctx.db
 			.query("logs")
-			.withIndex("by_user_and_logged_at", (q) => q.eq("userId", args.userId))
+			.withIndex("by_user_and_logged_at", (q) => q.eq("userId", userId))
 			.order("desc")
-			.take(MAX_PROFILE_LOGS);
+			.take(MAX_PROFILE_LOGS + 1);
 		const watches = await ctx.db
 			.query("watches")
-			.withIndex("by_user_id", (q) => q.eq("userId", args.userId))
+			.withIndex("by_user_id", (q) => q.eq("userId", userId))
 			.take(MAX_WATCHES_PER_USER);
 		const roasterCards = await Promise.all(
 			watches.map(async (watch) => {
@@ -170,7 +152,8 @@ export const profile = query({
 			})
 		);
 		return {
-			logs: await hydrateAll(ctx, logs),
+			logs: await hydrateAll(ctx, logs.slice(0, MAX_PROFILE_LOGS)),
+			logsTruncated: logs.length > MAX_PROFILE_LOGS,
 			roasters: roasterCards.filter((card) => card !== null),
 			user: { id: user._id, imageUrl: user.imageUrl, name: user.name },
 		};
@@ -178,34 +161,29 @@ export const profile = query({
 	returns: v.union(
 		v.null(),
 		v.object({
-			logs: v.array(v.object(logCard)),
-			roasters: v.array(v.object(roasterCard)),
-			user: v.object({
-				id: v.id("users"),
-				imageUrl: v.optional(v.string()),
-				name: v.optional(v.string()),
-			}),
+			logs: v.array(logCardValidator),
+			logsTruncated: v.boolean(),
+			roasters: v.array(roasterCardValidator),
+			user: tasterValidator,
 		})
 	),
 });
 
-const createArgs = {
-	notes: v.optional(v.string()),
-	productId: v.id("products"),
-	rating: v.optional(v.number()),
-};
-
 /** Log a lot (§14.1). Public by design; author resolved from the session. */
 export const createLog = mutation({
-	args: createArgs,
+	args: {
+		notes: v.optional(v.string()),
+		productId: v.id("products"),
+		rating: v.optional(v.number()),
+	},
 	handler: async (ctx, args) => {
 		const userId = await requireUserId(ctx);
-		checkInput(args.rating, args.notes);
+		const notes = args.notes?.trim();
+		checkInput(args.rating, notes);
 		const product = await ctx.db.get(args.productId);
 		if (product === null) {
 			throw new Error("Unknown lot");
 		}
-		const notes = args.notes?.trim();
 		return ctx.db.insert("logs", {
 			loggedAt: Date.now(),
 			notes: notes === "" ? undefined : notes,
@@ -237,17 +215,17 @@ export const updateLog = mutation({
 		if (log.userId !== userId) {
 			throw new Error("Not your log");
 		}
-		checkInput(args.rating ?? undefined, args.notes ?? undefined);
-		const patch: {
-			notes?: string | undefined;
-			rating?: number | undefined;
-		} = {};
+		// Absent and null both become undefined here; only the patch below
+		// distinguishes "leave alone" (absent) from "clear" (null).
+		const rating = args.rating ?? undefined;
+		const notes = args.notes?.trim();
+		checkInput(rating, notes);
+		const patch: { notes?: string; rating?: number } = {};
 		if (args.rating !== undefined) {
-			patch.rating = args.rating ?? undefined;
+			patch.rating = rating;
 		}
 		if (args.notes !== undefined) {
-			const notes = args.notes?.trim();
-			patch.notes = notes === "" || notes === null ? undefined : notes;
+			patch.notes = notes === "" ? undefined : notes;
 		}
 		await ctx.db.patch(args.logId, patch);
 		return null;

@@ -1,17 +1,17 @@
 import { api } from "@nouveau/backend/convex/_generated/api";
-import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 
 import Loader from "@/components/loader";
 import { LogCard } from "@/components/log-card";
-import type { LogCardData } from "@/components/log-card";
+
+const plural = (count: number, noun: string) =>
+	`${count} ${count === 1 ? noun : `${noun}s`}`;
 
 const ProfileComponent = () => {
 	const { userId } = useParams({ from: "/profile/$userId" });
-	const profile = useQuery(api.logs.profile, {
-		userId: userId as Id<"users">,
-	});
+	// The id is whatever the URL holds; the query resolves bad ones to null.
+	const profile = useQuery(api.logs.profile, { userId });
 	const me = useQuery(api.users.getCurrentUser);
 
 	if (profile === undefined || me === undefined) {
@@ -48,9 +48,10 @@ const ProfileComponent = () => {
 						{profile.user.name ?? "A taster"}
 					</h1>
 					<p className="text-muted-foreground text-sm">
-						{profile.logs.length} {profile.logs.length === 1 ? "log" : "logs"} ·{" "}
-						{profile.roasters.length}{" "}
-						{profile.roasters.length === 1 ? "roaster" : "roasters"} watched
+						{profile.logsTruncated
+							? `${profile.logs.length}+ logs`
+							: plural(profile.logs.length, "log")}{" "}
+						· {plural(profile.roasters.length, "roaster")} watched
 					</p>
 				</div>
 			</header>
@@ -78,7 +79,9 @@ const ProfileComponent = () => {
 			)}
 
 			<section>
-				<h2 className="mb-2 font-semibold">Logs</h2>
+				<h2 className="mb-2 font-semibold">
+					{profile.logsTruncated ? "Recent logs" : "Logs"}
+				</h2>
 				{profile.logs.length === 0 ? (
 					<p className="text-muted-foreground py-8 text-sm">
 						{isMine
@@ -91,7 +94,7 @@ const ProfileComponent = () => {
 							<LogCard
 								isMine={isMine}
 								key={log.logId}
-								log={log as LogCardData}
+								log={log}
 								showUser={false}
 							/>
 						))}

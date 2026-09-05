@@ -2,9 +2,12 @@ import {
 	paginationOptsValidator,
 	paginationResultValidator,
 } from "convex/server";
+import type { Infer } from "convex/values";
 import { v } from "convex/values";
 
+import type { Doc } from "./_generated/dataModel";
 import { query } from "./_generated/server";
+import { LOT_SEARCH_LIMIT } from "./constants";
 import { followerCounts } from "./followerCounts";
 import { crawlStatusValidator, getCrawlStatus } from "./health";
 
@@ -22,7 +25,6 @@ const roasterSummaryValidator = v.object({
 	...roasterCardValidator.fields,
 	followerCount: v.number(),
 	status: crawlStatusValidator,
-	websiteUrl: v.string(),
 });
 
 /** Active roasters for the directory and the home teaser. */
@@ -44,7 +46,6 @@ export const listActive = query({
 				slug: roaster.slug,
 				state: roaster.state,
 				status: await getCrawlStatus(ctx, roaster._id),
-				websiteUrl: roaster.websiteUrl,
 			}))
 		);
 	},
@@ -72,10 +73,23 @@ export const getBySlug = query({
 			slug: roaster.slug,
 			state: roaster.state,
 			status: await getCrawlStatus(ctx, roaster._id),
-			websiteUrl: roaster.websiteUrl,
 		};
 	},
 	returns: v.union(v.null(), roasterSummaryValidator),
+});
+
+const lotRowValidator = v.object({
+	handle: v.string(),
+	id: v.id("products"),
+	name: v.string(),
+	status: v.union(v.literal("current"), v.literal("archived")),
+});
+
+const toLotRow = (lot: Doc<"products">): Infer<typeof lotRowValidator> => ({
+	handle: lot.handle,
+	id: lot._id,
+	name: lot.name,
+	status: lot.status,
 });
 
 /**
@@ -95,22 +109,30 @@ export const listLots = query({
 				q.eq("roasterId", args.roasterId)
 			)
 			.paginate(args.paginationOpts);
-		return {
-			...page,
-			page: page.page.map((lot) => ({
-				handle: lot.handle,
-				id: lot._id,
-				name: lot.name,
-				status: lot.status,
-			})),
-		};
+		return { ...page, page: page.page.map(toLotRow) };
 	},
-	returns: paginationResultValidator(
-		v.object({
-			handle: v.string(),
-			id: v.id("products"),
-			name: v.string(),
-			status: v.union(v.literal("current"), v.literal("archived")),
-		})
-	),
+	returns: paginationResultValidator(lotRowValidator),
+});
+
+/**
+ * Find lots by name within one roaster's catalog, for the taster who knows
+ * what they drank but not where it sits in an 800-lot list. Full-text over
+ * `products.name`; archived lots included for the same reason as listLots.
+ */
+export const searchLots = query({
+	args: { roasterId: v.id("roasters"), term: v.string() },
+	handler: async (ctx, args) => {
+		const term = args.term.trim();
+		if (term === "") {
+			return [];
+		}
+		const lots = await ctx.db
+			.query("products")
+			.withSearchIndex("search_name", (q) =>
+				q.search("name", term).eq("roasterId", args.roasterId)
+			)
+			.take(LOT_SEARCH_LIMIT);
+		return lots.map(toLotRow);
+	},
+	returns: v.array(lotRowValidator),
 });

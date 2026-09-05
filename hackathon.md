@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** none
 - **Started:** 2026-08-29T18:06:09Z
-- **Last updated:** 2026-09-04T22:25:30Z
+- **Last updated:** 2026-09-05T03:35:00Z
 
 ## Log
 
@@ -70,4 +70,8 @@ First production deploy, live at https://artful-chameleon-402.convex.site. Added
 
 ### 2026-09-04 - cdcb679
 
-Fixed the first prod-found bug (issue #16): every fresh signup fired two concurrent `provisionInbox` actions — one scheduled by `createUser` at signup, one by `ensureInbox` at sign-in — and both passed the re-check inside the action, so the loser died with an AgentMail 403 on every signup. Inbox provisioning now serializes through a claim mutation: a claim timestamp on the users row decides the winner inside a transaction (mutations serialize; actions don't), the claim clears on success, releases on failure so the next sign-in retries immediately, and a 5-minute TTL retakes claims from crashed actions. Four new convex-test cases cover the race, claim expiry, failure release, and the already-provisioned no-op (suite at 82). Deployed to prod the same day; the fix removes the double-schedule that produced the 403, and no fresh signup has exercised it there yet.
+Fixed the first prod-found bug (issue #16): every fresh signup fired two concurrent `provisionInbox` actions — one scheduled by `createUser` at signup, one by `ensureInbox` at sign-in — and both passed the re-check inside the action, so the loser died with an AgentMail 403 on every signup. Inbox provisioning now serializes through a claim mutation: a claim timestamp on the users row decides the winner inside a transaction (mutations serialize; actions don't), the claim clears on success, releases on failure so the next sign-in retries immediately, and a 5-minute TTL retakes claims from crashed actions. Four new convex-test cases cover the race, claim expiry, failure release, and the already-provisioned no-op (suite at 82). Deployed to prod the same day. Both schedules still fire; the claim makes the second one a no-op, so the 403 should be gone, but no fresh signup has exercised it in prod yet.
+
+### 2026-09-04 - 9442b9d
+
+Reframed the pitch to "Letterboxd but for coffee" and shipped the social layer (build order step 6; commits 5575914–9442b9d, ADR-0002, build spec §14). Backend: a `logs` table (lot + optional 1–5 half-step rating + optional notes, ~1000 chars) with `by_logged_at` and `by_user_and_logged_at` indexes; `createLog`/`updateLog`/`deleteLog` resolve the author from the session and refuse edits to anyone else's row; `recentLogs` is the global activity feed (newest first, capped at 30); `profile` is the public page data (taster, logs, watched roasters); `roasters.listLots` pages a roaster's full catalog with archived lots left in since they stay loggable (`convex/logs.ts`, `convex/roasters.ts`, `convex/schema.ts`). Web: `/activity` (public recent-logs feed with half-step star displays), `/profile/$userId` (public profile; own logs get inline edit and delete), a Lots list on the roaster page with an inline log form, and header links (`apps/web/src/routes/activity.tsx`, `apps/web/src/routes/profile.$userId.tsx`, `apps/web/src/components/{lots,log-form,log-card,stars}.tsx`). 13 new convex-test cases, suite at 92. Live on dev; not yet deployed to prod. Roaster notes on lots (§14.4, the #14 re-scope) are still ahead. Convex features: reactive queries, pagination.
