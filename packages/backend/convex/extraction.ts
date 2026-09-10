@@ -11,10 +11,21 @@ export const extractedVariant = v.object({
 	priceCents: v.number(),
 });
 
+// §14.4 lot copy: what the roaster publishes about the lot itself, stored on
+// `products` at upsert time (products upsert every crawl, so new fields fill
+// on the next cycle — no migration). All optional: HTML-mode and thin feeds
+// carry none of it.
 export const extractedProduct = v.object({
+	description: v.optional(v.string()),
 	externalId: v.string(),
 	handle: v.string(),
+	imageUrl: v.optional(v.string()),
 	name: v.string(),
+	origin: v.optional(v.string()),
+	process: v.optional(v.string()),
+	roastLevel: v.optional(v.string()),
+	roasterNotes: v.optional(v.string()),
+	tags: v.optional(v.array(v.string())),
 	variants: v.array(extractedVariant),
 });
 
@@ -26,11 +37,173 @@ export interface ExtractedVariant {
 }
 
 export interface ExtractedProduct {
+	description?: string;
 	externalId: string;
 	handle: string;
+	imageUrl?: string;
 	name: string;
+	origin?: string;
+	process?: string;
+	roastLevel?: string;
+	roasterNotes?: string;
+	tags?: string[];
 	variants: ExtractedVariant[];
 }
+
+/** Store cap for the HTML-stripped description (marketing copy runs long). */
+export const DESCRIPTION_MAX_LENGTH = 2000;
+/** Store cap for roasterNotes (a descriptor clause, not the whole paragraph). */
+export const ROASTER_NOTES_MAX_LENGTH = 200;
+/** Store cap for the tag list (tags are marketing noise as often as not). */
+export const MAX_TAGS = 32;
+
+const NAMED_ENTITIES: Record<string, string> = {
+	"&amp;": "&",
+	"&apos;": "'",
+	"&gt;": ">",
+	"&lt;": "<",
+	"&nbsp;": " ",
+	"&quot;": '"',
+};
+
+/** Block-level tags become paragraph breaks; everything else inline. */
+const BLOCK_TAG =
+	/<\/?\s*(?:p|div|br|li|ul|ol|h[1-6]|blockquote|table|tr|td|th)\b[^>]*>/giu;
+
+/**
+ * Strip tags, decode entities, collapse whitespace — roaster copy as prose.
+ * Block tags become newlines: tasting-note lists often live in their own
+ * block (Ruby's <h5>We Taste: …</h5>), and the newline is what stops the
+ * roasterNotes clause captures at the end of the descriptor list.
+ */
+export const stripHtml = (html: string): string =>
+	html
+		.replaceAll(BLOCK_TAG, "\n")
+		.replaceAll(/<[^>]*>/gu, " ")
+		.replaceAll(
+			/&(?:amp|apos|gt|lt|nbsp|quot|#\d+|#x[0-9a-f]+);/giu,
+			(entity) => {
+				const named = NAMED_ENTITIES[entity.toLowerCase()];
+				if (named !== undefined) {
+					return named;
+				}
+				const hex = /^&#x/iu.test(entity);
+				const digits = entity.replaceAll(/&#x|&#|;/giu, "");
+				const radix = hex ? 16 : 10;
+				const codePoint = Number.parseInt(digits, radix);
+				return Number.isNaN(codePoint)
+					? entity
+					: String.fromCodePoint(codePoint);
+			}
+		)
+		.replaceAll(/[^\S\n]+/gu, " ")
+		.replaceAll(/\s*\n\s*/gu, "\n")
+		.trim();
+
+/** Cap at a word boundary so stored copy never ends mid-word. */
+const capAtWord = (text: string, maxLength: number): string | null => {
+	const trimmed = text.trim();
+	if (trimmed === "") {
+		return null;
+	}
+	if (trimmed.length < maxLength) {
+		return trimmed;
+	}
+	const cut = trimmed.lastIndexOf(" ", maxLength - 1);
+	return (
+		cut < 20 ? trimmed.slice(0, maxLength) : trimmed.slice(0, cut)
+	).trim();
+};
+
+const ORIGIN_TAG = /^(?:origin|from|country)$/iu;
+const PROCESS_TAG = /^process$/iu;
+const ROAST_TAG = /^(?:roast|roast level)$/iu;
+const ROAST_VALUE = /light|medium|dark/iu;
+const BARE_PROCESS_TAG = /^(?:washed|natural|honey|anaerobic)$/iu;
+const FLAVOR_PROFILE_TAG = /^flavor profile$/iu;
+
+export interface LotAttributes {
+	origin?: string;
+	process?: string;
+	roastLevel?: string;
+}
+
+/**
+ * Parsed tag conventions over the roaster's own tag vocabulary (observed
+ * 2026-09-04: Proud Mary `From: Ethiopia`/`Process: Natural`, Intelligentsia
+ * `Country: Guatemala`/`Roast Level: ...`, Verve `Roast: Light`, Onyx
+ * `origin:Ethiopia`, Ruby bare `Washed`). `roastLevel` only lands when the
+ * value names an actual roast — Intelligentsia uses "Roast Level: Bright"
+ * for taste, not roast.
+ */
+export const parseLotAttributes = (tags: string[]): LotAttributes => {
+	const attributes: LotAttributes = {};
+	for (const tag of tags) {
+		const [key, ...rest] = tag.split(":");
+		const value = rest.join(":").trim();
+		if (ORIGIN_TAG.test(key.trim()) && value !== "") {
+			attributes.origin ??= value;
+		} else if (PROCESS_TAG.test(key.trim()) && value !== "") {
+			attributes.process ??= value;
+		} else if (ROAST_TAG.test(key.trim()) && ROAST_VALUE.test(value)) {
+			attributes.roastLevel ??= value;
+		} else if (BARE_PROCESS_TAG.test(tag.trim())) {
+			attributes.process ??= tag.trim();
+		}
+	}
+	return attributes;
+};
+
+/** Trailing connectives left behind by the clause captures ("and", "&"). */
+const TRIM_TAIL = /[\s,&-]+$/u;
+
+/**
+ * roasterNotes (§14.4): descriptors taken only from the roaster's own copy —
+ * a clause matched over the description prose, else the structured Flavor
+ * Profile tag. Null when nothing matches. Nothing is invented: the matched
+ * words are stored verbatim.
+ */
+export const extractRoasterNotes = (
+	description: string,
+	tags: string[]
+): string | null => {
+	const clause = (pattern: RegExp): string | null =>
+		pattern.exec(description)?.groups?.clause.replace(TRIM_TAIL, "").trim() ??
+		null;
+	// Ruby lists descriptors dash-separated in their own block; the newline
+	// (not the boilerplate that follows) ends the capture.
+	const dashList = clause(/we\s+taste:?\s*(?<clause>[^\n]{5,200})/iu);
+	const matched =
+		dashList ??
+		clause(
+			/in\s+the\s+cup,?\s+we\s+(?:find|taste|get)\s+(?<clause>[^.!?\n]{5,200})/iu
+		) ??
+		clause(
+			/(?:tasting\s+)?notes\s+of\s+(?<clause>[^\u2014\u2013.!?\n]{5,160})/iu
+		) ??
+		clause(/flavors\s+of\s+(?<clause>[^\u2014\u2013.!?\n]{5,160})/iu);
+	if (matched !== null && matched !== "") {
+		return capAtWord(matched, ROASTER_NOTES_MAX_LENGTH);
+	}
+	// Intelligentsia puts descriptors in a structured tag when the prose has
+	// none ("Flavor Profile: Caramel + Stone Fruit").
+	for (const tag of tags) {
+		const [key, ...rest] = tag.split(":");
+		if (FLAVOR_PROFILE_TAG.test(key.trim()) && rest.join(":").trim() !== "") {
+			return capAtWord(rest.join(":"), ROASTER_NOTES_MAX_LENGTH);
+		}
+	}
+	return null;
+};
+
+/** Normalize the Shopify tag field (array from products.json, comma string
+ * elsewhere) into a clean list. */
+export const parseTags = (
+	tags: string[] | string | null | undefined
+): string[] =>
+	(Array.isArray(tags) ? tags : (tags ?? "").split(","))
+		.map((tag) => tag.trim())
+		.filter((tag) => tag !== "");
 
 /** Shopify caps /products.json at this many items per page. */
 export const PRODUCTS_JSON_PAGE_SIZE = 250;
@@ -83,9 +256,16 @@ interface ShopifyVariant {
 	title?: string | null;
 }
 
+interface ShopifyImage {
+	src?: string | null;
+}
+
 interface ShopifyProduct {
+	body_html?: string | null;
 	handle?: string | null;
 	id?: number | string | null;
+	image?: ShopifyImage | null;
+	images?: ShopifyImage[] | null;
 	product_type?: string | null;
 	tags?: string[] | string | null;
 	title?: string | null;
@@ -127,11 +307,32 @@ export const parseProductsJson = (text: string): ProductsJsonPage => {
 				priceCents: toCents(variant.price),
 			})
 		);
+		const tags = parseTags(raw.tags);
+		// The block-structured text drives the notes regex (blocks end clause
+		// captures); the stored description is the same copy flattened to one
+		// line.
+		const blockText =
+			typeof raw.body_html === "string" ? stripHtml(raw.body_html) : "";
+		const description = capAtWord(
+			blockText.replaceAll("\n", " "),
+			DESCRIPTION_MAX_LENGTH
+		);
+		const imageUrl =
+			raw.image?.src ??
+			raw.images?.find((image) => typeof image.src === "string")?.src ??
+			null;
+		const attributes = parseLotAttributes(tags);
+		const roasterNotes = extractRoasterNotes(blockText, tags);
 		products.push({
 			externalId: String(raw.id ?? raw.handle ?? ""),
 			handle: raw.handle ?? "",
 			name: raw.title ?? "",
 			variants,
+			...(description === null ? {} : { description }),
+			...(imageUrl === null || imageUrl === undefined ? {} : { imageUrl }),
+			...(tags.length === 0 ? {} : { tags: tags.slice(0, MAX_TAGS) }),
+			...attributes,
+			...(roasterNotes === null ? {} : { roasterNotes }),
 		});
 	}
 	return { feedCount: feed.length, products };

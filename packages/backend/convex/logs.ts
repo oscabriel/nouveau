@@ -45,8 +45,14 @@ const logCardValidator = v.object({
 	logId: v.id("logs"),
 	loggedAt: v.number(),
 	// url is the roaster's own product page, the same link the drop feed's
-	// "See the lot" uses (feed.ts).
-	lot: v.object({ id: v.id("products"), name: v.string(), url: v.string() }),
+	// "See the lot" uses (feed.ts); roasterNotes are §14.4 descriptors from
+	// the roaster's copy, when the feed carries any.
+	lot: v.object({
+		id: v.id("products"),
+		name: v.string(),
+		roasterNotes: v.union(v.string(), v.null()),
+		url: v.string(),
+	}),
 	notes: v.union(v.string(), v.null()),
 	rating: v.union(v.number(), v.null()),
 	roaster: v.object({ name: v.string(), slug: v.string() }),
@@ -77,6 +83,7 @@ const hydrateLog = async (
 		lot: {
 			id: product._id,
 			name: product.name,
+			roasterNotes: product.roasterNotes ?? null,
 			url: `${roaster.websiteUrl}/products/${product.handle}`,
 		},
 		notes: log.notes ?? null,

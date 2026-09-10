@@ -89,6 +89,12 @@ export const LogCard = ({
 			</div>
 			{log.rating !== null && <Stars rating={log.rating} />}
 			{log.notes !== null && <p className="text-sm">{log.notes}</p>}
+			{log.lot.roasterNotes !== null && (
+				<p className="text-muted-foreground text-xs italic">
+					<span className="font-medium not-italic">Roaster notes:</span>{" "}
+					{log.lot.roasterNotes}
+				</p>
+			)}
 			{isMine && (
 				<div className="flex gap-1">
 					<Button
@@ -127,6 +133,7 @@ export const LogCard = ({
 					onDone={() => {
 						setEditing(false);
 					}}
+					roasterNotes={log.lot.roasterNotes}
 				/>
 			)}
 		</article>

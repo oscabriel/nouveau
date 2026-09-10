@@ -45,7 +45,18 @@ const LotRowItem = ({
 				</Button>
 			)}
 		</div>
-		{canLog && isOpen && <LogForm lotId={lot.id} onDone={onClose} />}
+		{lot.roasterNotes !== null && !isOpen && (
+			<p className="text-muted-foreground mt-0.5 truncate text-xs italic">
+				{lot.roasterNotes}
+			</p>
+		)}
+		{canLog && isOpen && (
+			<LogForm
+				lotId={lot.id}
+				onDone={onClose}
+				roasterNotes={lot.roasterNotes}
+			/>
+		)}
 	</li>
 );
 

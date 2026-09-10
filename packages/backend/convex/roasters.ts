@@ -82,6 +82,9 @@ const lotRowValidator = v.object({
 	handle: v.string(),
 	id: v.id("products"),
 	name: v.string(),
+	// Roaster notes (§14.4): descriptors from the roaster's own copy, shown
+	// while picking a lot and while logging it.
+	roasterNotes: v.union(v.string(), v.null()),
 	status: v.union(v.literal("current"), v.literal("archived")),
 });
 
@@ -89,6 +92,7 @@ const toLotRow = (lot: Doc<"products">): Infer<typeof lotRowValidator> => ({
 	handle: lot.handle,
 	id: lot._id,
 	name: lot.name,
+	roasterNotes: lot.roasterNotes ?? null,
 	status: lot.status,
 });
 

@@ -304,6 +304,75 @@ describe("commit: variant diffing", () => {
 	});
 });
 
+describe("commit: lot copy (§14.4)", () => {
+	test("a crawl stores the roaster-published fields", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [
+			{
+				...product("a"),
+				description: "A washed lot from Urrao.",
+				imageUrl: "https://cdn.example.com/lot.png",
+				origin: "Colombia",
+				process: "Washed",
+				roasterNotes: "peach, melon, and red tea",
+				tags: ["Coffee", "From: Colombia"],
+			},
+		]);
+		const state = await readAll(fx);
+		expect(state.products[0]).toMatchObject({
+			description: "A washed lot from Urrao.",
+			imageUrl: "https://cdn.example.com/lot.png",
+			origin: "Colombia",
+			process: "Washed",
+			roasterNotes: "peach, melon, and red tea",
+			tags: ["Coffee", "From: Colombia"],
+		});
+	});
+
+	test("a later crawl refreshes the fields when present and keeps them when absent", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [
+			{
+				...product("a"),
+				description: "Old copy.",
+				roasterNotes: "old notes",
+				tags: ["Coffee"],
+			},
+		]);
+		await crawl(fx, T0 + CADENCE_MS, [
+			{ ...product("a"), description: "New copy.", roasterNotes: "new notes" },
+		]);
+		const state = await readAll(fx);
+		expect(state.products[0]).toMatchObject({
+			description: "New copy.",
+			roasterNotes: "new notes",
+			tags: ["Coffee"],
+		});
+	});
+
+	test("lot copy never emits a drop event on its own", async () => {
+		const fx = await setup();
+		const first = await crawl(fx, T0, [
+			{
+				...product("a"),
+				description: "First copy.",
+				roasterNotes: "first notes",
+			},
+		]);
+		const eventsOne = await readAll(fx);
+		const second = await crawl(fx, T0 + CADENCE_MS, [
+			{
+				...product("a"),
+				description: "Second copy.",
+				roasterNotes: "second notes",
+			},
+		]);
+		expect(first).toBeNull();
+		expect(second).toBeNull();
+		expect(eventsOne.events).toHaveLength(0);
+	});
+});
+
 describe("commit: 3-strike archive", () => {
 	test("a product absent from 3 consecutive successful crawls is archived", async () => {
 		const fx = await setup();

@@ -175,6 +175,25 @@ interface UpsertProductInput {
 	roasterId: Id<"roasters">;
 }
 
+// §14.4 lot-copy fields. Optional in the extracted product, so only the
+// present ones are written; a feed that stops carrying a field leaves the
+// previously stored value alone.
+const lotCopy = (product: ExtractedProduct): Partial<Doc<"products">> => ({
+	...(product.description === undefined
+		? {}
+		: { description: product.description }),
+	...(product.imageUrl === undefined ? {} : { imageUrl: product.imageUrl }),
+	...(product.origin === undefined ? {} : { origin: product.origin }),
+	...(product.process === undefined ? {} : { process: product.process }),
+	...(product.roastLevel === undefined
+		? {}
+		: { roastLevel: product.roastLevel }),
+	...(product.roasterNotes === undefined
+		? {}
+		: { roasterNotes: product.roasterNotes }),
+	...(product.tags === undefined ? {} : { tags: product.tags }),
+});
+
 /** Insert or refresh one product (by roaster + externalId) and its variants. */
 const upsertProduct = async (
 	ctx: MutationCtx,
@@ -198,6 +217,7 @@ const upsertProduct = async (
 			name: product.name,
 			roasterId,
 			status: "current",
+			...lotCopy(product),
 		});
 	} else {
 		productId = current._id;
@@ -206,6 +226,7 @@ const upsertProduct = async (
 			missedCrawls: 0,
 			name: product.name,
 			status: "current",
+			...lotCopy(product),
 		});
 	}
 	await applyVariants(ctx, {

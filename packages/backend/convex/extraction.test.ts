@@ -1,19 +1,25 @@
 import { describe, expect, test, vi } from "vitest";
 
 import {
+	extractRoasterNotes,
 	isWholesale,
 	MAX_PRODUCTS_JSON_PAGES,
 	parseHtmlPage,
+	parseLotAttributes,
 	parseProductsJson,
 	PRODUCTS_JSON_PAGE_SIZE,
 	SHOPIFY_FETCH_HEADERS,
 	shopifyProductsUrl,
+	stripHtml,
 	walkFeedPages,
 } from "./extraction";
 
 interface FeedProduct {
+	body_html?: string;
 	handle?: string;
 	id: number;
+	image?: { src?: string } | null;
+	images?: { src?: string }[] | null;
 	product_type?: string;
 	tags?: string[] | string;
 	title?: string;
@@ -138,6 +144,220 @@ describe("parseProductsJson", () => {
 		);
 		expect(page.feedCount).toBe(4);
 		expect(page.products.map((p) => p.externalId)).toEqual(["1"]);
+	});
+});
+
+describe("stripHtml", () => {
+	test("strips tags, decodes entities, collapses whitespace", () => {
+		expect(
+			stripHtml(
+				"<p>One of the&nbsp;longest harvest seasons <strong>ever</strong> — &amp; lovely.</p>"
+			)
+		).toBe("One of the longest harvest seasons ever — & lovely.");
+	});
+
+	test("block tags become paragraph breaks", () => {
+		expect(
+			stripHtml(
+				"<h5>We Taste: lemon meringue - lavender - apricot - honey</h5><h5>Light Roast</h5><p>Roasted to order.</p>"
+			)
+		).toBe(
+			"We Taste: lemon meringue - lavender - apricot - honey\nLight Roast\nRoasted to order."
+		);
+	});
+});
+
+describe("parseLotAttributes", () => {
+	test("reads the Proud Mary convention", () => {
+		expect(
+			parseLotAttributes([
+				"Coffee",
+				"For: Filter",
+				"From: Ethiopia",
+				"Process: Natural",
+			])
+		).toEqual({ origin: "Ethiopia", process: "Natural" });
+	});
+
+	test("reads the Intelligentsia convention", () => {
+		expect(
+			parseLotAttributes(["Country: Guatemala", "Roast Level: Bright"])
+		).toEqual({ origin: "Guatemala" });
+	});
+
+	test("keeps a Roast Level value only when it names an actual roast", () => {
+		expect(parseLotAttributes(["Roast Level: Comforting"])).toEqual({});
+		expect(parseLotAttributes(["Roast: Light"])).toEqual({
+			roastLevel: "Light",
+		});
+		expect(parseLotAttributes(["Roast: Medium-Light"])).toEqual({
+			roastLevel: "Medium-Light",
+		});
+	});
+
+	test("reads the Onyx convention and a bare process tag", () => {
+		expect(parseLotAttributes(["origin:Ethiopia"])).toEqual({
+			origin: "Ethiopia",
+		});
+		expect(parseLotAttributes(["amazing", "Washed", "Wholesale"])).toEqual({
+			process: "Washed",
+		});
+	});
+
+	test("tolerates string tags and noise", () => {
+		expect(parseLotAttributes([])).toEqual({});
+		expect(parseLotAttributes(["nope", ":", "From:"])).toEqual({});
+	});
+});
+
+describe("extractRoasterNotes", () => {
+	test("reads the Sey prose pattern", () => {
+		expect(
+			extractRoasterNotes(
+				"This encore harvest delivery came as a wonderful surprise. In the cup we find peach, melon, red tea, and lovely florality.",
+				[]
+			)
+		).toBe("peach, melon, red tea, and lovely florality");
+	});
+
+	test("reads the Ruby dash list", () => {
+		// Ruby's real layout: the descriptor list is its own <h5>; the roast
+		// level and info-sheet boilerplate live in separate blocks.
+		expect(
+			extractRoasterNotes(
+				"We Taste: lemon meringue - lavender - apricot - honey\nLight Roast\nDOWNLOAD info sheets",
+				[]
+			)
+		).toBe("lemon meringue - lavender - apricot - honey");
+	});
+
+	test("reads notes-of prose and stops at a dash", () => {
+		expect(
+			extractRoasterNotes(
+				"Expect notes of jasmine, stone fruit, blackberry, & winey complexity — a beautiful example.",
+				[]
+			)
+		).toBe("jasmine, stone fruit, blackberry, & winey complexity");
+	});
+
+	test("reads flavors-of prose", () => {
+		expect(
+			extractRoasterNotes(
+				"Expect flavors of black currant, ruby grapefruit, and molasses.",
+				[]
+			)
+		).toBe("black currant, ruby grapefruit, and molasses");
+	});
+
+	test("falls back to the Flavor Profile tag", () => {
+		expect(
+			extractRoasterNotes("A comfortable daily brew.", [
+				"Country: Brazil",
+				"Flavor Profile: Caramel + Stone Fruit",
+			])
+		).toBe("Caramel + Stone Fruit");
+	});
+
+	test("rejects in-the-cup prose without we find/taste", () => {
+		// Real Verve copy: "in the cup, with a subtle pine-like character" is
+		// narrative, not a descriptor list.
+		expect(
+			extractRoasterNotes(
+				"in the cup, with a subtle pine-like character adding complexity without overwhelming the palate",
+				[]
+			)
+		).toBeNull();
+	});
+
+	test("returns null when nothing matches", () => {
+		expect(extractRoasterNotes("", [])).toBeNull();
+		expect(extractRoasterNotes("Roasted to order.", [])).toBeNull();
+	});
+
+	test("caps the matched clause at a word boundary", () => {
+		const notes = extractRoasterNotes(
+			`In the cup we find ${"words ".repeat(60)}. Then something else.`,
+			[]
+		);
+		expect(notes).not.toBeNull();
+		expect(notes?.length).toBeLessThanOrEqual(200);
+		expect(notes?.endsWith("words")).toBe(true);
+	});
+});
+
+describe("parseProductsJson lot copy (§14.4)", () => {
+	test("carries description, tags, image, attributes and notes", () => {
+		const page = parseProductsJson(
+			feedBody([
+				feedProduct(1, {
+					body_html:
+						"<p>A washed lot from Urrao.</p> In the cup we find peach, melon, and red tea.",
+					image: { src: "https://cdn.example.com/lot.png?v=1" },
+					tags: ["Coffee", "From: Colombia", "Process: Washed"],
+					title: "La Casita",
+				}),
+			])
+		);
+		expect(page.products[0]).toEqual({
+			description:
+				"A washed lot from Urrao. In the cup we find peach, melon, and red tea.",
+			externalId: "1",
+			handle: "lot-1",
+			imageUrl: "https://cdn.example.com/lot.png?v=1",
+			name: "La Casita",
+			origin: "Colombia",
+			process: "Washed",
+			roasterNotes: "peach, melon, and red tea",
+			tags: ["Coffee", "From: Colombia", "Process: Washed"],
+			variants: [
+				{ available: true, grams: 250, name: "250g", priceCents: 1800 },
+			],
+		});
+	});
+
+	test("omits every §14.4 field the feed does not carry", () => {
+		const page = parseProductsJson(
+			feedBody([feedProduct(2, { body_html: "", tags: [] }), feedProduct(3)])
+		);
+		expect(page.products[0]).toEqual({
+			externalId: "2",
+			handle: "lot-2",
+			name: "Lot 2",
+			variants: expect.anything(),
+		});
+		expect(page.products[1]).not.toHaveProperty("roasterNotes");
+	});
+
+	test("reads the first image and comma-string tags", () => {
+		const page = parseProductsJson(
+			feedBody([
+				feedProduct(4, {
+					images: [
+						{},
+						{ src: "https://cdn.example.com/first.png" },
+						{ src: "https://cdn.example.com/second.png" },
+					],
+					tags: "gift, From: Kenya, Washed",
+					title: "Karimikui",
+				}),
+			])
+		);
+		expect(page.products[0]).toMatchObject({
+			imageUrl: "https://cdn.example.com/first.png",
+			origin: "Kenya",
+			process: "Washed",
+			tags: ["gift", "From: Kenya", "Washed"],
+		});
+	});
+
+	test("caps the description", () => {
+		const page = parseProductsJson(
+			feedBody([
+				feedProduct(5, { body_html: `<p>${"word ".repeat(2000)}</p>` }),
+			])
+		);
+		const [product] = page.products;
+		expect(product?.description?.length).toBeLessThanOrEqual(2000);
 	});
 });
 

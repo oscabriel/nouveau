@@ -17,11 +17,15 @@ const DEFAULT_RATING = 3;
  * Create or edit a Log (build spec §14.1). Inline rather than a modal — the
  * ui kit has no dialog primitive and the form is two fields. Unchecking the
  * rating stores a rating-less log; clearing it on edit sends `null`.
+ * `roasterNotes` (§14.4) is shown as read-only reference: descriptors the
+ * roaster published, verbatim, to crib from — never prefilled into the
+ * taster's own notes.
  */
 export const LogForm = ({
 	existing,
 	lotId,
 	onDone,
+	roasterNotes,
 }: {
 	existing?: {
 		logId: Id<"logs">;
@@ -30,6 +34,7 @@ export const LogForm = ({
 	};
 	lotId: Id<"products">;
 	onDone: () => void;
+	roasterNotes?: string | null;
 }) => {
 	const [rateIt, setRateIt] = useState(
 		existing?.rating !== undefined && existing.rating !== null
@@ -72,6 +77,12 @@ export const LogForm = ({
 
 	return (
 		<div className="my-2 flex flex-col gap-3 rounded-md border p-3">
+			{roasterNotes !== undefined && roasterNotes !== null && (
+				<p className="text-muted-foreground text-xs italic">
+					<span className="font-medium not-italic">Roaster notes:</span>{" "}
+					{roasterNotes}
+				</p>
+			)}
 			<div className="flex items-center gap-3">
 				<Checkbox
 					checked={rateIt}
