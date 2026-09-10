@@ -56,7 +56,7 @@ Ten tables. High-churn crawl ops are split from the roaster profile per the chur
 1. **Baseline crawl**: a source's first successful crawl populates the lot catalog and fires **no** Drop events; alerts start from crawl #2. `pending → active` is data-driven (baseline captured), never a human review gate.
 2. **Archive rule**: a Lot absent from **3 consecutive successful crawls** flips to `archived` (keeps firstSeenAt/lastSeenAt). Archived Lots can't fire back-in-stock.
 3. **Watch status derives from `crawlSources.health`** — zero per-watch health storage. Staleness threshold: no successful crawl within **2× the roaster's cadence, minimum 1 hour** (build-time constant).
-4. **Event semantics**: `new` / `back_in_stock` / `price_drop` (downward only) notify. `sold_out` and `price_rise` are stored silently for stats and never notify or appear in feeds until stats surfaces exist.
+4. **Event semantics**: `new` / `back_in_stock` / `price_drop` (downward only) notify. `sold_out` and `price_rise` are stored silently for stats and never notify or appear in feeds until stats surfaces exist. A lot's first sighting fires **one** `new` event citing its cheapest size — N sizes arriving at once are one fact, not N (#19); a size added to a known lot later fires its own `new` event.
 5. **tasteProfile omitted** at launch; arrives in v1.1 as an optional field + staged vector index.
 
 ## 6. Extraction pipeline

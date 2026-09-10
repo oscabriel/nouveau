@@ -202,6 +202,50 @@ describe("commit: baseline rule", () => {
 	});
 });
 
+describe("commit: new-event collapse (#19)", () => {
+	test("a lot first seen post-baseline fires one new event citing its cheapest size", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, []);
+		await crawl(fx, T0 + CADENCE_MS, [
+			product("a", [
+				{ available: true, grams: 1000, name: "1kg", priceCents: 5600 },
+				{ available: true, grams: 250, name: "250g", priceCents: 1800 },
+				{ available: true, grams: 500, name: "500g", priceCents: 3100 },
+			]),
+		]);
+
+		const state = await readAll(fx);
+		expect(state.variants).toHaveLength(3);
+		expect(state.events).toHaveLength(1);
+		const [event] = state.events;
+		const cheapest = state.variants.find((v) => v.name === "250g");
+		expect(event).toMatchObject({
+			detectedAt: T0 + CADENCE_MS,
+			newPriceCents: 1800,
+			productId: state.products[0]?._id,
+			roasterId: fx.roasterId,
+			type: "new",
+		});
+		expect(event?.variantId).toBe(cheapest?._id);
+	});
+
+	test("sizes added to a known lot later keep one event each", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [product("a")]);
+		await crawl(fx, T0 + CADENCE_MS, [
+			product("a", [
+				{ available: true, grams: 250, name: "250g", priceCents: 1800 },
+				{ available: true, grams: 1000, name: "1kg", priceCents: 5600 },
+				{ available: true, name: "2lb", priceCents: 7200 },
+			]),
+		]);
+
+		const events = await readEvents(fx);
+		expect(events).toHaveLength(2);
+		expect(events.map((e) => e.type)).toEqual(["new", "new"]);
+	});
+});
+
 describe("commit: variant diffing", () => {
 	const diff = async (
 		before: ExtractedProduct["variants"][number],

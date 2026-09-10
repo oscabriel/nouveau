@@ -15,7 +15,7 @@ import {
 	TICK_BATCH,
 } from "./constants";
 import { extractedProduct } from "./extraction";
-import type { ExtractedProduct } from "./extraction";
+import type { ExtractedProduct, ExtractedVariant } from "./extraction";
 import { notifyWatchersOfEvent } from "./notifications";
 import schema from "./schema";
 
@@ -104,16 +104,44 @@ const diffVariant = async (
 interface ApplyVariantsInput {
 	eventsAllowed: boolean;
 	fetchedAt: number;
+	// True when upsertProduct inserted the product row during this same crawl:
+	// the lot's first sighting. Every size is new at once and they are one
+	// fact, so they share one "new" event citing the cheapest size (#19).
+	isNewProduct: boolean;
 	product: ExtractedProduct;
 	productId: Id<"products">;
 	roasterId: Id<"roasters">;
 }
 
+/** Emit one "new" event for a size that just appeared, and fan it out. */
+const emitNewEvent = async (
+	ctx: MutationCtx,
+	input: {
+		fetchedAt: number;
+		priceCents: number;
+		productId: Id<"products">;
+		roasterId: Id<"roasters">;
+		variantId: Id<"productVariants">;
+	}
+): Promise<void> => {
+	const eventId = await ctx.db.insert("dropEvents", {
+		detectedAt: input.fetchedAt,
+		newPriceCents: input.priceCents,
+		productId: input.productId,
+		roasterId: input.roasterId,
+		type: "new",
+		variantId: input.variantId,
+	});
+	await notifyWatchersOfEvent(ctx, eventId);
+};
+
 /**
  * Upsert one product's variants and emit its Drop events. A variant the
  * catalog has never seen is a "new" event; known variants diff against their
- * stored state. Variants are matched by display name (the schema keeps no
- * Shopify variant id).
+ * stored state. On a lot's first sighting every size is new at once, so the
+ * events collapse to one citing the cheapest size (#19) — one card, one
+ * alert. Sizes added to a known lot later keep one event each. Variants are
+ * matched by display name (the schema keeps no Shopify variant id).
  */
 const applyVariants = async (
 	ctx: MutationCtx,
@@ -127,44 +155,90 @@ const applyVariants = async (
 		existingVariants.map((doc) => [doc.name, doc])
 	);
 	// Variants are matched by name, so a feed repeating a name (last wins)
-	// must not double-insert the same variant in the Promise.all below.
+	// must not double-insert the same variant below.
 	const fetchedByName = new Map(
 		input.product.variants.map((variant) => [variant.name, variant])
 	);
 
+	const targets = [...fetchedByName.values()].map((variant) => ({
+		next: variant,
+		prior: existingByName.get(variant.name) ?? null,
+	}));
+	// Partition before writing: known variants diff against their stored
+	// state, unknown ones insert and are kept for the event emission below.
+	const diffTargets: {
+		next: ExtractedVariant;
+		prior: Doc<"productVariants">;
+	}[] = [];
+	const addTargets: ExtractedVariant[] = [];
+	for (const { next, prior } of targets) {
+		if (prior === null) {
+			addTargets.push(next);
+			continue;
+		}
+		diffTargets.push({ next, prior });
+	}
+
+	const added = await Promise.all(
+		addTargets.map(async (next) => {
+			const variantId = await ctx.db.insert("productVariants", {
+				available: next.available,
+				...(next.grams === undefined ? {} : { grams: next.grams }),
+				name: next.name,
+				priceCents: next.priceCents,
+				productId: input.productId,
+			});
+			return { priceCents: next.priceCents, variantId };
+		})
+	);
 	await Promise.all(
-		[...fetchedByName.values()].map(async (variant) => {
-			const prior = existingByName.get(variant.name);
-			if (prior === undefined) {
-				const variantId = await ctx.db.insert("productVariants", {
-					available: variant.available,
-					...(variant.grams === undefined ? {} : { grams: variant.grams }),
-					name: variant.name,
-					priceCents: variant.priceCents,
-					productId: input.productId,
-				});
-				if (input.eventsAllowed) {
-					const eventId = await ctx.db.insert("dropEvents", {
-						detectedAt: input.fetchedAt,
-						newPriceCents: variant.priceCents,
-						productId: input.productId,
-						roasterId: input.roasterId,
-						type: "new",
-						variantId,
-					});
-					await notifyWatchersOfEvent(ctx, eventId);
-				}
-				return;
-			}
-			await diffVariant(ctx, {
+		diffTargets.map(({ next, prior }) =>
+			diffVariant(ctx, {
 				eventsAllowed: input.eventsAllowed,
 				fetchedAt: input.fetchedAt,
-				next: variant,
+				next,
 				productId: input.productId,
 				roasterId: input.roasterId,
 				variant: prior,
+			})
+		)
+	);
+
+	if (!input.eventsAllowed || added.length === 0) {
+		return;
+	}
+	if (input.isNewProduct) {
+		// First minimum wins, so a price tie cites the size the feed listed
+		// first. added is non-empty here (guarded above).
+		let cheapest:
+			| { priceCents: number; variantId: Id<"productVariants"> }
+			| undefined;
+		for (const item of added) {
+			if (cheapest === undefined || item.priceCents < cheapest.priceCents) {
+				cheapest = item;
+			}
+		}
+		if (cheapest !== undefined) {
+			await emitNewEvent(ctx, {
+				fetchedAt: input.fetchedAt,
+				priceCents: cheapest.priceCents,
+				productId: input.productId,
+				roasterId: input.roasterId,
+				variantId: cheapest.variantId,
 			});
-		})
+		}
+		return;
+	}
+	await Promise.all(
+		added.map((item) =>
+			emitNewEvent(ctx, {
+				fetchedAt: input.fetchedAt,
+				priceCents: item.priceCents,
+				productId: input.productId,
+				roasterId: input.roasterId,
+				variantId: item.variantId,
+			})
+		)
 	);
 };
 
@@ -245,6 +319,7 @@ const upsertProduct = async (
 	await applyVariants(ctx, {
 		eventsAllowed: input.eventsAllowed,
 		fetchedAt: now,
+		isNewProduct: current === null,
 		product,
 		productId,
 		roasterId,
