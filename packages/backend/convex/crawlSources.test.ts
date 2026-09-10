@@ -310,12 +310,14 @@ describe("commit: lot copy (§14.4)", () => {
 		await crawl(fx, T0, [
 			{
 				...product("a"),
-				description: "A washed lot from Urrao.",
-				imageUrl: "https://cdn.example.com/lot.png",
-				origin: "Colombia",
-				process: "Washed",
-				roasterNotes: "peach, melon, and red tea",
-				tags: ["Coffee", "From: Colombia"],
+				lotCopy: {
+					description: "A washed lot from Urrao.",
+					imageUrl: "https://cdn.example.com/lot.png",
+					origin: "Colombia",
+					process: "Washed",
+					roasterNotes: "peach, melon, and red tea",
+					tags: ["Coffee", "From: Colombia"],
+				},
 			},
 		]);
 		const state = await readAll(fx);
@@ -329,24 +331,42 @@ describe("commit: lot copy (§14.4)", () => {
 		});
 	});
 
-	test("a later crawl refreshes the fields when present and keeps them when absent", async () => {
+	test("a later authoritative crawl refreshes the fields and clears the ones it no longer carries", async () => {
+		// The roaster edited "old notes" out of their copy: it must not stay on
+		// the lot as their verbatim words (CONTEXT.md, Roaster notes).
 		const fx = await setup();
 		await crawl(fx, T0, [
 			{
 				...product("a"),
-				description: "Old copy.",
-				roasterNotes: "old notes",
-				tags: ["Coffee"],
+				lotCopy: {
+					description: "Old copy.",
+					roasterNotes: "old notes",
+					tags: ["Coffee"],
+				},
 			},
 		]);
 		await crawl(fx, T0 + CADENCE_MS, [
-			{ ...product("a"), description: "New copy.", roasterNotes: "new notes" },
+			{ ...product("a"), lotCopy: { description: "New copy." } },
 		]);
 		const state = await readAll(fx);
+		expect(state.products[0]).toMatchObject({ description: "New copy." });
+		expect(state.products[0]).not.toHaveProperty("roasterNotes");
+		expect(state.products[0]).not.toHaveProperty("tags");
+	});
+
+	test("a crawl without lotCopy (HTML mode) leaves the stored copy alone", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [
+			{
+				...product("a"),
+				lotCopy: { description: "Kept copy.", roasterNotes: "kept notes" },
+			},
+		]);
+		await crawl(fx, T0 + CADENCE_MS, [product("a")]);
+		const state = await readAll(fx);
 		expect(state.products[0]).toMatchObject({
-			description: "New copy.",
-			roasterNotes: "new notes",
-			tags: ["Coffee"],
+			description: "Kept copy.",
+			roasterNotes: "kept notes",
 		});
 	});
 
@@ -355,16 +375,14 @@ describe("commit: lot copy (§14.4)", () => {
 		const first = await crawl(fx, T0, [
 			{
 				...product("a"),
-				description: "First copy.",
-				roasterNotes: "first notes",
+				lotCopy: { description: "First copy.", roasterNotes: "first notes" },
 			},
 		]);
 		const eventsOne = await readAll(fx);
 		const second = await crawl(fx, T0 + CADENCE_MS, [
 			{
 				...product("a"),
-				description: "Second copy.",
-				roasterNotes: "second notes",
+				lotCopy: { description: "Second copy.", roasterNotes: "second notes" },
 			},
 		]);
 		expect(first).toBeNull();

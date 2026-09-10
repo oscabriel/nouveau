@@ -113,6 +113,7 @@ describe("parseProductsJson", () => {
 			{
 				externalId: "1",
 				handle: "lot-1",
+				lotCopy: {},
 				name: "Lot 1",
 				variants: [
 					{ available: true, grams: 340, name: "12oz", priceCents: 1950 },
@@ -165,6 +166,14 @@ describe("stripHtml", () => {
 			"We Taste: lemon meringue - lavender - apricot - honey\nLight Roast\nRoasted to order."
 		);
 	});
+
+	test("drops script and style bodies, not just their tags", () => {
+		expect(
+			stripHtml(
+				"<style>.x{color:red}</style><p>Notes of plum.</p><script>track()</script>"
+			)
+		).toBe("Notes of plum.");
+	});
 });
 
 describe("parseLotAttributes", () => {
@@ -193,6 +202,18 @@ describe("parseLotAttributes", () => {
 		expect(parseLotAttributes(["Roast: Medium-Light"])).toEqual({
 			roastLevel: "Medium-Light",
 		});
+		// Anchored: a roast word inside a taste phrase is not a roast level.
+		expect(parseLotAttributes(["Roast: Lightly sweet & delightful"])).toEqual(
+			{}
+		);
+	});
+
+	test("takes a From: value only when it looks like a place", () => {
+		expect(parseLotAttributes(["From: Colombia, Huila"])).toEqual({
+			origin: "Colombia, Huila",
+		});
+		expect(parseLotAttributes(["From: our friends at the co-op"])).toEqual({});
+		expect(parseLotAttributes(["From: 2024 harvest"])).toEqual({});
 	});
 
 	test("reads the Onyx convention and a bare process tag", () => {
@@ -249,6 +270,25 @@ describe("extractRoasterNotes", () => {
 		).toBe("black currant, ruby grapefruit, and molasses");
 	});
 
+	test("needs a word boundary before the lead-in", () => {
+		// "Footnotes of" is not "notes of"; nothing here is a descriptor.
+		expect(
+			extractRoasterNotes(
+				"Footnotes of the harvest were long. Hints of plum.",
+				[]
+			)
+		).toBeNull();
+	});
+
+	test("drops a trailing connective left at a block boundary", () => {
+		expect(
+			extractRoasterNotes(
+				"Notes of cherry, chocolate, and\nRoasted to order.",
+				[]
+			)
+		).toBe("cherry, chocolate");
+	});
+
 	test("falls back to the Flavor Profile tag", () => {
 		expect(
 			extractRoasterNotes("A comfortable daily brew.", [
@@ -299,33 +339,38 @@ describe("parseProductsJson lot copy (§14.4)", () => {
 			])
 		);
 		expect(page.products[0]).toEqual({
-			description:
-				"A washed lot from Urrao. In the cup we find peach, melon, and red tea.",
 			externalId: "1",
 			handle: "lot-1",
-			imageUrl: "https://cdn.example.com/lot.png?v=1",
+			lotCopy: {
+				description:
+					"A washed lot from Urrao. In the cup we find peach, melon, and red tea.",
+				imageUrl: "https://cdn.example.com/lot.png?v=1",
+				origin: "Colombia",
+				process: "Washed",
+				roasterNotes: "peach, melon, and red tea",
+				tags: ["Coffee", "From: Colombia", "Process: Washed"],
+			},
 			name: "La Casita",
-			origin: "Colombia",
-			process: "Washed",
-			roasterNotes: "peach, melon, and red tea",
-			tags: ["Coffee", "From: Colombia", "Process: Washed"],
 			variants: [
 				{ available: true, grams: 250, name: "250g", priceCents: 1800 },
 			],
 		});
 	});
 
-	test("omits every §14.4 field the feed does not carry", () => {
+	test("always carries lotCopy, empty when the feed publishes none", () => {
+		// products.json is authoritative for the copy: an empty lotCopy is a
+		// statement ("nothing published"), not an unknown.
 		const page = parseProductsJson(
 			feedBody([feedProduct(2, { body_html: "", tags: [] }), feedProduct(3)])
 		);
-		expect(page.products[0]).toEqual({
+		expect(page.products[0]).toStrictEqual({
 			externalId: "2",
 			handle: "lot-2",
+			lotCopy: {},
 			name: "Lot 2",
 			variants: expect.anything(),
 		});
-		expect(page.products[1]).not.toHaveProperty("roasterNotes");
+		expect(page.products[1]?.lotCopy).toStrictEqual({});
 	});
 
 	test("reads the first image and comma-string tags", () => {
@@ -342,7 +387,7 @@ describe("parseProductsJson lot copy (§14.4)", () => {
 				}),
 			])
 		);
-		expect(page.products[0]).toMatchObject({
+		expect(page.products[0]?.lotCopy).toMatchObject({
 			imageUrl: "https://cdn.example.com/first.png",
 			origin: "Kenya",
 			process: "Washed",
@@ -357,7 +402,7 @@ describe("parseProductsJson lot copy (§14.4)", () => {
 			])
 		);
 		const [product] = page.products;
-		expect(product?.description?.length).toBeLessThanOrEqual(2000);
+		expect(product?.lotCopy?.description?.length).toBeLessThanOrEqual(2000);
 	});
 });
 

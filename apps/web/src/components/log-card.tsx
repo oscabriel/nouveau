@@ -89,7 +89,7 @@ export const LogCard = ({
 			</div>
 			{log.rating !== null && <Stars rating={log.rating} />}
 			{log.notes !== null && <p className="text-sm">{log.notes}</p>}
-			{log.lot.roasterNotes !== null && (
+			{log.lot.roasterNotes !== null && !editing && (
 				<p className="text-muted-foreground text-xs italic">
 					<span className="font-medium not-italic">Roaster notes:</span>{" "}
 					{log.lot.roasterNotes}

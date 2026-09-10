@@ -13,19 +13,24 @@ export const extractedVariant = v.object({
 
 // §14.4 lot copy: what the roaster publishes about the lot itself, stored on
 // `products` at upsert time (products upsert every crawl, so new fields fill
-// on the next cycle — no migration). All optional: HTML-mode and thin feeds
-// carry none of it.
-export const extractedProduct = v.object({
+// on the next cycle — no migration). Every field is optional: a lot with no
+// tasting prose has no roasterNotes, and that absence is meaningful (see
+// ExtractedProduct.lotCopy).
+export const lotCopyValidator = v.object({
 	description: v.optional(v.string()),
-	externalId: v.string(),
-	handle: v.string(),
 	imageUrl: v.optional(v.string()),
-	name: v.string(),
 	origin: v.optional(v.string()),
 	process: v.optional(v.string()),
 	roastLevel: v.optional(v.string()),
 	roasterNotes: v.optional(v.string()),
 	tags: v.optional(v.array(v.string())),
+});
+
+export const extractedProduct = v.object({
+	externalId: v.string(),
+	handle: v.string(),
+	lotCopy: v.optional(lotCopyValidator),
+	name: v.string(),
 	variants: v.array(extractedVariant),
 });
 
@@ -36,17 +41,29 @@ export interface ExtractedVariant {
 	priceCents: number;
 }
 
-export interface ExtractedProduct {
+export interface LotCopy {
 	description?: string;
-	externalId: string;
-	handle: string;
 	imageUrl?: string;
-	name: string;
 	origin?: string;
 	process?: string;
 	roastLevel?: string;
 	roasterNotes?: string;
 	tags?: string[];
+}
+
+export interface ExtractedProduct {
+	externalId: string;
+	handle: string;
+	/**
+	 * The roaster's published copy (§14.4). Present when the source is
+	 * authoritative for it (products.json carries body_html, tags and images
+	 * for every product), in which case a field it lacks is cleared on the
+	 * stored product: a roaster who edits "notes of cherry" out of their copy
+	 * must not keep "cherry" shown as their verbatim words. Absent when the
+	 * source knows nothing about copy (HTML mode), and stored values stay.
+	 */
+	lotCopy?: LotCopy;
+	name: string;
 	variants: ExtractedVariant[];
 }
 
@@ -70,6 +87,10 @@ const NAMED_ENTITIES: Record<string, string> = {
 const BLOCK_TAG =
 	/<\/?\s*(?:p|div|br|li|ul|ol|h[1-6]|blockquote|table|tr|td|th)\b[^>]*>/giu;
 
+/** Elements whose text content is code, not prose; dropped whole. */
+const DROPPED_ELEMENT =
+	/<(?<tag>script|style)\b[^>]*>[\s\S]*?<\/\k<tag>\s*>/giu;
+
 /**
  * Strip tags, decode entities, collapse whitespace — roaster copy as prose.
  * Block tags become newlines: tasting-note lists often live in their own
@@ -78,6 +99,7 @@ const BLOCK_TAG =
  */
 export const stripHtml = (html: string): string =>
 	html
+		.replaceAll(DROPPED_ELEMENT, "\n")
 		.replaceAll(BLOCK_TAG, "\n")
 		.replaceAll(/<[^>]*>/gu, " ")
 		.replaceAll(
@@ -100,7 +122,18 @@ export const stripHtml = (html: string): string =>
 		.replaceAll(/\s*\n\s*/gu, "\n")
 		.trim();
 
-/** Cap at a word boundary so stored copy never ends mid-word. */
+/**
+ * When the last space before the cap sits this early, the text is one long
+ * unbroken token (a URL, a run of dashes) and a word-boundary cut would keep
+ * almost nothing; hard-cut at the cap instead.
+ */
+const MIN_WORD_CUT = 20;
+
+/**
+ * Cap at a word boundary so stored copy never ends mid-word. A text exactly
+ * at the cap counts as truncated: the clause regexes cap their capture at the
+ * same length and cut mid-word.
+ */
 const capAtWord = (text: string, maxLength: number): string | null => {
 	const trimmed = text.trim();
 	if (trimmed === "") {
@@ -111,16 +144,44 @@ const capAtWord = (text: string, maxLength: number): string | null => {
 	}
 	const cut = trimmed.lastIndexOf(" ", maxLength - 1);
 	return (
-		cut < 20 ? trimmed.slice(0, maxLength) : trimmed.slice(0, cut)
+		cut < MIN_WORD_CUT ? trimmed.slice(0, maxLength) : trimmed.slice(0, cut)
 	).trim();
 };
 
+interface TagParts {
+	key: string;
+	value: string;
+}
+
+/** Split a `Key: Value` Shopify tag; a bare tag is all key, empty value. */
+const splitTag = (tag: string): TagParts => {
+	const colon = tag.indexOf(":");
+	if (colon === -1) {
+		return { key: tag.trim(), value: "" };
+	}
+	return {
+		key: tag.slice(0, colon).trim(),
+		value: tag.slice(colon + 1).trim(),
+	};
+};
+
 const ORIGIN_TAG = /^(?:origin|from|country)$/iu;
+/**
+ * A place name: letters and light punctuation, a few words at most.
+ * `From:` is the loosest origin key (Proud Mary), so the value has to look
+ * like a place — "From: our friends at the co-op" is not an origin.
+ */
+const ORIGIN_VALUE = /^[\p{L}][\p{L}\s,.'’()-]*$/u;
+const MAX_ORIGIN_WORDS = 4;
 const PROCESS_TAG = /^process$/iu;
 const ROAST_TAG = /^(?:roast|roast level)$/iu;
-const ROAST_VALUE = /light|medium|dark/iu;
+/** Anchored: "Light", "Medium-Light", "Light Roast"; not "Lightly sweet". */
+const ROAST_VALUE = /^(?:light|medium|dark)\b/iu;
 const BARE_PROCESS_TAG = /^(?:washed|natural|honey|anaerobic)$/iu;
 const FLAVOR_PROFILE_TAG = /^flavor profile$/iu;
+
+const looksLikeOrigin = (value: string): boolean =>
+	ORIGIN_VALUE.test(value) && value.split(/\s+/u).length <= MAX_ORIGIN_WORDS;
 
 export interface LotAttributes {
 	origin?: string;
@@ -139,23 +200,52 @@ export interface LotAttributes {
 export const parseLotAttributes = (tags: string[]): LotAttributes => {
 	const attributes: LotAttributes = {};
 	for (const tag of tags) {
-		const [key, ...rest] = tag.split(":");
-		const value = rest.join(":").trim();
-		if (ORIGIN_TAG.test(key.trim()) && value !== "") {
+		const { key, value } = splitTag(tag);
+		if (ORIGIN_TAG.test(key) && looksLikeOrigin(value)) {
 			attributes.origin ??= value;
-		} else if (PROCESS_TAG.test(key.trim()) && value !== "") {
+		} else if (PROCESS_TAG.test(key) && value !== "") {
 			attributes.process ??= value;
-		} else if (ROAST_TAG.test(key.trim()) && ROAST_VALUE.test(value)) {
+		} else if (ROAST_TAG.test(key) && ROAST_VALUE.test(value)) {
 			attributes.roastLevel ??= value;
-		} else if (BARE_PROCESS_TAG.test(tag.trim())) {
-			attributes.process ??= tag.trim();
+		} else if (BARE_PROCESS_TAG.test(key)) {
+			attributes.process ??= key;
 		}
 	}
 	return attributes;
 };
 
-/** Trailing connectives left behind by the clause captures ("and", "&"). */
-const TRIM_TAIL = /[\s,&-]+$/u;
+/**
+ * Trailing connectives left behind when a clause capture stops at a block
+ * boundary: ", and", " &", " -", and bare punctuation or whitespace.
+ */
+const TRIM_TAIL = /(?:\s+and|[\s,&-])+$/iu;
+
+/**
+ * Descriptor-clause patterns over the roaster's prose, tried in order. Each
+ * captures `clause`; the lead-in words are anchored on a word boundary so
+ * "Footnotes of the harvest" is not a `notes of` match.
+ */
+const NOTES_PATTERNS: readonly RegExp[] = [
+	// Ruby lists descriptors dash-separated in their own block; the newline
+	// (not the boilerplate that follows) ends the capture.
+	/\bwe\s+taste:?\s*(?<clause>[^\n]{5,200})/iu,
+	/\bin\s+the\s+cup,?\s+we\s+(?:find|taste|get)\s+(?<clause>[^.!?\n]{5,200})/iu,
+	/\b(?:tasting\s+)?notes\s+of\s+(?<clause>[^\u2014\u2013.!?\n]{5,160})/iu,
+	/\bflavors\s+of\s+(?<clause>[^\u2014\u2013.!?\n]{5,160})/iu,
+];
+
+const matchClause = (description: string): string | null => {
+	for (const pattern of NOTES_PATTERNS) {
+		const clause = pattern
+			.exec(description)
+			?.groups?.clause.replace(TRIM_TAIL, "")
+			.trim();
+		if (clause !== undefined && clause !== "") {
+			return clause;
+		}
+	}
+	return null;
+};
 
 /**
  * roasterNotes (§14.4): descriptors taken only from the roaster's own copy —
@@ -167,30 +257,16 @@ export const extractRoasterNotes = (
 	description: string,
 	tags: string[]
 ): string | null => {
-	const clause = (pattern: RegExp): string | null =>
-		pattern.exec(description)?.groups?.clause.replace(TRIM_TAIL, "").trim() ??
-		null;
-	// Ruby lists descriptors dash-separated in their own block; the newline
-	// (not the boilerplate that follows) ends the capture.
-	const dashList = clause(/we\s+taste:?\s*(?<clause>[^\n]{5,200})/iu);
-	const matched =
-		dashList ??
-		clause(
-			/in\s+the\s+cup,?\s+we\s+(?:find|taste|get)\s+(?<clause>[^.!?\n]{5,200})/iu
-		) ??
-		clause(
-			/(?:tasting\s+)?notes\s+of\s+(?<clause>[^\u2014\u2013.!?\n]{5,160})/iu
-		) ??
-		clause(/flavors\s+of\s+(?<clause>[^\u2014\u2013.!?\n]{5,160})/iu);
-	if (matched !== null && matched !== "") {
+	const matched = matchClause(description);
+	if (matched !== null) {
 		return capAtWord(matched, ROASTER_NOTES_MAX_LENGTH);
 	}
 	// Intelligentsia puts descriptors in a structured tag when the prose has
 	// none ("Flavor Profile: Caramel + Stone Fruit").
 	for (const tag of tags) {
-		const [key, ...rest] = tag.split(":");
-		if (FLAVOR_PROFILE_TAG.test(key.trim()) && rest.join(":").trim() !== "") {
-			return capAtWord(rest.join(":"), ROASTER_NOTES_MAX_LENGTH);
+		const { key, value } = splitTag(tag);
+		if (FLAVOR_PROFILE_TAG.test(key) && value !== "") {
+			return capAtWord(value, ROASTER_NOTES_MAX_LENGTH);
 		}
 	}
 	return null;
@@ -282,6 +358,42 @@ export interface ProductsJsonPage {
 }
 
 /**
+ * The roaster's published copy for one products.json product (§14.4). Always
+ * returned, even empty: products.json is authoritative for this copy, so an
+ * empty object means "the roaster publishes none" and clears stale values.
+ */
+const parseLotCopy = (raw: ShopifyProduct): LotCopy => {
+	const tags = parseTags(raw.tags);
+	// The block-structured text drives the notes regex (blocks end clause
+	// captures); the stored description is the same copy flattened to one
+	// line.
+	const blockText =
+		typeof raw.body_html === "string" ? stripHtml(raw.body_html) : "";
+	const description = capAtWord(
+		blockText.replaceAll("\n", " "),
+		DESCRIPTION_MAX_LENGTH
+	);
+	const imageUrl =
+		raw.image?.src ??
+		raw.images?.find((image) => typeof image.src === "string")?.src;
+	const roasterNotes = extractRoasterNotes(blockText, tags);
+	const copy: LotCopy = parseLotAttributes(tags);
+	if (description !== null) {
+		copy.description = description;
+	}
+	if (typeof imageUrl === "string") {
+		copy.imageUrl = imageUrl;
+	}
+	if (tags.length > 0) {
+		copy.tags = tags.slice(0, MAX_TAGS);
+	}
+	if (roasterNotes !== null) {
+		copy.roasterNotes = roasterNotes;
+	}
+	return copy;
+};
+
+/**
  * Parse one page of a Shopify /products.json body. Throws when the body is
  * not a Shopify products feed (caller falls back to HTML mode). Applies the
  * wholesale-SKU filter; an all-wholesale or empty first page yields no
@@ -307,32 +419,12 @@ export const parseProductsJson = (text: string): ProductsJsonPage => {
 				priceCents: toCents(variant.price),
 			})
 		);
-		const tags = parseTags(raw.tags);
-		// The block-structured text drives the notes regex (blocks end clause
-		// captures); the stored description is the same copy flattened to one
-		// line.
-		const blockText =
-			typeof raw.body_html === "string" ? stripHtml(raw.body_html) : "";
-		const description = capAtWord(
-			blockText.replaceAll("\n", " "),
-			DESCRIPTION_MAX_LENGTH
-		);
-		const imageUrl =
-			raw.image?.src ??
-			raw.images?.find((image) => typeof image.src === "string")?.src ??
-			null;
-		const attributes = parseLotAttributes(tags);
-		const roasterNotes = extractRoasterNotes(blockText, tags);
 		products.push({
 			externalId: String(raw.id ?? raw.handle ?? ""),
 			handle: raw.handle ?? "",
+			lotCopy: parseLotCopy(raw),
 			name: raw.title ?? "",
 			variants,
-			...(description === null ? {} : { description }),
-			...(imageUrl === null || imageUrl === undefined ? {} : { imageUrl }),
-			...(tags.length === 0 ? {} : { tags: tags.slice(0, MAX_TAGS) }),
-			...attributes,
-			...(roasterNotes === null ? {} : { roasterNotes }),
 		});
 	}
 	return { feedCount: feed.length, products };

@@ -34,7 +34,7 @@ export const LogForm = ({
 	};
 	lotId: Id<"products">;
 	onDone: () => void;
-	roasterNotes?: string | null;
+	roasterNotes: string | null;
 }) => {
 	const [rateIt, setRateIt] = useState(
 		existing?.rating !== undefined && existing.rating !== null
@@ -77,7 +77,7 @@ export const LogForm = ({
 
 	return (
 		<div className="my-2 flex flex-col gap-3 rounded-md border p-3">
-			{roasterNotes !== undefined && roasterNotes !== null && (
+			{roasterNotes !== null && (
 				<p className="text-muted-foreground text-xs italic">
 					<span className="font-medium not-italic">Roaster notes:</span>{" "}
 					{roasterNotes}

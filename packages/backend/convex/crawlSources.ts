@@ -175,24 +175,37 @@ interface UpsertProductInput {
 	roasterId: Id<"roasters">;
 }
 
-// §14.4 lot-copy fields. Optional in the extracted product, so only the
-// present ones are written; a feed that stops carrying a field leaves the
-// previously stored value alone.
-const lotCopy = (product: ExtractedProduct): Partial<Doc<"products">> => ({
-	...(product.description === undefined
-		? {}
-		: { description: product.description }),
-	...(product.imageUrl === undefined ? {} : { imageUrl: product.imageUrl }),
-	...(product.origin === undefined ? {} : { origin: product.origin }),
-	...(product.process === undefined ? {} : { process: product.process }),
-	...(product.roastLevel === undefined
-		? {}
-		: { roastLevel: product.roastLevel }),
-	...(product.roasterNotes === undefined
-		? {}
-		: { roasterNotes: product.roasterNotes }),
-	...(product.tags === undefined ? {} : { tags: product.tags }),
-});
+/**
+ * §14.4 lot-copy fields for the product write. When the source carries
+ * `lotCopy` it is authoritative for the roaster's copy: every field is
+ * written, and an `undefined` one clears the stored value (patch deletes the
+ * field; insert skips it), so a roaster who removes their tasting prose does
+ * not keep stale descriptors shown as their verbatim words. A source without
+ * `lotCopy` (HTML mode) leaves the stored copy alone.
+ */
+const lotCopyFields = (product: ExtractedProduct): Partial<Doc<"products">> => {
+	if (product.lotCopy === undefined) {
+		return {};
+	}
+	const {
+		description,
+		imageUrl,
+		origin,
+		process,
+		roastLevel,
+		roasterNotes,
+		tags,
+	} = product.lotCopy;
+	return {
+		description,
+		imageUrl,
+		origin,
+		process,
+		roastLevel,
+		roasterNotes,
+		tags,
+	};
+};
 
 /** Insert or refresh one product (by roaster + externalId) and its variants. */
 const upsertProduct = async (
@@ -217,7 +230,7 @@ const upsertProduct = async (
 			name: product.name,
 			roasterId,
 			status: "current",
-			...lotCopy(product),
+			...lotCopyFields(product),
 		});
 	} else {
 		productId = current._id;
@@ -226,7 +239,7 @@ const upsertProduct = async (
 			missedCrawls: 0,
 			name: product.name,
 			status: "current",
-			...lotCopy(product),
+			...lotCopyFields(product),
 		});
 	}
 	await applyVariants(ctx, {
