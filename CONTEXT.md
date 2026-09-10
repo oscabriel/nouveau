@@ -6,7 +6,9 @@ A drop-alert service with a social layer for home coffee brewers: watches US spe
 
 **Roaster**: A specialty coffee roastery whose shop Nouveau watches. Roasters don't opt in; watching is done from public product pages. _Avoid_: Brand, vendor, shop (for the business; "shop" means the website)
 
-**Lot**: One coffee product in a roaster's shop — the user-facing unit of a release. A lot has one or more bag sizes. _Avoid_: Product in user-facing copy; "product" is fine in code and schema
+**Lot**: One roasted coffee in a roaster's shop — the user-facing unit of a release. A lot has one or more bag sizes. Whole bean, ground, instant and steeped bags all count; the format doesn't matter, the coffee does. _Avoid_: Product in user-facing copy; "product" is fine in code and schema
+
+**Non-lot**: A shop item that is not one roasted coffee, so it never enters the catalog: brewing equipment, merch, tea and other consumables, gift cards, subscriptions, bundles and samplers (several coffees or none), capsules and pods (a format duplicate of a lot), canned and ready-to-drink coffee. Decided at extraction from the shop's own product type, tags and title (build spec §16). _Avoid_: Junk, noise in code and docs; the shop item is legitimate, it just isn't a lot
 
 **Variant**: A bag size of a lot, carrying its own price and stock state. _Avoid_: SKU, size option
 

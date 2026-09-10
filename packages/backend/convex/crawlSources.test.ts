@@ -481,6 +481,87 @@ describe("commit: 3-strike archive", () => {
 	});
 });
 
+/** The commit path with the classifier's rejected ids attached (§16). */
+const crawlRejecting = (
+	fx: Fixture,
+	fetchedAt: number,
+	products: ExtractedProduct[],
+	rejectedExternalIds: string[]
+): Promise<null> =>
+	fx.t.action(internal.crawler.commitExtractedCatalog, {
+		crawlSourceId: fx.crawlSourceId,
+		fetchedAt,
+		products,
+		rejectedExternalIds,
+	});
+
+describe("commit: non-lot purge (§16)", () => {
+	test("a rejected id still in the catalog is deleted with its variants and events", async () => {
+		const fx = await setup();
+		// Before the rule: the scale entered the catalog and moved once.
+		await crawl(fx, T0, [product("lot"), product("scale")]);
+		await crawl(fx, T0 + CADENCE_MS, [
+			product("lot"),
+			product("scale", [
+				{ available: true, grams: 250, name: "250g", priceCents: 1500 },
+			]),
+		]);
+		expect(await readEvents(fx)).toHaveLength(1);
+
+		// After the rule: the crawl no longer sees the scale and names it rejected.
+		await crawlRejecting(fx, T0 + 2 * CADENCE_MS, [product("lot")], ["scale"]);
+
+		const state = await readAll(fx);
+		expect(state.products.map((p) => p.externalId)).toEqual(["lot"]);
+		expect(state.variants).toHaveLength(1);
+		expect(state.events).toEqual([]);
+	});
+
+	test("a rejected product someone logged is archived, not deleted", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [product("lot"), product("tea")]);
+		await fx.t.run(async (ctx) => {
+			const products = await ctx.db.query("products").collect();
+			const tea = products.find((p) => p.externalId === "tea") ?? null;
+			const userId = await ctx.db.insert("users", {
+				name: "Taster",
+				providerAccountId: "google-1",
+			});
+			if (tea === null) {
+				throw new Error("fixture: tea missing");
+			}
+			await ctx.db.insert("logs", {
+				loggedAt: T0,
+				productId: tea._id,
+				userId,
+			});
+		});
+
+		await crawlRejecting(fx, T0 + CADENCE_MS, [product("lot")], ["tea"]);
+
+		const tea = await readProduct(fx, "tea");
+		expect(tea).toMatchObject({ status: "archived" });
+		const state = await readAll(fx);
+		expect(state.products).toHaveLength(2);
+	});
+
+	test("a rejected id that was never in the catalog is a no-op", async () => {
+		const fx = await setup();
+		await crawlRejecting(fx, T0, [product("lot")], ["scale", "mug"]);
+		const state = await readAll(fx);
+		expect(state.products.map((p) => p.externalId)).toEqual(["lot"]);
+		expect(state.source?.health).toBe("watching");
+	});
+
+	test("rejected ids are not strikes for anything else", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [product("a"), product("b")]);
+		await crawlRejecting(fx, T0 + CADENCE_MS, [product("a")], ["scale"]);
+		const b = await readProduct(fx, "b");
+		expect(b).toMatchObject({ missedCrawls: 1, status: "current" });
+	});
+});
+
 describe("commit: failures and captures", () => {
 	test("a failed crawl records the error and bumps consecutiveFailures", async () => {
 		const fx = await setup();

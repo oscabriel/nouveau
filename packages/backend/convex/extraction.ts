@@ -302,19 +302,242 @@ export const shopifyProductsUrl = (websiteUrl: string, page = 1): string => {
 	return `${origin}/products.json?limit=${PRODUCTS_JSON_PAGE_SIZE}&page=${page}`;
 };
 
+/** A product_type or title that says wholesale: Ruby "Wholesale Coffee", "Ethiopia Reko - Wholesale"; Madcap "Karinga (WS)". */
+const WHOLESALE_TEXT = /\bwholesale|\bws\b|\bcafes?\s+only\b/iu;
+
 /**
- * Some feeds mix wholesale-only SKUs (Madcap, La Colombe). They are not
- * customer-purchasable lots, so they never enter the catalog.
+ * Tags whose whole value marks a wholesale-only or cafe-only SKU. Exact match
+ * on purpose: Sweet Bloom tags every retail coffee `wholesale-coffee`, Merit
+ * `Normal Wholesale`, Heart and Blossom a bare `wholesale`, all meaning "also
+ * sold wholesale". The substring rule this replaces hid 48 of Sweet Bloom's
+ * 53 coffees.
+ */
+const WHOLESALE_TAG_VALUE =
+	/^(?:wholesale[\s-]only|hide[\s-]from[\s-]retail|cafe[\s-]only)$/iu;
+
+/**
+ * Some feeds mix wholesale-only SKUs (Madcap, Ruby, Onyx's cafe-only lots).
+ * They are not customer-purchasable lots, so they never enter the catalog.
  */
 export const isWholesale = (
 	productType: string | null | undefined,
-	tags: string[] | string | null | undefined
+	tags: string[] | string | null | undefined,
+	title?: string | null
 ): boolean => {
+	if (
+		WHOLESALE_TEXT.test(productType ?? "") ||
+		WHOLESALE_TEXT.test(title ?? "")
+	) {
+		return true;
+	}
 	// Tags arrive as an array from /products.json but as a comma-separated
 	// string from other Shopify surfaces; both must hit the filter.
-	const tagList = Array.isArray(tags) ? tags : [tags ?? ""];
-	const haystack = [productType ?? "", ...tagList].join(" ").toLowerCase();
-	return haystack.includes("wholesale");
+	return parseTags(tags).some((tag) => WHOLESALE_TAG_VALUE.test(tag));
+};
+
+// ---------------------------------------------------------------------------
+// Lot classifier (build spec §16). A lot is one roasted coffee; everything
+// else a shop sells is a non-lot and never enters the catalog. Every pattern
+// below was drawn from the 20 seed feeds sampled 2026-09-10; the test file
+// carries the real titles that motivated each one.
+// ---------------------------------------------------------------------------
+
+/**
+ * Title words that mean "not one roasted coffee" whatever the type says:
+ * subscriptions and memberships, bundles and samplers, capsules and pods,
+ * count-packs ("12 Pack", "6pk": cans or sachets), bulk and add-on SKUs,
+ * test products. A bare "pack" is not enough: bundles carry a `bundle` tag.
+ * Counter Culture files gift subscriptions under `Coffee`; Coava lists
+ * "Kilenso (Subscription)" next to "Kilenso".
+ */
+const NON_LOT_FORMAT_TITLE =
+	/\b(?:gift\s*cards?|e-?gift|subscriptions?|prepaid|memberships?|bundles?|samplers?|samples?|tester|tasting\s+set|sets?|gift\s+box(?:es)?|box(?:es)?|variety\s+packs?|filter\s+packs?|\d+\s*-?\s*(?:pk|packs?)|trio|duo|k-?cups?|capsules?|pods?|nespresso|cold\s+brew|lattes?|ready[\s-]to[\s-]drink|rtd|concentrate|flash[\s-]chilled|bulk|quick\s+order|monthly|weekly|recurring|installments?|add[\s-]on|test\s+(?:product|coffee)|do\s+not\s+buy)\b/iu;
+
+/**
+ * Hard goods in the title, applied whatever the type says: Proud Mary files a
+ * Comandante grinder under `coffee-archive`. Only nouns that never name a
+ * coffee. `filters` is plural on purpose: Proud Mary's coffee titles end in
+ * "| Filter" (the brew method).
+ */
+const NON_LOT_GOODS_TITLE =
+	/\b(?:mugs?|tees?|t-?shirts?|shirts?|hoodies?|sweatshirts?|crewnecks?|beanies?|snapbacks?|caps?|hats?|totes?|stickers?|scales?|grinders?|kettles?|drippers?|tampers?|canisters?|tumblers?|koozies?|socks|aprons?|candles?|posters?|drinkware|apparel|merch(?:andise)?|equipment|gear|filters|aeropress|chemex)\b/iu;
+
+/**
+ * Consumables and books that share vocabulary with coffee copy ("chocolate"
+ * is a flavor word, "The Physics of Espresso" is a book). Checked only when
+ * nothing typed the item, so a coffee named "Chocolate Blend" still lands.
+ */
+const NON_LOT_CONSUMABLE_TITLE =
+	/\b(?:teas?|matcha|chocolate|syrup|cascara|honey|cups?|physics|atlas|books?)\b/iu;
+
+/**
+ * A tag whose whole value names a non-lot. Exact match, not substring:
+ * Stumptown's real coffees carry "Filter: Subscription Eligible" while its
+ * subscription SKUs carry "Coffee Type: Subscription Only". `Shopify
+ * Collective` marks dropshipped third-party goods; `white-label` marks
+ * Onyx's contract roasts for other brands.
+ */
+const NON_LOT_TAG_VALUE =
+	/^(?:subscription\s+only|gift\s+subscriptions?|bundles?|gift\s+sets?|variety\s+packs?|white-?label|shopify\s+collective|internalsupplies|equipment|merch(?:andise)?|apparel|drinkware|teaware|accessories|gear|rtd)$/iu;
+
+/**
+ * A `Key: Value` tag whose value is the word subscription names a
+ * subscription product (Intelligentsia "Badge: Rotating Subscription"). The
+ * bare tag is only eligibility (see NON_LOT_WEAK_TAG_VALUE), and a
+ * subscription key with another value ("Subscription: Enabled") says nothing.
+ */
+const NON_LOT_KEYED_SUBSCRIPTION = /^(?:rotating\s+)?subscriptions?$/iu;
+
+/**
+ * Like NON_LOT_TAG_VALUE, but only trusted when nothing typed the item. A
+ * bare `subscription` or `recharge` tag marks a coffee as subscription-
+ * eligible on Counter Culture, Madcap, Heart and Sightglass; on Sey's
+ * untyped "2lb Decaffeinated" SKUs it marks the subscription itself.
+ */
+const NON_LOT_WEAK_TAG_VALUE =
+	/^(?:subscriptions?|recharge|gifts?|teas?|collectibles?|tour|education|equip-access|cafe-supplies|single-use)$/iu;
+
+/**
+ * A product_type segment that is a non-lot. Runs before the coffee match so
+ * "Coffee Grinder" is a grinder and "Lattes + Cold Coffee" is a latte.
+ * `brew(?:ing|ers?)` leaves Coava's "Brewed Coffee" (their whole-bean type)
+ * alone.
+ */
+const NON_LOT_TYPE =
+	/\b(?:equipment|gear|brew(?:ing|ers?)|scales?|grinders?|kettles?|filters?|accessor(?:y|ies)|merch(?:andise)?|apparel|drinkware|wares?|warehouse|mugs?|tees?|t-?shirts?|gifts?|cards?|subscriptions?|clubs?|bundles?|sets?|box(?:es)?|teas?|chocolate|food|rtd|cold\s+brew|lattes?|alt\s+beverage|supplies|events?|tickets?|gratuity|goods|other|series)\b/iu;
+
+/**
+ * A product_type segment that is roasted coffee. Includes the roaster-specific
+ * names seen on the seed feeds: Sweet Bloom "Coffee Offerings", PT's "Past
+ * Offerings Collection", Heart "Beans", Proud Mary "coffee-archive".
+ */
+const LOT_TYPE =
+	/\b(?:coffees?|beans?|blends?|single[\s-]origin|espresso|decaf|ge[i]?sha|offerings|instant|roasts?|whole[\s-]bean)\b/iu;
+
+/**
+ * Bare tags only coffee carries (Onyx `coffee`, Coava `Instant Craft Coffee`,
+ * Ruby `Washed` and `Medium Roast`). A bare place tag counts too (Ruby
+ * `Peru`); see LOT_TITLE_PLACE.
+ */
+const LOT_BARE_TAG =
+	/^(?:coffees?|single[\s-]origin|blends?|instant|instant\s+craft\s+coffee|whole\s+bean|decaf|espresso|drip|washed|natural|honey|anaerobic|(?:light|medium|dark)(?:[\s-](?:light|dark))?[\s-]roast)$/iu;
+
+/** `Key: Value` keys only coffee carries, whatever the value ("From: Ethiopia", "Coffee Type: Blend"). */
+const LOT_TAG_KEY =
+	/^(?:coffee\s+type|origin|from|country|process|roast|roast\s+level)$/iu;
+
+/** `Type: Single Origin` / `type:blend` (Proud Mary, Onyx); a bare `Type:` says nothing. */
+const LOT_TYPE_TAG_VALUE = /^(?:single[\s-]origin|blends?)$/iu;
+
+/**
+ * Coffee vocabulary in a title: what the coffee is, how it was processed.
+ * No `honey`: on an untyped item it is as likely the jar (Ruby "Bird And The
+ * Bees Honey") as the process.
+ */
+const LOT_TITLE_WORD =
+	/\b(?:coffees?|blends?|espresso|decaf\w*|single[\s-]origin|instant|roasts?|roasted|ge[i]?sha|bourbon|typica|caturra|catuai|pacamara|maragogype|heirloom|sl-?28|sl-?34|washed|natural|anaerobic|carbonic|omni)\b/iu;
+
+/** Producing countries and the regions that stand alone in coffee names. */
+const LOT_TITLE_PLACE =
+	/\b(?:ethiopia|kenya|colombia|brazil|guatemala|costa\s+rica|honduras|el\s+salvador|nicaragua|peru|mexico|panama|rwanda|burundi|uganda|tanzania|yemen|indonesia|sumatra|sulawesi|java|bali|papua\s+new\s+guinea|bolivia|ecuador|congo|malawi|zambia|india|vietnam|thailand|myanmar|laos|yunnan|china|hawaii|kona|jamaica|dominican|haiti|timor|philippines|nepal|cameroon|venezuela|huila|nari[nñ]o|cauca|tolima|antioquia|yirgacheffe|sidama|sidamo|guji|gedeb|kochere|nyeri|kirinyaga|huehuetenango|antigua|tarraz[uú]|chiapas|oaxaca|boquete|cajamarca)\b/iu;
+
+export type LotRule = "wholesale" | "title" | "tag" | "type" | "default";
+
+export interface LotClassification {
+	isLot: boolean;
+	/** Which signal decided, for tests and feed audits. */
+	rule: LotRule;
+}
+
+export interface LotClassifierInput {
+	productType: string | null | undefined;
+	tags: string[] | string | null | undefined;
+	title: string | null | undefined;
+}
+
+type Verdict = "lot" | "non_lot" | "unknown";
+
+/** Verdict over the product_type segments (Stumptown lists several, comma-separated). */
+const typeVerdict = (productType: string): Verdict => {
+	let sawNonLot = false;
+	for (const segment of productType.split(",")) {
+		if (NON_LOT_TYPE.test(segment)) {
+			sawNonLot = true;
+		} else if (LOT_TYPE.test(segment)) {
+			// A coffee segment outranks a "Gifts" segment on the same product.
+			return "lot";
+		}
+	}
+	return sawNonLot ? "non_lot" : "unknown";
+};
+
+const tagMatches = (tags: string[], pattern: RegExp): boolean =>
+	tags.some((tag) => {
+		const { key, value } = splitTag(tag);
+		return pattern.test(value === "" ? key : value);
+	});
+
+const keyedTagMatches = (tags: string[], pattern: RegExp): boolean =>
+	tags.some((tag) => {
+		const { value } = splitTag(tag);
+		return value !== "" && pattern.test(value);
+	});
+
+const tagSaysLot = (tags: string[]): boolean =>
+	tags.some((tag) => {
+		const { key, value } = splitTag(tag);
+		if (value === "") {
+			return LOT_BARE_TAG.test(key) || LOT_TITLE_PLACE.test(key);
+		}
+		if (LOT_TAG_KEY.test(key)) {
+			return true;
+		}
+		return key.toLowerCase() === "type" && LOT_TYPE_TAG_VALUE.test(value);
+	});
+
+const titleSaysLot = (title: string): boolean =>
+	LOT_TITLE_WORD.test(title) || LOT_TITLE_PLACE.test(title);
+
+/**
+ * Decide whether a shop item is a lot (§16). Signals in order, first decisive
+ * wins: wholesale; a title that names a non-lot format or hard good; a tag
+ * whose value names a non-lot; the product_type; then, for untyped items,
+ * tags and title with coffee vocabulary. Untyped, untagged, unnamed items
+ * are not lots: the seed roasters all type their coffees, and a false lot
+ * pollutes the feed while a missed one costs a sold-out archive row.
+ */
+export const classifyLot = (input: LotClassifierInput): LotClassification => {
+	const title = input.title ?? "";
+	if (isWholesale(input.productType, input.tags, title)) {
+		return { isLot: false, rule: "wholesale" };
+	}
+	if (NON_LOT_FORMAT_TITLE.test(title) || NON_LOT_GOODS_TITLE.test(title)) {
+		return { isLot: false, rule: "title" };
+	}
+	const tags = parseTags(input.tags);
+	if (
+		tagMatches(tags, NON_LOT_TAG_VALUE) ||
+		keyedTagMatches(tags, NON_LOT_KEYED_SUBSCRIPTION)
+	) {
+		return { isLot: false, rule: "tag" };
+	}
+	const byType = typeVerdict(input.productType ?? "");
+	if (byType !== "unknown") {
+		return { isLot: byType === "lot", rule: "type" };
+	}
+	if (tagMatches(tags, NON_LOT_WEAK_TAG_VALUE)) {
+		return { isLot: false, rule: "tag" };
+	}
+	if (tagSaysLot(tags)) {
+		return { isLot: true, rule: "tag" };
+	}
+	if (NON_LOT_CONSUMABLE_TITLE.test(title)) {
+		return { isLot: false, rule: "title" };
+	}
+	if (titleSaysLot(title)) {
+		return { isLot: true, rule: "title" };
+	}
+	return { isLot: false, rule: "default" };
 };
 
 const toCents = (price: unknown): number => {
@@ -350,11 +573,16 @@ interface ShopifyProduct {
 
 export interface ProductsJsonPage {
 	/**
-	 * Raw feed length before the wholesale filter. A full page
+	 * Raw feed length before the lot classifier. A full page
 	 * (PRODUCTS_JSON_PAGE_SIZE) means the next page may hold more products.
 	 */
 	feedCount: number;
 	products: ExtractedProduct[];
+	/**
+	 * externalIds the classifier rejected (§16). The crawl hands them to
+	 * finalizeCrawl, which purges any that are still in the catalog.
+	 */
+	rejectedExternalIds: string[];
 }
 
 /**
@@ -396,9 +624,9 @@ const parseLotCopy = (raw: ShopifyProduct): LotCopy => {
 /**
  * Parse one page of a Shopify /products.json body. Throws when the body is
  * not a Shopify products feed (caller falls back to HTML mode). Applies the
- * wholesale-SKU filter; an all-wholesale or empty first page yields no
- * products so the caller can treat an empty catalog as a failed crawl (build
- * spec: empty catalog -> crawl-failed -> HTML mode).
+ * lot classifier (§16); a first page with no lots yields no products so the
+ * caller can treat an empty catalog as a failed crawl (build spec: empty
+ * catalog -> crawl-failed -> HTML mode).
  */
 export const parseProductsJson = (text: string): ProductsJsonPage => {
 	const body: unknown = JSON.parse(text);
@@ -407,8 +635,16 @@ export const parseProductsJson = (text: string): ProductsJsonPage => {
 		throw new TypeError("Not a Shopify products.json feed");
 	}
 	const products: ExtractedProduct[] = [];
+	const rejectedExternalIds: string[] = [];
 	for (const raw of feed) {
-		if (isWholesale(raw.product_type, raw.tags)) {
+		const externalId = String(raw.id ?? raw.handle ?? "");
+		const verdict = classifyLot({
+			productType: raw.product_type,
+			tags: raw.tags,
+			title: raw.title,
+		});
+		if (!verdict.isLot) {
+			rejectedExternalIds.push(externalId);
 			continue;
 		}
 		const variants: ExtractedVariant[] = (raw.variants ?? []).map(
@@ -420,14 +656,14 @@ export const parseProductsJson = (text: string): ProductsJsonPage => {
 			})
 		);
 		products.push({
-			externalId: String(raw.id ?? raw.handle ?? ""),
+			externalId,
 			handle: raw.handle ?? "",
 			lotCopy: parseLotCopy(raw),
 			name: raw.title ?? "",
 			variants,
 		});
 	}
-	return { feedCount: feed.length, products };
+	return { feedCount: feed.length, products, rejectedExternalIds };
 };
 
 /** Stop walking products.json pages here even if the feed is still full
@@ -437,6 +673,8 @@ export const MAX_PRODUCTS_JSON_PAGES = 4;
 export interface FeedWalkResult {
 	pageError: string | null;
 	products: ExtractedProduct[];
+	/** Union of every page's rejected ids (§16); empty when the walk fails. */
+	rejectedExternalIds: string[];
 }
 
 export interface FeedWalkInput {
@@ -465,6 +703,7 @@ export const walkFeedPages = async (
 	input: FeedWalkInput
 ): Promise<FeedWalkResult> => {
 	const collected = new Map<string, ExtractedProduct>();
+	const rejected = new Set<string>(input.firstPage.rejectedExternalIds);
 	for (const product of input.firstPage.products) {
 		collected.set(product.externalId, product);
 	}
@@ -486,10 +725,14 @@ export const walkFeedPages = async (
 			return {
 				pageError: `products.json page ${page} unavailable; partial catalog discarded`,
 				products: [],
+				rejectedExternalIds: [],
 			};
 		}
 		for (const product of parsed.products) {
 			collected.set(product.externalId, product);
+		}
+		for (const id of parsed.rejectedExternalIds) {
+			rejected.add(id);
 		}
 		({ feedCount } = parsed);
 	}
@@ -498,7 +741,11 @@ export const walkFeedPages = async (
 			`${input.websiteUrl}: products.json still full at page ${page}; catalog may exceed the crawl cap`
 		);
 	}
-	return { pageError: null, products: [...collected.values()] };
+	return {
+		pageError: null,
+		products: [...collected.values()],
+		rejectedExternalIds: [...rejected],
+	};
 };
 
 /**

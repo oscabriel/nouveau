@@ -289,8 +289,44 @@ export const applyProductBatch = internalMutation({
 });
 
 /**
+ * Remove a non-lot from the catalog: its variants, its drop events, then the
+ * row. If anyone logged it, archive it instead so the log keeps its lot.
+ */
+const purgeNonLot = async (
+	ctx: MutationCtx,
+	doc: Doc<"products">
+): Promise<void> => {
+	const logged = await ctx.db
+		.query("logs")
+		.withIndex("by_product_and_logged_at", (q) => q.eq("productId", doc._id))
+		.first();
+	if (logged !== null) {
+		if (doc.status === "current") {
+			await ctx.db.patch(doc._id, { status: "archived" });
+		}
+		return;
+	}
+	const [variants, events] = await Promise.all([
+		ctx.db
+			.query("productVariants")
+			.withIndex("by_product_id", (q) => q.eq("productId", doc._id))
+			.collect(),
+		ctx.db
+			.query("dropEvents")
+			.withIndex("by_product", (q) => q.eq("productId", doc._id))
+			.collect(),
+	]);
+	await Promise.all([
+		...variants.map((variant) => ctx.db.delete(variant._id)),
+		...events.map((event) => ctx.db.delete(event._id)),
+	]);
+	await ctx.db.delete(doc._id);
+};
+
+/**
  * Close out one crawl after its batches: raw capture, failure bookkeeping or
- * the 3-strike archive, roaster activation, health, and the next due date.
+ * the 3-strike archive, non-lot purge, roaster activation, health, and the
+ * next due date.
  * The archive pass reads the roaster's whole catalog (one index range), which
  * is fine up to a few thousand products.
  */
@@ -307,6 +343,8 @@ export const finalizeCrawl = internalMutation({
 				storageId: v.id("_storage"),
 			})
 		),
+		// externalIds the lot classifier rejected (§16); purged if still here.
+		rejectedExternalIds: v.optional(v.array(v.string())),
 		success: v.boolean(),
 	},
 	handler: async (ctx, args) => {
@@ -341,19 +379,33 @@ export const finalizeCrawl = internalMutation({
 			return null;
 		}
 
-		// 3-strike archive: a current product absent from 3 consecutive
-		// successful crawls flips to archived (keeps firstSeenAt/lastSeenAt).
 		const fetchedIds = new Set(args.fetchedExternalIds);
+		const rejectedIds = new Set(args.rejectedExternalIds);
 		const existing = await ctx.db
 			.query("products")
 			.withIndex("by_roaster_and_external_id", (q) =>
 				q.eq("roasterId", source.roasterId)
 			)
 			.collect();
+
+		// Non-lot purge (§16): a product the classifier now rejects never was a
+		// lot, so it leaves the catalog outright (variants and events too)
+		// rather than waiting out three strikes. One a taster has logged is
+		// archived instead: logs never lose their lot (§14.1).
+		await Promise.all(
+			existing
+				.filter((doc) => rejectedIds.has(doc.externalId))
+				.map((doc) => purgeNonLot(ctx, doc))
+		);
+
+		// 3-strike archive: a current product absent from 3 consecutive
+		// successful crawls flips to archived (keeps firstSeenAt/lastSeenAt).
 		await Promise.all(
 			existing
 				.filter(
-					(doc) => doc.status === "current" && !fetchedIds.has(doc.externalId)
+					(doc) =>
+						doc.status === "current" &&
+						!(fetchedIds.has(doc.externalId) || rejectedIds.has(doc.externalId))
 				)
 				.map(async (doc) => {
 					const missed = (doc.missedCrawls ?? 0) + 1;

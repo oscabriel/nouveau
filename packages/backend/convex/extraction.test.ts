@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 
 import {
+	classifyLot,
 	extractRoasterNotes,
 	isWholesale,
 	MAX_PRODUCTS_JSON_PAGES,
@@ -37,6 +38,8 @@ const feedProduct = (
 ): FeedProduct => ({
 	handle: `lot-${id}`,
 	id,
+	// Fixtures model a typed coffee; the untyped default is "not a lot" (§16).
+	product_type: "Coffee",
 	title: `Lot ${id}`,
 	variants: [{ available: true, grams: 250, price: "18.00", title: "250g" }],
 	...extra,
@@ -73,16 +76,40 @@ describe("SHOPIFY_FETCH_HEADERS", () => {
 describe("isWholesale", () => {
 	test("matches product_type", () => {
 		expect(isWholesale("Wholesale Coffee", [])).toBe(true);
+		expect(isWholesale("Wholesale Supplies and Equipment", [])).toBe(true);
 		expect(isWholesale("Coffee", [])).toBe(false);
 	});
 
-	test("matches array tags case-insensitively", () => {
-		expect(isWholesale("Coffee", ["single-origin", "WHOLESALE"])).toBe(true);
+	test("matches the title (Ruby's '- Wholesale', Madcap's '(WS)')", () => {
+		expect(isWholesale("Coffee", [], "Ethiopia Reko - Wholesale")).toBe(true);
+		expect(
+			isWholesale("Coffee", [], "Ruby Camo Snapback Cap - WholesaleMerch")
+		).toBe(true);
+		expect(isWholesale("Single Origin", [], "Karinga (WS)")).toBe(true);
+		expect(isWholesale("Blend", [], "Fraction (Half-Caff - WS)")).toBe(true);
+		expect(isWholesale("Coffee", [], "Kiamugumo AB")).toBe(false);
 	});
 
-	test("matches comma-separated string tags", () => {
+	test("matches only tags whose whole value means wholesale-only", () => {
+		expect(isWholesale("Coffee", ["Coffee", "wholesale-only"])).toBe(true);
+		expect(isWholesale("Coffee", ["hide-from-retail"])).toBe(true);
+		expect(isWholesale("Coffee", ["cafe-only", "ONYXCAFES"])).toBe(true);
 		expect(isWholesale("Coffee", "single-origin, wholesale only")).toBe(true);
 		expect(isWholesale("Coffee", "single-origin, retail")).toBe(false);
+	});
+
+	test("'also sold wholesale' tags on retail coffees are not wholesale", () => {
+		// Sweet Bloom, Merit, Heart and Blossom tag their retail bags this way.
+		expect(
+			isWholesale("Coffee Offerings", ["coffee", "wholesale-coffee"])
+		).toBe(false);
+		expect(isWholesale("Coffee", ["MB Espresso", "Normal Wholesale"])).toBe(
+			false
+		);
+		expect(isWholesale("Beans", ["Single Origin", "wholesale"])).toBe(false);
+		expect(isWholesale("Coffee", ["Coffee", "Light roast", "Wholesale"])).toBe(
+			false
+		);
 	});
 
 	test("treats missing fields as retail", () => {
@@ -126,7 +153,9 @@ describe("parseProductsJson", () => {
 
 	test("falls back to the handle as externalId when the id is missing", () => {
 		const page = parseProductsJson(
-			JSON.stringify({ products: [{ handle: "no-id", title: "No Id" }] })
+			JSON.stringify({
+				products: [{ handle: "no-id", product_type: "Coffee", title: "No Id" }],
+			})
 		);
 		expect(page.products[0]).toMatchObject({
 			externalId: "no-id",
@@ -139,12 +168,377 @@ describe("parseProductsJson", () => {
 			feedBody([
 				feedProduct(1),
 				feedProduct(2, { product_type: "Wholesale" }),
-				feedProduct(3, { tags: ["wholesale"] }),
+				feedProduct(3, { title: "Lot 3 - Wholesale" }),
 				feedProduct(4, { tags: "gift, Wholesale-only" }),
 			])
 		);
 		expect(page.feedCount).toBe(4);
 		expect(page.products.map((p) => p.externalId)).toEqual(["1"]);
+	});
+
+	test("drops non-lots and reports their ids so the crawl can purge them (§16)", () => {
+		const page = parseProductsJson(
+			feedBody([
+				feedProduct(1),
+				feedProduct(2, {
+					product_type: "Coffee Scales",
+					title: "Acaia Pearl Scale",
+				}),
+				feedProduct(3, {
+					product_type: "Coffee",
+					title: "12 Month Gift Subscription",
+				}),
+				feedProduct(4, { product_type: "", tags: [], title: "Puck Screens" }),
+				feedProduct(5, { product_type: "Wholesale Coffee" }),
+			])
+		);
+		expect(page.feedCount).toBe(5);
+		expect(page.products.map((p) => p.externalId)).toEqual(["1"]);
+		expect(page.rejectedExternalIds).toEqual(["2", "3", "4", "5"]);
+	});
+});
+
+// Every case below is a real product from a seed roaster's feed, sampled
+// 2026-09-10. The classifier is only as good as the vocabulary it saw.
+const lot = (productType: string, tags: string[], title: string): boolean =>
+	classifyLot({ productType, tags, title }).isLot;
+
+describe("classifyLot (§16)", () => {
+	test("a typed coffee is a lot", () => {
+		expect(lot("Coffee", ["Coffee Type: Single Origin"], "Kiamugumo AB")).toBe(
+			true
+		);
+		expect(lot("Whole Bean Coffee", [], "Colombia Los Guacharos")).toBe(true);
+		expect(lot("Beans", [], "Phono")).toBe(true);
+		expect(lot("Blend", [], "Third Coast")).toBe(true);
+		expect(lot("Single Origin", [], "Dog Days")).toBe(true);
+		expect(lot("Espresso", [], "Owl's Howl")).toBe(true);
+		expect(lot("Coffee Bag", [], "Cipres")).toBe(true);
+		expect(lot("Coffee Offerings", [], "Jhonny Alvarado")).toBe(true);
+		expect(lot("Coffee - NoSubscribe", [], "Flatlander Signature Blend")).toBe(
+			true
+		);
+		expect(lot("Coffees", [], "2026 Mate Matiwos; Keramo - Ethiopia")).toBe(
+			true
+		);
+	});
+
+	test("instant coffee is a lot: the issue's own example", () => {
+		expect(lot("Instant Coffee", [], "Instant Guatemala Finca Pampojila")).toBe(
+			true
+		);
+		expect(lot("Coffee", [], "Instant Espresso Black Cat Classic")).toBe(true);
+		// A blend for cold brewing is still a bagged blend.
+		expect(lot("Coffee", ["Coffee Type: Blend"], "Cold Coffee Blend")).toBe(
+			true
+		);
+	});
+
+	test("roaster-specific coffee type names are lots", () => {
+		// Coava's whole-bean type is "Brewed Coffee"; PT's sold-out coffees sit
+		// under "Past Offerings Collection"; Proud Mary archives under
+		// "coffee-archive" and lists presales under "upcoming-coffees".
+		expect(lot("Brewed Coffee", ["Washed", "Guatemala"], "Nayo Ovalle")).toBe(
+			true
+		);
+		expect(lot("Past Offerings Collection", [], "Yacuri Sidra Washed")).toBe(
+			true
+		);
+		expect(
+			lot(
+				"coffee-archive",
+				["Coffee", "From: El Salvador"],
+				"El Salvador | Siberia | Red Bourbon | Natural | Filter"
+			)
+		).toBe(true);
+		expect(
+			lot(
+				"upcoming-coffees",
+				[],
+				"ETHIOPIA | Solo Daye Bensa | Heirloom | Natural | 2026"
+			)
+		).toBe(true);
+	});
+
+	test("a multi-valued type with one coffee segment is a lot (Stumptown)", () => {
+		expect(
+			lot(
+				"Coffee/Africa,Coffee/Asia Pacific,Coffee/Latin America,Gifts",
+				["Coffee Type: Blend"],
+				"Evergreen"
+			)
+		).toBe(true);
+	});
+
+	test("subscription-eligibility tags on typed coffees are not subscriptions", () => {
+		expect(
+			lot(
+				"Coffee",
+				["Coffee Type: Single Origin", "Filter: Subscription Eligible"],
+				"Guatemala El Injerto Bourbon"
+			)
+		).toBe(true);
+		expect(
+			lot("Coffee", ["coffee", "subscription", "year-round"], "Hologram")
+		).toBe(true);
+		expect(
+			lot("Blend", ["Coffee", "Recharge-Check-Needed", "subscription"], "Spark")
+		).toBe(true);
+		expect(lot("Beans", ["Single Origin", "Subscription"], "Phono")).toBe(true);
+		expect(lot("Blends", ["Bottomless", "recharge"], "Banner Dark")).toBe(true);
+		expect(lot("Coffee", ["Blend Subscription Tag", "Recharge"], "Aster")).toBe(
+			true
+		);
+	});
+
+	test("an unknown type falls through to tags, then title", () => {
+		expect(lot("Organic", [], "Organic August Seasonal Blend")).toBe(true);
+		expect(
+			lot(
+				"Organic",
+				["Medium Roast", "Organic", "Peru"],
+				"Organic Tomorrow Seasonal Project"
+			)
+		).toBe(true);
+		expect(
+			lot(
+				"",
+				["coffee", "instant", "Colombia"],
+				"Instant Costa Rica Don Joel Kenia"
+			)
+		).toBe(true);
+		expect(
+			lot("", ["Instant Craft Coffee", "New Site"], "Instant Passeio")
+		).toBe(true);
+		expect(lot("", [], "Rising Star Mill Seasonal Blend")).toBe(true);
+		expect(lot("", [], "2022 Ikizena Hill - Rwanda")).toBe(true);
+		expect(lot("", [], "The Jijon-Quan coffee!")).toBe(true);
+	});
+
+	test("wholesale is still the first rule", () => {
+		expect(lot("Wholesale Coffee", [], "Ethiopia Reko - Wholesale")).toBe(
+			false
+		);
+		expect(
+			lot(
+				"Single Origin",
+				["Coffee", "wholesale", "wholesale-only"],
+				"Karinga (WS)"
+			)
+		).toBe(false);
+		expect(
+			lot(
+				"Coffee",
+				["cafe-only", "coffee", "wholesale-coffee"],
+				"Geometry - Cafes Only"
+			)
+		).toBe(false);
+		expect(
+			lot("Coffee", ["coffee"], "Costa Rica Volcan Azul SL28 - Cafe Only")
+		).toBe(false);
+	});
+
+	test("retail coffees that are also sold wholesale are lots", () => {
+		expect(
+			lot("Coffee Offerings", ["coffee", "wholesale-coffee"], "Jhonny Alvarado")
+		).toBe(true);
+		expect(
+			lot("Coffee", ["MB Espresso", "Normal Wholesale"], "Kiamugumo AB")
+		).toBe(true);
+		expect(
+			lot("Beans", ["Single Origin", "wholesale"], "Kenya Gachuiro AB")
+		).toBe(true);
+		expect(
+			lot(
+				"Coffee",
+				["Coffee", "wholesale-coffee"],
+				"Decaf Colombia Sebastian Ramirez Red Fruits"
+			)
+		).toBe(true);
+	});
+
+	test("equipment, merch and consumables typed as such are not lots", () => {
+		expect(lot("Coffee Scales", [], "Acaia Pearl Scale")).toBe(false);
+		expect(lot("Tea", [], "Black Tea Box Set")).toBe(false);
+		expect(lot("Brewed Tea", [], "Sencha")).toBe(false);
+		expect(lot("Coffee Grinder", [], "Fellow Ode")).toBe(false);
+		expect(
+			lot("Coffee Filters", [], "Kalita Wave 185 Paper Filter (100ct)")
+		).toBe(false);
+		expect(lot("Gear/Merch,Gear/Mugs", [], "Gold Diner Mug")).toBe(false);
+		expect(lot("Merchandise", [], "Run Club Tee")).toBe(false);
+		expect(lot("Warehouse", ["Cafe-Supplies"], "Food Paper Box (Onyx)")).toBe(
+			false
+		);
+		expect(lot("Lattes + Cold Coffee", [], "Cold Coffee 12 Pack")).toBe(false);
+		expect(lot("Coffee", ["Hidden"], "Chicago Marathon Cold Coffee 6pk")).toBe(
+			false
+		);
+		expect(lot("Coffee", ["Product Line: RTD"], "Cold Coffee")).toBe(false);
+		expect(lot("Cold Brew", [], "Cold Brew Stubbies")).toBe(false);
+		expect(lot("RTD", [], "Draft Latte")).toBe(false);
+		expect(lot("Chocolate", [], "70% Tanzania | Dark & Lemon Crunch")).toBe(
+			false
+		);
+		expect(lot("Gift Cards", [], "Gift Card")).toBe(false);
+		expect(lot("Club", [], "Human Resources Coffee Club")).toBe(false);
+		expect(lot("Series", [], "Single Origin Series")).toBe(false);
+		expect(lot("Preset Box", [], "The Onyx Cometeer Collection")).toBe(false);
+		expect(lot("Gifts", [], "Origin Sticker Pack")).toBe(false);
+		expect(lot("Goods", [], "Essential Canister")).toBe(false);
+		expect(lot("Events", [], "Guided Brewing Classes and Tour")).toBe(false);
+	});
+
+	test("a coffee-typed item whose title says otherwise is not a lot", () => {
+		expect(lot("Coffee", [], "12 Month Gift Subscription")).toBe(false);
+		expect(lot("Coffee", [], "Blend Box Subscription")).toBe(false);
+		expect(lot("Coffee", [], "Season's Best Bundle")).toBe(false);
+		expect(lot("Coffee", [], "Corsica K-Cup Pods")).toBe(false);
+		expect(lot("Coffee", [], "Decaf Espresso Capsules")).toBe(false);
+		expect(lot("Coffee", [], "Instant Oat Latte")).toBe(false);
+		expect(lot("Coffee", [], "Bulk Coffee")).toBe(false);
+		expect(lot("Coffee", [], "Around the World Gift Box")).toBe(false);
+		expect(lot("Coffee", [], "Corsica - 3oz Filter Packs")).toBe(false);
+		expect(
+			lot(
+				"Coffee",
+				["Instant", "Types: Blend"],
+				"Aster Craft Instant Coffee 6 Pack"
+			)
+		).toBe(false);
+		expect(lot("Coffee", ["bundle", "coffee"], "Classic Cup Pack")).toBe(false);
+		expect(lot("Beans", [], "heart sample pack")).toBe(false);
+		expect(lot("Blend", [], "dito Tasting Set")).toBe(false);
+		expect(
+			lot("coffee-archive", [], "Comandante X25 Trailmaster Coffee Grinder")
+		).toBe(false);
+		expect(lot("Brewed Coffee", [], "Kilenso (Subscription)")).toBe(false);
+		expect(lot("Brewed Coffee", [], "S.O. Blend (Add-On)")).toBe(false);
+		expect(lot("Coffee", ["Coffee Type: Gift Set"], "Passport Trio")).toBe(
+			false
+		);
+		expect(lot("Coffee", [], "Producer Experience Box - Jamison Savage")).toBe(
+			false
+		);
+		expect(lot("WPD", [], "WPD Test Product - ( DO NOT BUY )")).toBe(false);
+		expect(lot("", [], "Decaf Espresso - Peru Norandino - Sample Only")).toBe(
+			false
+		);
+		expect(lot("Coffee", ["Sample", "Wholesale"], "Coffee Samples")).toBe(
+			false
+		);
+		expect(lot("Brewed Coffee", [], "Tester Coffee")).toBe(false);
+	});
+
+	test("a tag naming a non-lot beats a coffee type", () => {
+		expect(
+			lot(
+				"Coffee",
+				["Coffee Type: Subscription Only", "Filter: 5 LB Bags"],
+				"Roaster's Pick"
+			)
+		).toBe(false);
+		expect(lot("Coffee", ["Coffee Type: Bundle"], "Holiday Trio")).toBe(false);
+		expect(
+			lot(
+				"coffee",
+				["Cometeer", "Shopify Collective"],
+				"The Cometeer Proud Mary Selection"
+			)
+		).toBe(false);
+		expect(lot("", ["bigface", "white-label"], "IO-E-20")).toBe(false);
+		expect(lot("", ["recharge"], "2lb Decaffeinated")).toBe(false);
+		expect(
+			lot(
+				"",
+				["Shopify Collective", "Third Wave Water"],
+				"Third Wave Water Medium Roast Profile"
+			)
+		).toBe(false);
+		expect(
+			lot("", ["Equipment", "Shopify Collective"], "Espresso Series 1")
+		).toBe(false);
+		expect(
+			lot("", ["internalsupplies", "wholesale-only"], "8oz Hot Cup Lid")
+		).toBe(false);
+		expect(
+			lot(
+				"Coffee",
+				["Badge: Rotating Subscription", "Coffee Type: Blend"],
+				"Intelligentsia Classics"
+			)
+		).toBe(false);
+		// A subscription key with another value is eligibility, not a subscription.
+		expect(
+			lot(
+				"Coffee",
+				["Subscription: Enabled", "Coffee Type: Single Origin"],
+				"Burundi Mugano"
+			)
+		).toBe(true);
+	});
+
+	test("untyped items need a coffee signal; hard goods and consumables never pass", () => {
+		expect(lot("", [], "Monthly 250g Coffee")).toBe(false);
+		expect(lot("", [], "Roasted Coffee - Recurring - 12 Installments")).toBe(
+			false
+		);
+		expect(lot("", [], "Coffee Subscription Plan")).toBe(false);
+		expect(lot("", [], "Cometeer: Regalia Capsules (NYC Pickup Only)")).toBe(
+			false
+		);
+		expect(lot("", [], "Iced Coffee Tote")).toBe(false);
+		expect(lot("", [], "Tomorrow River Airscape Coffee Canister")).toBe(false);
+		expect(lot("", [], "AeroPress Go Plus")).toBe(false);
+		expect(lot("", [], "Rishi Organic Chamomile Medley Tea Sachets")).toBe(
+			false
+		);
+		expect(lot("", [], "The Physics of Espresso")).toBe(false);
+		expect(lot("", [], "World Atlas of Coffee")).toBe(false);
+		expect(lot("", [], 'Hoop "Pulsar" Fast-Flowing Paper Filters')).toBe(false);
+		expect(lot("", [], "Community Brewing")).toBe(false);
+		expect(lot("", [], "Puck Screens")).toBe(false);
+		expect(lot("", [], "MOONRAKER")).toBe(false);
+		expect(lot("", [], "'From Atlanta' 2025 Hoodie")).toBe(false);
+		expect(lot("", [], "Cozy Coffee Socks")).toBe(false);
+		expect(lot("", [], "Colorful Coffees Cold Cup")).toBe(false);
+		expect(lot("", [], "Bird And The Bees Honey")).toBe(false);
+	});
+
+	test("comma-string tags work like array tags", () => {
+		expect(
+			classifyLot({
+				productType: "",
+				tags: "coffee, instant",
+				title: "Instant Kenia",
+			}).isLot
+		).toBe(true);
+		expect(
+			classifyLot({
+				productType: "",
+				tags: "recharge",
+				title: "250g Caffeinated",
+			}).isLot
+		).toBe(false);
+	});
+
+	test("reports which rule decided", () => {
+		expect(
+			classifyLot({
+				productType: "Coffee Scales",
+				tags: [],
+				title: "Acaia Pearl Scale",
+			})
+		).toEqual({ isLot: false, rule: "title" });
+		expect(
+			classifyLot({ productType: "Tea", tags: [], title: "Sencha" })
+		).toEqual({ isLot: false, rule: "type" });
+		expect(
+			classifyLot({ productType: "Coffee", tags: [], title: "Kiamugumo AB" })
+		).toEqual({ isLot: true, rule: "type" });
+		expect(
+			classifyLot({ productType: "", tags: [], title: "MOONRAKER" })
+		).toEqual({ isLot: false, rule: "default" });
 	});
 });
 
@@ -420,6 +814,7 @@ describe("walkFeedPages", () => {
 		expect(result).toEqual({
 			pageError: null,
 			products: [expect.objectContaining({ externalId: "1" })],
+			rejectedExternalIds: [],
 		});
 	});
 
@@ -486,7 +881,28 @@ describe("walkFeedPages", () => {
 		expect(result).toEqual({
 			pageError: "products.json page 2 unavailable; partial catalog discarded",
 			products: [],
+			rejectedExternalIds: [],
 		});
+	});
+
+	test("unions the rejected ids across pages (§16)", async () => {
+		const page2 = feedBody([
+			feedProduct(900),
+			feedProduct(901, { product_type: "Merch", title: "Tote" }),
+		]);
+		const fetchPage = vi.fn(() => Promise.resolve(page2));
+		const firstPage = parseProductsJson(
+			feedBody([
+				...Array.from({ length: PRODUCTS_JSON_PAGE_SIZE - 1 }, (_, i) =>
+					feedProduct(i + 1)
+				),
+				feedProduct(500, { product_type: "Tea", title: "Sencha" }),
+			])
+		);
+		const result = await walkFeedPages({ fetchPage, firstPage, websiteUrl });
+		expect(result.pageError).toBeNull();
+		expect(result.rejectedExternalIds).toEqual(["500", "901"]);
+		expect(result.products).toHaveLength(PRODUCTS_JSON_PAGE_SIZE);
 	});
 
 	test("discards the whole catalog when a later page is not a feed", async () => {

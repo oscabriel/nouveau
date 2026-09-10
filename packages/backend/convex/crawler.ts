@@ -49,6 +49,9 @@ interface CommitInput {
 	isBaseline: boolean;
 	products: ExtractedProduct[];
 	rawCapture?: RawCapture;
+	// externalIds the lot classifier rejected (§16); finalizeCrawl purges any
+	// still in the catalog. Absent for HTML-mode sources.
+	rejectedExternalIds?: string[];
 }
 
 /**
@@ -63,6 +66,10 @@ const commitCatalog = async (
 ): Promise<void> => {
 	const { crawlSourceId, fetchedAt, products, rawCapture } = input;
 	const capture = rawCapture === undefined ? {} : { rawCapture };
+	const rejected =
+		input.rejectedExternalIds === undefined
+			? {}
+			: { rejectedExternalIds: input.rejectedExternalIds };
 	try {
 		for (
 			let start = 0;
@@ -96,6 +103,7 @@ const commitCatalog = async (
 		fetchedExternalIds: products.map((product) => product.externalId),
 		success: true,
 		...capture,
+		...rejected,
 	});
 };
 
@@ -170,6 +178,7 @@ const crawlProductsJson = async (
 	}
 
 	let products: ExtractedProduct[] | null = null;
+	let rejectedExternalIds: string[] = [];
 	let pageError: string | null = null;
 	if (firstPage !== null && firstPage.products.length > 0) {
 		// Whichever fetcher worked for page 1 also fetches the later pages.
@@ -179,7 +188,7 @@ const crawlProductsJson = async (
 			firstPage,
 			websiteUrl: input.websiteUrl,
 		});
-		({ pageError } = walked);
+		({ pageError, rejectedExternalIds } = walked);
 		products = pageError === null ? walked.products : null;
 	}
 
@@ -213,6 +222,7 @@ const crawlProductsJson = async (
 		fetchedAt,
 		isBaseline: input.isBaseline,
 		products,
+		rejectedExternalIds,
 		...(rawCapture === undefined ? {} : { rawCapture }),
 	});
 };
@@ -339,6 +349,7 @@ export const commitExtractedCatalog = internalAction({
 				storageId: v.id("_storage"),
 			})
 		),
+		rejectedExternalIds: v.optional(v.array(v.string())),
 	},
 	handler: async (ctx, args) => {
 		const loaded = await ctx.runQuery(internal.crawlSources.getSource, {
@@ -353,6 +364,9 @@ export const commitExtractedCatalog = internalAction({
 			isBaseline: loaded.source.lastSuccessAt === undefined,
 			products: args.products,
 			...(args.rawCapture === undefined ? {} : { rawCapture: args.rawCapture }),
+			...(args.rejectedExternalIds === undefined
+				? {}
+				: { rejectedExternalIds: args.rejectedExternalIds }),
 		});
 		return null;
 	},
