@@ -21,6 +21,7 @@ import type * as healthCheck from "../healthCheck.js";
 import type * as http from "../http.js";
 import type * as identity from "../identity.js";
 import type * as logs from "../logs.js";
+import type * as lots from "../lots.js";
 import type * as notifications from "../notifications.js";
 import type * as roasters from "../roasters.js";
 import type * as seed from "../seed.js";
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   identity: typeof identity;
   logs: typeof logs;
+  lots: typeof lots;
   notifications: typeof notifications;
   roasters: typeof roasters;
   seed: typeof seed;

@@ -218,3 +218,10 @@ Reframe: "Letterboxd but for coffee." The alert core (§1, §5–§8) is unchang
 ### 14.5 Out of scope this window
 
 User-follows (watching a roaster stays the only relationship), comments, likes, per-user social feeds, log privacy, DMs, moderation tooling beyond the existing submission rejection.
+
+## 15. Amendment 2026-09-10: every lot is a page (ADR-0003)
+
+- Each lot gets one public page at `/lots/$lotId`, keyed by the `products` row id (profile-addressing precedent; pretty handles deferred, §13).
+- The page shows the lot's published copy (§14.4: name, image, description, origin/process/roast level, roaster notes), its roaster, and the lot's recent logs with ratings and tasters, newest first, capped.
+- Logging lives on the lot page. Every surface naming a lot links there: feed cards gain a Log action, log cards link the lot name to the lot page (the roaster's shop link stays as "See at {roaster}"), and roaster-page lot rows link through.
+- Archived lots resolve fully; old links never rot (§14.1 carries over).

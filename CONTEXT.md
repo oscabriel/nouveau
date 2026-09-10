@@ -43,3 +43,5 @@ A drop-alert service with a social layer for home coffee brewers: watches US spe
 **Profile**: A user's public page: their logs, ratings and notes, plus the roasters they watch. One per user. _Avoid_: Account (that's the sign-in); Taste profile (that's the deferred matching concept)
 
 **Activity feed**: The public feed of recent logs across all users. _Avoid_: Timeline, social feed; the drop feed (§8.1 of the build spec) is the other feed and stays distinct
+
+**Lot page**: The lot's own public page (`/lots/$lotId`): its published copy, its roaster, and its logs. Every surface naming a lot links here. _Avoid_: Product page (that's the roaster's shop URL the lot page links out to)

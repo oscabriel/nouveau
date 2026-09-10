@@ -65,6 +65,7 @@ export default defineSchema({
 		userId: v.id("users"),
 	})
 		.index("by_logged_at", ["loggedAt"])
+		.index("by_product_and_logged_at", ["productId", "loggedAt"])
 		.index("by_user_and_logged_at", ["userId", "loggedAt"]),
 
 	notifications: defineTable({

@@ -3,6 +3,7 @@ import { api } from "@nouveau/backend/convex/_generated/api";
 import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
 import { Button } from "@nouveau/ui/components/button";
 import { Input } from "@nouveau/ui/components/input";
+import { Link } from "@tanstack/react-router";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useState } from "react";
@@ -29,8 +30,10 @@ const LotRowItem = ({
 }) => (
 	<li className="py-2">
 		<div className="flex items-center justify-between gap-3">
-			<p
-				className={`min-w-0 truncate text-sm ${lot.status === "archived" ? "text-muted-foreground" : undefined}`}
+			<Link
+				className={`min-w-0 truncate text-sm hover:underline ${lot.status === "archived" ? "text-muted-foreground" : undefined}`}
+				params={{ lotId: lot.id }}
+				to="/lots/$lotId"
 			>
 				{lot.name}
 				{lot.status === "archived" && (
@@ -38,7 +41,7 @@ const LotRowItem = ({
 						archived
 					</span>
 				)}
-			</p>
+			</Link>
 			{canLog && !isOpen && (
 				<Button onClick={onOpen} size="sm" variant="outline">
 					Log

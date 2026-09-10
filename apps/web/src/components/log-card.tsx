@@ -61,14 +61,13 @@ export const LogCard = ({
 						</Link>
 					)}
 					<span className="text-muted-foreground text-sm">tried</span>
-					<a
+					<Link
 						className="truncate font-medium hover:underline"
-						href={log.lot.url}
-						rel="noopener noreferrer"
-						target="_blank"
+						params={{ lotId: log.lot.id }}
+						to="/lots/$lotId"
 					>
 						{log.lot.name}
-					</a>
+					</Link>
 					<span className="text-muted-foreground truncate text-sm">
 						from{" "}
 						<Link

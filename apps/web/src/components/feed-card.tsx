@@ -15,6 +15,8 @@ export interface FeedCardData {
 	lotUrl: string;
 	newPriceCents: number | null;
 	oldPriceCents: number | null;
+	// The lot's Nouveau page (/lots/$lotId) — where the Log action lands.
+	productId: string;
 	productName: string;
 	roasterName: string;
 	roasterSlug: string;
@@ -140,6 +142,13 @@ export const FeedCard = ({
 						See the lot
 						<ArrowUpRight aria-hidden className="size-3.5" />
 					</a>
+					<Link
+						className="inline-flex items-center gap-0.5 text-sm font-medium hover:underline"
+						params={{ lotId: card.productId }}
+						to="/lots/$lotId"
+					>
+						Log
+					</Link>
 				</div>
 			</div>
 			{card.deliveryStatus !== undefined && card.deliveryStatus !== null && (

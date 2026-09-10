@@ -62,5 +62,8 @@ export const LOG_FEED_LIMIT = 30;
 // an archive dump.
 export const MAX_PROFILE_LOGS = 50;
 
+// Lots rendered on one lot page (§15); a highlight, like the profile.
+export const LOT_PAGE_LOGS_LIMIT = 20;
+
 // Lots returned by a name search on one roaster's catalog.
 export const LOT_SEARCH_LIMIT = 20;

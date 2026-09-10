@@ -41,7 +41,7 @@ const tasterValidator = v.object({
 });
 
 /** A hydrated log card: everything the activity feed and profile render. */
-const logCardValidator = v.object({
+export const logCardValidator = v.object({
 	logId: v.id("logs"),
 	loggedAt: v.number(),
 	// url is the roaster's own product page, the same link the drop feed's
@@ -93,7 +93,7 @@ const hydrateLog = async (
 	};
 };
 
-const hydrateAll = async (
+export const hydrateAll = async (
 	ctx: QueryCtx,
 	logs: Doc<"logs">[]
 ): Promise<LogCard[]> => {
