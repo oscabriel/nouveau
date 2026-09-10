@@ -302,7 +302,12 @@ export const shopifyProductsUrl = (websiteUrl: string, page = 1): string => {
 	return `${origin}/products.json?limit=${PRODUCTS_JSON_PAGE_SIZE}&page=${page}`;
 };
 
-/** A product_type or title that says wholesale: Ruby "Wholesale Coffee", "Ethiopia Reko - Wholesale"; Madcap "Karinga (WS)". */
+/**
+ * A product_type or title that says wholesale: Ruby "Wholesale Coffee",
+ * "Ethiopia Reko - Wholesale"; Madcap "Karinga (WS)". `wholesale` has no
+ * trailing boundary on purpose (Ruby's "- WholesaleMerch"), so it also takes
+ * a title like "Retail & Wholesale Blend"; none of the seed feeds has one.
+ */
 const WHOLESALE_TEXT = /\bwholesale|\bws\b|\bcafes?\s+only\b/iu;
 
 /**
@@ -348,27 +353,52 @@ export const isWholesale = (
  * count-packs ("12 Pack", "6pk": cans or sachets), bulk and add-on SKUs,
  * test products. A bare "pack" is not enough: bundles carry a `bundle` tag.
  * Counter Culture files gift subscriptions under `Coffee`; Coava lists
- * "Kilenso (Subscription)" next to "Kilenso".
+ * "Kilenso (Subscription)" next to "Kilenso". No `cold brew` here: Blossom
+ * sells a whole-bean "Cold Brew Blend" typed `Coffee` (12 oz to 5 lb bags);
+ * the drinkable kind is caught by its type, an RTD tag, a count-pack, or
+ * NON_LOT_RTD_TITLE.
  */
 const NON_LOT_FORMAT_TITLE =
-	/\b(?:gift\s*cards?|e-?gift|subscriptions?|prepaid|memberships?|bundles?|samplers?|samples?|tester|tasting\s+set|sets?|gift\s+box(?:es)?|box(?:es)?|variety\s+packs?|filter\s+packs?|\d+\s*-?\s*(?:pk|packs?)|trio|duo|k-?cups?|capsules?|pods?|nespresso|cold\s+brew|lattes?|ready[\s-]to[\s-]drink|rtd|concentrate|flash[\s-]chilled|bulk|quick\s+order|monthly|weekly|recurring|installments?|add[\s-]on|test\s+(?:product|coffee)|do\s+not\s+buy)\b/iu;
+	/\b(?:gift\s*cards?|e-?gift|subscriptions?|prepaid|memberships?|bundles?|samplers?|samples?|tester|tasting\s+set|sets?|gift\s+box(?:es)?|box(?:es)?|variety\s+packs?|filter\s+packs?|\d+\s*-?\s*(?:pk|packs?)|trio|duo|k-?cups?|capsules?|pods?|nespresso|lattes?|ready[\s-]to[\s-]drink|rtd|concentrate|flash[\s-]chilled|bulk|quick\s+order|monthly|weekly|recurring|installments?|add[\s-]on|test\s+(?:product|coffee)|do\s+not\s+buy)\b/iu;
+
+/**
+ * A title that names the drinkable container, whatever the type says:
+ * stubbies, nitro, kegs, canned or bottled, "4 Cans", "12oz Can". A bare
+ * `can` or `bottle` is not enough; roasters do sell beans in tins.
+ */
+const NON_LOT_RTD_TITLE =
+	/\b(?:stubbies|nitro|kegs?|canned|bottled|\d+\s*(?:fl\.?\s*)?oz\.?\s+cans?|\d+\s*(?:cans?|bottles?)|cans?\s+of|on\s+tap)\b/iu;
 
 /**
  * Hard goods in the title, applied whatever the type says: Proud Mary files a
  * Comandante grinder under `coffee-archive`. Only nouns that never name a
  * coffee. `filters` is plural on purpose: Proud Mary's coffee titles end in
- * "| Filter" (the brew method).
+ * "| Filter" (the brew method). Brewer brands (AeroPress, Chemex) are not
+ * here: "Aeropress Championship Blend" is a coffee, so they only count on
+ * untyped items (NON_LOT_UNTYPED_TITLE).
  */
 const NON_LOT_GOODS_TITLE =
-	/\b(?:mugs?|tees?|t-?shirts?|shirts?|hoodies?|sweatshirts?|crewnecks?|beanies?|snapbacks?|caps?|hats?|totes?|stickers?|scales?|grinders?|kettles?|drippers?|tampers?|canisters?|tumblers?|koozies?|socks|aprons?|candles?|posters?|drinkware|apparel|merch(?:andise)?|equipment|gear|filters|aeropress|chemex)\b/iu;
+	/\b(?:mugs?|tees?|t-?shirts?|shirts?|hoodies?|sweatshirts?|crewnecks?|beanies?|snapbacks?|caps?|hats?|totes?|stickers?|scales?|grinders?|kettles?|drippers?|tampers?|canisters?|tumblers?|koozies?|socks|aprons?|candles?|posters?|drinkware|apparel|merch(?:andise)?|equipment|gear|filters)\b/iu;
 
 /**
- * Consumables and books that share vocabulary with coffee copy ("chocolate"
- * is a flavor word, "The Physics of Espresso" is a book). Checked only when
- * nothing typed the item, so a coffee named "Chocolate Blend" still lands.
+ * Title words that settle an untyped item as a non-lot on their own: other
+ * drinks and consumables (tea, matcha, syrup), books ("The Physics of
+ * Espresso", "World Atlas of Coffee"), brewers, and cold brew (untyped,
+ * "Cold Brew Coffee 32oz" is a bottle far more often than a bag). Checked
+ * only when nothing typed the item, so a `Coffee`-typed "Cold Brew Blend"
+ * still lands. Beats a place word too: "Kenya Black Tea" is tea.
  */
-const NON_LOT_CONSUMABLE_TITLE =
-	/\b(?:teas?|matcha|chocolate|syrup|cascara|honey|cups?|physics|atlas|books?)\b/iu;
+const NON_LOT_UNTYPED_TITLE =
+	/\b(?:teas?|matcha|syrup|cascara|physics|atlas|books?|cold\s+brew|aeropress|chemex|french\s+press|v60|kalita|hario|brewers?)\b/iu;
+
+/**
+ * Title words an untyped non-lot and an untyped coffee share: `honey` is a
+ * jar (Ruby "Bird And The Bees Honey") or a process ("Las Lajas Black
+ * Honey"), `cup` is drinkware or "Cup of Excellence", `chocolate` a bar or a
+ * flavor. A place or craft word in the same title (LOT_TITLE_PLACE,
+ * LOT_TITLE_CRAFT) says coffee; otherwise the item is a non-lot.
+ */
+const NON_LOT_AMBIGUOUS_TITLE = /\b(?:chocolate|honey|cups?)\b/iu;
 
 /**
  * A tag whose whole value names a non-lot. Exact match, not substring:
@@ -412,7 +442,7 @@ const NON_LOT_TYPE =
  * Offerings Collection", Heart "Beans", Proud Mary "coffee-archive".
  */
 const LOT_TYPE =
-	/\b(?:coffees?|beans?|blends?|single[\s-]origin|espresso|decaf|ge[i]?sha|offerings|instant|roasts?|whole[\s-]bean)\b/iu;
+	/\b(?:coffees?|beans?|blends?|single[\s-]origin|espresso|decaf|gei?sha|offerings|instant|roasts?|whole[\s-]bean)\b/iu;
 
 /**
  * Bare tags only coffee carries (Onyx `coffee`, Coava `Instant Craft Coffee`,
@@ -435,7 +465,15 @@ const LOT_TYPE_TAG_VALUE = /^(?:single[\s-]origin|blends?)$/iu;
  * Bees Honey") as the process.
  */
 const LOT_TITLE_WORD =
-	/\b(?:coffees?|blends?|espresso|decaf\w*|single[\s-]origin|instant|roasts?|roasted|ge[i]?sha|bourbon|typica|caturra|catuai|pacamara|maragogype|heirloom|sl-?28|sl-?34|washed|natural|anaerobic|carbonic|omni)\b/iu;
+	/\b(?:coffees?|blends?|espresso|decaf\w*|single[\s-]origin|instant|roasts?|roasted|gei?sha|bourbon|typica|caturra|catuai|pacamara|maragogype|heirloom|sl-?28|sl-?34|washed|natural|anaerobic|carbonic|omni)\b/iu;
+
+/**
+ * The subset of LOT_TITLE_WORD that names the coffee itself (a variety, a
+ * process, a format like blend or espresso) rather than the word "coffee",
+ * which a mug or a book carries just as well. Resolves NON_LOT_AMBIGUOUS_TITLE.
+ */
+const LOT_TITLE_CRAFT =
+	/\b(?:blends?|espresso|decaf\w*|single[\s-]origin|gei?sha|bourbon|typica|caturra|catuai|pacamara|maragogype|heirloom|sl-?28|sl-?34|washed|natural|anaerobic|carbonic|omni)\b/iu;
 
 /** Producing countries and the regions that stand alone in coffee names. */
 const LOT_TITLE_PLACE =
@@ -498,20 +536,57 @@ const tagSaysLot = (tags: string[]): boolean =>
 const titleSaysLot = (title: string): boolean =>
 	LOT_TITLE_WORD.test(title) || LOT_TITLE_PLACE.test(title);
 
+/** A place or craft word: enough to read an ambiguous title word as coffee. */
+const titleNamesCoffee = (title: string): boolean =>
+	LOT_TITLE_PLACE.test(title) || LOT_TITLE_CRAFT.test(title);
+
+/**
+ * The untyped path (§16 steps 5 and 6): nothing typed the item, so tags and
+ * title carry the decision. A weak non-lot tag (`subscription`, `recharge`,
+ * `tea`) decides only when no other tag says coffee: a bare `tea` next to
+ * `Ethiopia` is a tasting note. In the title, hard non-lot words win over
+ * everything; ambiguous ones (`honey`, `cup`, `chocolate`) lose to a place
+ * or craft word in the same title.
+ */
+const classifyUntyped = (tags: string[], title: string): LotClassification => {
+	const coffeeTag = tagSaysLot(tags);
+	if (!coffeeTag && tagMatches(tags, NON_LOT_WEAK_TAG_VALUE)) {
+		return { isLot: false, rule: "tag" };
+	}
+	if (coffeeTag) {
+		return { isLot: true, rule: "tag" };
+	}
+	if (NON_LOT_UNTYPED_TITLE.test(title)) {
+		return { isLot: false, rule: "title" };
+	}
+	if (NON_LOT_AMBIGUOUS_TITLE.test(title) && !titleNamesCoffee(title)) {
+		return { isLot: false, rule: "title" };
+	}
+	if (titleSaysLot(title)) {
+		return { isLot: true, rule: "title" };
+	}
+	return { isLot: false, rule: "default" };
+};
+
 /**
  * Decide whether a shop item is a lot (§16). Signals in order, first decisive
- * wins: wholesale; a title that names a non-lot format or hard good; a tag
- * whose value names a non-lot; the product_type; then, for untyped items,
- * tags and title with coffee vocabulary. Untyped, untagged, unnamed items
- * are not lots: the seed roasters all type their coffees, and a false lot
- * pollutes the feed while a missed one costs a sold-out archive row.
+ * wins: wholesale; a title that names a non-lot format, a drinkable container
+ * or a hard good; a tag whose value names a non-lot; the product_type; then,
+ * for untyped items, tags and title with coffee vocabulary. Untyped,
+ * untagged, unnamed items are not lots: the seed roasters all type their
+ * coffees, and a false lot pollutes the feed while a missed one costs a
+ * sold-out archive row.
  */
 export const classifyLot = (input: LotClassifierInput): LotClassification => {
 	const title = input.title ?? "";
 	if (isWholesale(input.productType, input.tags, title)) {
 		return { isLot: false, rule: "wholesale" };
 	}
-	if (NON_LOT_FORMAT_TITLE.test(title) || NON_LOT_GOODS_TITLE.test(title)) {
+	if (
+		NON_LOT_FORMAT_TITLE.test(title) ||
+		NON_LOT_RTD_TITLE.test(title) ||
+		NON_LOT_GOODS_TITLE.test(title)
+	) {
 		return { isLot: false, rule: "title" };
 	}
 	const tags = parseTags(input.tags);
@@ -525,19 +600,7 @@ export const classifyLot = (input: LotClassifierInput): LotClassification => {
 	if (byType !== "unknown") {
 		return { isLot: byType === "lot", rule: "type" };
 	}
-	if (tagMatches(tags, NON_LOT_WEAK_TAG_VALUE)) {
-		return { isLot: false, rule: "tag" };
-	}
-	if (tagSaysLot(tags)) {
-		return { isLot: true, rule: "tag" };
-	}
-	if (NON_LOT_CONSUMABLE_TITLE.test(title)) {
-		return { isLot: false, rule: "title" };
-	}
-	if (titleSaysLot(title)) {
-		return { isLot: true, rule: "title" };
-	}
-	return { isLot: false, rule: "default" };
+	return classifyUntyped(tags, title);
 };
 
 const toCents = (price: unknown): number => {
@@ -644,7 +707,11 @@ export const parseProductsJson = (text: string): ProductsJsonPage => {
 			title: raw.title,
 		});
 		if (!verdict.isLot) {
-			rejectedExternalIds.push(externalId);
+			// An item with neither id nor handle has nothing to purge by; an
+			// empty id would match any catalog row that fell back to "".
+			if (externalId !== "") {
+				rejectedExternalIds.push(externalId);
+			}
 			continue;
 		}
 		const variants: ExtractedVariant[] = (raw.variants ?? []).map(

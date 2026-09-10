@@ -289,6 +289,23 @@ export const applyProductBatch = internalMutation({
 });
 
 /**
+ * Delete a Drop event and its notification ledger rows. A notification cites
+ * its event by id and nothing resolves it the other way, but the rows would
+ * otherwise dangle forever.
+ */
+const deleteDropEvent = async (
+	ctx: MutationCtx,
+	eventId: Id<"dropEvents">
+): Promise<void> => {
+	const notifications = await ctx.db
+		.query("notifications")
+		.withIndex("by_drop_event_id", (q) => q.eq("dropEventId", eventId))
+		.collect();
+	await Promise.all(notifications.map((n) => ctx.db.delete(n._id)));
+	await ctx.db.delete(eventId);
+};
+
+/**
  * Remove a non-lot from the catalog: its variants, its drop events, then the
  * row. If anyone logged it, archive it instead so the log keeps its lot.
  */
@@ -318,7 +335,7 @@ const purgeNonLot = async (
 	]);
 	await Promise.all([
 		...variants.map((variant) => ctx.db.delete(variant._id)),
-		...events.map((event) => ctx.db.delete(event._id)),
+		...events.map((event) => deleteDropEvent(ctx, event._id)),
 	]);
 	await ctx.db.delete(doc._id);
 };
@@ -391,10 +408,14 @@ export const finalizeCrawl = internalMutation({
 		// Non-lot purge (§16): a product the classifier now rejects never was a
 		// lot, so it leaves the catalog outright (variants and events too)
 		// rather than waiting out three strikes. One a taster has logged is
-		// archived instead: logs never lose their lot (§14.1).
+		// archived instead: logs never lose their lot (§14.1). Capped per crawl:
+		// each purge costs three reads and a handful of deletes, and a rule
+		// tightening on a Sey-sized catalog could otherwise blow the transaction.
+		// The feed names the rejects again next crawl, so the rest follow then.
 		await Promise.all(
 			existing
 				.filter((doc) => rejectedIds.has(doc.externalId))
+				.slice(0, PRUNE_BATCH)
 				.map((doc) => purgeNonLot(ctx, doc))
 		);
 
@@ -467,7 +488,7 @@ export const purgeRoasterEvents = internalMutation({
 				q.eq("roasterId", args.roasterId).gte("detectedAt", since)
 			)
 			.take(PRUNE_BATCH);
-		await Promise.all(events.map((event) => ctx.db.delete(event._id)));
+		await Promise.all(events.map((event) => deleteDropEvent(ctx, event._id)));
 		if (events.length === PRUNE_BATCH) {
 			await ctx.scheduler.runAfter(
 				0,

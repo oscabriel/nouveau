@@ -6,6 +6,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
 	COMMIT_BATCH_PRODUCTS,
+	PRUNE_BATCH,
 	rawCaptureRetentionMs,
 	stalenessThresholdMs,
 } from "./constants";
@@ -543,6 +544,82 @@ describe("commit: non-lot purge (§16)", () => {
 		expect(tea).toMatchObject({ status: "archived" });
 		const state = await readAll(fx);
 		expect(state.products).toHaveLength(2);
+	});
+
+	test("a purged event takes its notification ledger rows with it", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [product("lot"), product("scale")]);
+		await crawl(fx, T0 + CADENCE_MS, [
+			product("lot"),
+			product("scale", [
+				{ available: true, grams: 250, name: "250g", priceCents: 1500 },
+			]),
+		]);
+		const [event] = await readEvents(fx);
+		if (event === undefined) {
+			throw new Error("fixture: expected a price_drop event");
+		}
+		await fx.t.run(async (ctx) => {
+			const userId = await ctx.db.insert("users", {
+				name: "Watcher",
+				providerAccountId: "google-2",
+			});
+			await ctx.db.insert("notifications", {
+				deliveryStatus: "sent",
+				dropEventId: event._id,
+				userId,
+			});
+		});
+
+		await crawlRejecting(fx, T0 + 2 * CADENCE_MS, [product("lot")], ["scale"]);
+
+		const notifications = await fx.t.run((ctx) =>
+			ctx.db.query("notifications").collect()
+		);
+		expect(notifications).toEqual([]);
+		expect(await readEvents(fx)).toEqual([]);
+	});
+
+	test("an already-archived, unlogged reject is deleted too", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [product("lot"), product("mug")]);
+		await fx.t.run(async (ctx) => {
+			const products = await ctx.db.query("products").collect();
+			const mug = products.find((p) => p.externalId === "mug");
+			if (mug === undefined) {
+				throw new Error("fixture: mug missing");
+			}
+			await ctx.db.patch(mug._id, { status: "archived" });
+		});
+
+		await crawlRejecting(fx, T0 + CADENCE_MS, [product("lot")], ["mug"]);
+
+		const state = await readAll(fx);
+		expect(state.products.map((p) => p.externalId)).toEqual(["lot"]);
+		expect(state.variants).toHaveLength(1);
+	});
+
+	test("the purge is capped per crawl; the next crawl takes the rest", async () => {
+		const fx = await setup();
+		const junk = Array.from({ length: PRUNE_BATCH + 5 }, (_, i) =>
+			product(`junk-${i}`)
+		);
+		await crawl(fx, T0, [product("lot"), ...junk]);
+		const junkIds = junk.map((p) => p.externalId);
+
+		await crawlRejecting(fx, T0 + CADENCE_MS, [product("lot")], junkIds);
+		let state = await readAll(fx);
+		expect(state.products).toHaveLength(1 + 5);
+		expect(state.source?.health).toBe("watching");
+		// The un-purged remainder took no strike: it is a reject, not a miss.
+		for (const rest of state.products.filter((p) => p.externalId !== "lot")) {
+			expect(rest).toMatchObject({ missedCrawls: 0, status: "current" });
+		}
+
+		await crawlRejecting(fx, T0 + 2 * CADENCE_MS, [product("lot")], junkIds);
+		state = await readAll(fx);
+		expect(state.products.map((p) => p.externalId)).toEqual(["lot"]);
+		expect(state.variants).toHaveLength(1);
 	});
 
 	test("a rejected id that was never in the catalog is a no-op", async () => {

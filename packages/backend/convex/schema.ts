@@ -80,7 +80,11 @@ export default defineSchema({
 		outboundId: v.optional(v.string()),
 		sentAt: v.optional(v.number()),
 		userId: v.id("users"),
-	}).index("by_user_and_drop_event", ["userId", "dropEventId"]),
+	})
+		.index("by_user_and_drop_event", ["userId", "dropEventId"])
+		// Event purges (§16 non-lot purge, purgeRoasterEvents) delete the ledger
+		// rows of each event they remove.
+		.index("by_drop_event_id", ["dropEventId"]),
 
 	productVariants: defineTable({
 		available: v.boolean(),

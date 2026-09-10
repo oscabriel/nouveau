@@ -196,6 +196,16 @@ describe("parseProductsJson", () => {
 		expect(page.products.map((p) => p.externalId)).toEqual(["1"]);
 		expect(page.rejectedExternalIds).toEqual(["2", "3", "4", "5"]);
 	});
+
+	test("a rejected item with no id or handle is not reported (nothing to purge by)", () => {
+		const page = parseProductsJson(
+			JSON.stringify({
+				products: [{ product_type: "Merch", title: "Tote" }, feedProduct(1)],
+			})
+		);
+		expect(page.products.map((p) => p.externalId)).toEqual(["1"]);
+		expect(page.rejectedExternalIds).toEqual([]);
+	});
 });
 
 // Every case below is a real product from a seed roaster's feed, sampled
@@ -232,6 +242,34 @@ describe("classifyLot (§16)", () => {
 		expect(lot("Coffee", ["Coffee Type: Blend"], "Cold Coffee Blend")).toBe(
 			true
 		);
+	});
+
+	test("a typed coffee named for its brew method is a lot", () => {
+		// Blossom: whole bean, 12 oz to 5 lb bags, typed Coffee.
+		expect(
+			lot(
+				"Coffee",
+				[
+					"Blend",
+					"Bottomless",
+					"Coffee",
+					"colombia",
+					"medium roast",
+					"Wholesale",
+				],
+				"Cold Brew Blend"
+			)
+		).toBe(true);
+		expect(lot("Coffee", [], "Cold Brew Blend - Whole Bean")).toBe(true);
+		expect(lot("Coffee", [], "Aeropress Championship Blend")).toBe(true);
+		expect(lot("Coffee", [], "Chemex Blend")).toBe(true);
+		// The drinkable kind still names its container, type, tag or count.
+		expect(lot("Coffee", [], "Nitro Cold Brew")).toBe(false);
+		expect(lot("Coffee", [], "Cold Brew - 4 Cans")).toBe(false);
+		expect(lot("Coffee", [], "Cold Brew 12oz Can")).toBe(false);
+		expect(lot("Coffee", [], "Cold Brew Stubbies")).toBe(false);
+		expect(lot("Cold Brew", [], "Cold Brew")).toBe(false);
+		expect(lot("Coffee", ["Product Line: RTD"], "Cold Brew")).toBe(false);
 	});
 
 	test("roaster-specific coffee type names are lots", () => {
@@ -313,6 +351,28 @@ describe("classifyLot (§16)", () => {
 		expect(lot("", [], "Rising Star Mill Seasonal Blend")).toBe(true);
 		expect(lot("", [], "2022 Ikizena Hill - Rwanda")).toBe(true);
 		expect(lot("", [], "The Jijon-Quan coffee!")).toBe(true);
+	});
+
+	test("untyped: a place or craft word outranks an ambiguous title word", () => {
+		// honey the process, cup as in Cup of Excellence, chocolate the note.
+		expect(lot("", [], "Costa Rica Las Lajas Black Honey")).toBe(true);
+		expect(lot("", [], "Colombia Cup of Excellence #4")).toBe(true);
+		expect(lot("", [], "Chocolate Bomb Espresso")).toBe(true);
+		// Without one, the ambiguous word is the product.
+		expect(lot("", [], "Bird And The Bees Honey")).toBe(false);
+		expect(lot("", [], "Coffee Blossom Honey 12oz")).toBe(false);
+		expect(lot("", [], "Colorful Coffees Cold Cup")).toBe(false);
+		// Hard words win even next to a place: tea from Kenya is tea.
+		expect(lot("", [], "Kenya Black Tea")).toBe(false);
+		expect(lot("", [], "Cold Brew Coffee 32oz")).toBe(false);
+	});
+
+	test("untyped: a tasting-note tag does not outvote a coffee tag", () => {
+		expect(lot("", ["Ethiopia", "tea", "floral"], "Worka Sakaro")).toBe(true);
+		expect(lot("", ["chocolate", "Brazil"], "Fazenda Sertao")).toBe(true);
+		// Alone, the weak tag still names the product.
+		expect(lot("", ["tea"], "Sencha")).toBe(false);
+		expect(lot("", ["recharge"], "2lb Decaffeinated")).toBe(false);
 	});
 
 	test("wholesale is still the first rule", () => {
