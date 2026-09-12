@@ -257,9 +257,12 @@ export const stripMarkdown = (text: string): string =>
 		.replaceAll(/\s+/gu, " ")
 		.trim();
 
+const MAX_PASSAGE_LENGTH = 350;
+const MIN_FACT_LETTERS = 3;
+
 const readablePassage = (line: string, minLength: number): boolean =>
 	line.length >= minLength &&
-	line.length <= 350 &&
+	line.length <= MAX_PASSAGE_LENGTH &&
 	wordCount(line) >= MIN_PASSAGE_WORDS &&
 	!(MARKUP.test(line) || UNSUITABLE_PROSE.test(line));
 
@@ -272,7 +275,6 @@ const FACT_LABELS = [
 	["producer", "Producer"],
 	["roastLevel", "Roast level"],
 ] as const;
-const MAX_PASSAGE_LENGTH = 350;
 
 type CatalogFactKey = (typeof FACT_LABELS)[number][0] | "tastingNotes";
 
@@ -294,99 +296,147 @@ const CATALOG_LABEL_KEYS: Record<string, CatalogFactKey> = {
 	VARIETAL: "variety",
 	VARIETY: "variety",
 };
-// Punctuation that rides on a header cell ("NOTES:") or trails a value.
-const HEADER_EDGE = /[.:,;]+$/u;
-const VALUE_EDGE = /[.:,;!\s]+$/u;
-// Shop prose glued to the last value ("... Brown Sugar We are thrilled to
-// bring on this Washed Ethiopian!") ends the facts there. The extractor
-// flattens table and following sentence into one paragraph with no boundary,
-// so the seam is found inside the value: a closed-class word that starts a
-// clause, or a capitalised word directly after an all-lowercase one
-// ("finish Traffic is one of ..."). A comma or a capitalised neighbour
-// ("Huila, Colombia", "Stone Fruit") does not cut.
-const VALUE_PROSE = /(?<=\S)\s+(?:We|We're|We've|Our|Ours|Us)\b/u;
-const VALUE_FUNCTION_WORD =
-	/^(?:a|an|the|this|that|these|those|it|its|is|are|was|were|has|have|had|will|we|you|they)$/iu;
-
-const isUpperToken = (token: string): boolean =>
-	token.length > 0 && token === token.toUpperCase();
-
-const isLabelRun = (line: string): boolean => {
-	const tokens = line.split(/\s+/u).filter(Boolean);
-	const headers = tokens.filter((token) =>
-		/^[A-Z]{4,}$/u.test(token.replace(HEADER_EDGE, ""))
-	).length;
-	return headers >= 3 || /\bnew column\b/iu.test(line);
-};
-
 // Two-word header cells, mapped like the single-word ones.
 const PAIR_LABEL_KEYS: Record<string, CatalogFactKey> = {
 	"ROAST LEVEL": "roastLevel",
 	"TASTING NOTES": "tastingNotes",
 };
+// All-caps tokens that are part of a value, not a header cell. Elevations
+// are written "1900 MASL" on many pages; losing the unit leaves a bare number.
+const VALUE_UNITS = new Set(["FASL", "MAMSL", "MASL"]);
+// Punctuation that rides on a header cell ("NOTES:") or trails a value.
+const HEADER_EDGE = /[.:,;]+$/u;
+const VALUE_EDGE = /[.:,;!\s]+$/u;
+// Shop prose glued to the LAST value ("... Brown Sugar We are thrilled to
+// bring on this Washed Ethiopian!") ends the facts there. The extractor
+// flattens table and following sentence into one paragraph with no boundary,
+// so the seam is found inside that value: a closed-class word that starts a
+// clause (including first-person shop voice), a capitalised word directly
+// after an all-lowercase one ("finish Traffic is one of ..."), or a
+// capitalised word followed by a lowercase closed-class word ("Butterscotch
+// Located in the ..."). A comma or a capitalised neighbour ("Huila,
+// Colombia", "Stone Fruit") does not cut.
+// Only the last value is cut: every other value ends where the next header
+// begins, so a function word inside it ("Smallholders of the Gedeb district")
+// is the roaster's own phrasing and stays.
+// Known blind spot: a capitalised prose word after a capitalised last note
+// and before an open-class word ("Brown Sugar Traffic flows ...") shows no
+// seam and rides along until the next closed-class word.
+const VALUE_FUNCTION_WORD =
+	/^(?:a|an|the|this|that|these|those|it|its|is|are|was|were|has|have|had|will|we|we're|we've|our|ours|us|you|they|in|of|on|at|from|with|by|for|into|through)$/iu;
 
-const scanLabelRun = (tokens: string[]): Map<CatalogFactKey, string> => {
-	const values = new Map<CatalogFactKey, string>();
-	let key: CatalogFactKey | null = null;
-	let skipping = false;
-	for (let index = 0; index < tokens.length; index += 1) {
-		const token = tokens[index];
-		const bare = token.replace(HEADER_EDGE, "");
-		const pair = `${bare} ${(tokens[index + 1] ?? "").replace(
-			HEADER_EDGE,
-			""
-		)}`.toUpperCase();
-		if (pair === "NEW COLUMN") {
-			key = null;
-			skipping = true;
-			index += 1;
-			continue;
-		}
-		if (isUpperToken(token)) {
-			const mapped =
-				PAIR_LABEL_KEYS[pair] ?? CATALOG_LABEL_KEYS[bare.toUpperCase()];
-			if (mapped !== undefined) {
-				key = mapped;
-				// A repeated label's second value is layout, not a correction.
-				skipping = values.has(mapped);
-				if (PAIR_LABEL_KEYS[pair] !== undefined) {
-					index += 1;
-				}
-				continue;
-			}
-			if (bare.length >= 4 && /^[A-Z]+$/u.test(bare)) {
-				// An unknown header cell: its value is layout, not coffee data.
-				key = null;
-				skipping = true;
-				continue;
-			}
-		}
-		if (key !== null && !skipping) {
-			const current = values.get(key);
-			values.set(key, current === undefined ? token : `${current} ${token}`);
-		}
-	}
-	return values;
+const isUpperToken = (token: string): boolean =>
+	token.length > 0 && token === token.toUpperCase();
+
+// A header cell is a bare all-caps word of four or more letters that is not
+// a known unit. Shorter caps ("USA", "12", "&") are value tokens.
+const isHeaderCell = (bare: string): boolean =>
+	/^[A-Z]{4,}$/u.test(bare) && !VALUE_UNITS.has(bare);
+
+const isLabelRun = (line: string): boolean => {
+	const tokens = line.split(/\s+/u).filter(Boolean);
+	const headers = tokens.filter((token) =>
+		isHeaderCell(token.replace(HEADER_EDGE, ""))
+	).length;
+	return headers >= 3 || /\bnew column\b/iu.test(line);
 };
 
-// Cut shop voice, then the prose seam, then trailing punctuation, so the
-// joined line keeps the server's own sentence ends.
-const cutValue = (raw: string): string => {
-	const voice = VALUE_PROSE.exec(raw);
-	let text = voice === null ? raw : raw.slice(0, voice.index);
-	const tokens = text.split(/\s+/u).filter(Boolean);
-	for (let index = 1; index < tokens.length; index += 1) {
-		const word = tokens[index].replace(HEADER_EDGE, "");
-		const previous = tokens[index - 1].replace(VALUE_EDGE, "");
-		const clauseStart =
-			VALUE_FUNCTION_WORD.test(word) ||
-			(/^[A-Z]/u.test(word) && /^[a-z]+$/u.test(previous));
-		if (clauseStart) {
-			text = tokens.slice(0, index).join(" ");
-			break;
-		}
+interface HeaderCell {
+	key: CatalogFactKey | null;
+	width: number;
+}
+
+/**
+ * The header cell starting at `index`, or null when the token is a value.
+ * `key` is null for a header that maps to nothing ("AMOUNT", a "New Column"
+ * corner cell), whose value is layout, not coffee data.
+ */
+const headerAt = (tokens: string[], index: number): HeaderCell | null => {
+	const bare = tokens[index].replace(HEADER_EDGE, "");
+	const next = (tokens[index + 1] ?? "").replace(HEADER_EDGE, "");
+	const pair = `${bare} ${next}`.toUpperCase();
+	if (pair === "NEW COLUMN") {
+		return { key: null, width: 2 };
 	}
-	return text.replace(VALUE_EDGE, "").trim();
+	if (!isUpperToken(bare)) {
+		return null;
+	}
+	const pairKey = PAIR_LABEL_KEYS[pair];
+	if (pairKey !== undefined && isUpperToken(next)) {
+		return { key: pairKey, width: 2 };
+	}
+	const singleKey = CATALOG_LABEL_KEYS[bare];
+	if (singleKey !== undefined) {
+		return { key: singleKey, width: 1 };
+	}
+	return isHeaderCell(bare) ? { key: null, width: 1 } : null;
+};
+
+interface LabelRun {
+	values: Map<CatalogFactKey, string>;
+	// The key whose value ends the run; the only one prose can be glued to.
+	last: CatalogFactKey | null;
+}
+
+const scanLabelRun = (tokens: string[]): LabelRun => {
+	const values = new Map<CatalogFactKey, string>();
+	let key: CatalogFactKey | null = null;
+	let last: CatalogFactKey | null = null;
+	let skipping = false;
+	let index = 0;
+	while (index < tokens.length) {
+		const header = headerAt(tokens, index);
+		if (header !== null) {
+			({ key } = header);
+			// A repeated label's second value is layout, not a correction.
+			skipping = key === null || values.has(key);
+			index += header.width;
+			continue;
+		}
+		if (key !== null && !skipping) {
+			const token = tokens[index];
+			const current = values.get(key);
+			values.set(key, current === undefined ? token : `${current} ${token}`);
+			last = key;
+		}
+		index += 1;
+	}
+	return { last, values };
+};
+
+// Trailing punctuation goes so the joined line keeps the server's own
+// sentence ends; a value with fewer than three letters or digits is noise.
+const trimValue = (raw: string): string => {
+	const text = raw.replace(VALUE_EDGE, "").trim();
+	return text.replaceAll(/[^a-z0-9]/giu, "").length < MIN_FACT_LETTERS
+		? ""
+		: text;
+};
+
+const isFunctionWord = (word: string): boolean =>
+	VALUE_FUNCTION_WORD.test(word.replace(HEADER_EDGE, ""));
+
+const startsClause = (previous: string, word: string, next: string): boolean =>
+	isFunctionWord(word) ||
+	(/^[A-Z]/u.test(word) &&
+		(/^[a-z]+$/u.test(previous.replace(VALUE_EDGE, "")) ||
+			(/^[a-z]/u.test(next) && isFunctionWord(next))));
+
+// Cut glued prose from the last value at the first clause seam, then trim.
+const cutValue = (raw: string): string => {
+	const tokens = raw.split(/\s+/u).filter(Boolean);
+	const seam = tokens.findIndex(
+		(word, index) =>
+			index > 0 &&
+			startsClause(tokens[index - 1], word, tokens[index + 1] ?? "")
+	);
+	const kept = seam === -1 ? tokens : tokens.slice(0, seam);
+	// A cut that leaves only a function word ("This is a sweet cup" -> "This")
+	// found prose where the value should be, not a value.
+	if (seam !== -1 && kept.length === 1 && VALUE_FUNCTION_WORD.test(kept[0])) {
+		return "";
+	}
+	return trimValue(kept.join(" "));
 };
 
 /**
@@ -394,24 +444,26 @@ const cutValue = (raw: string): string => {
  * maps, because a flattened sheet that stays a sheet is layout, not prose.
  * Same bar as the structured path: one roast label alone says little.
  */
-const joinLabelFacts = (values: Map<CatalogFactKey, string>): string | null => {
+const joinLabelFacts = ({ values, last }: LabelRun): string | null => {
+	const clean = (key: CatalogFactKey, raw: string): string =>
+		key === last ? cutValue(raw) : trimValue(raw);
 	const facts: string[] = [];
 	for (const [field, label] of FACT_LABELS) {
 		const raw = values.get(field);
 		if (raw === undefined) {
 			continue;
 		}
-		const value = cutValue(raw);
+		const value = clean(field, raw);
 		if (value.length > 0) {
 			facts.push(`${label}: ${value}.`);
 		}
 	}
 	const rawNotes = values.get("tastingNotes");
-	const notes = rawNotes === undefined ? null : cutValue(rawNotes);
-	if (notes === null && facts.length < 2) {
+	const notes = rawNotes === undefined ? "" : clean("tastingNotes", rawNotes);
+	if (notes.length === 0 && facts.length < 2) {
 		return null;
 	}
-	if (notes !== null && notes.length > 0) {
+	if (notes.length > 0) {
 		facts.push(`Tasting notes: ${notes}.`);
 	}
 	const passage = facts.join(" ");
@@ -504,7 +556,6 @@ export const enrichmentSchema = {
 	type: "object",
 } as const;
 
-const MIN_FACT_LETTERS = 3;
 const MAX_FACT_LENGTH = 120;
 const MAX_NOTE_LENGTH = 60;
 const MAX_NOTES = 8;

@@ -1173,6 +1173,69 @@ test("catalog label runs from flattened tables become labelled facts, not one sh
 	]);
 });
 
+test("catalog label runs cut glued prose from the last value only", () => {
+	// Function words inside an interior value are the roaster's phrasing
+	// (the Verve producer line from docs/recommendations.md) and stay whole.
+	expect(
+		catalogPassages(
+			"ORIGIN Yirgacheffe, Ethiopia PRODUCER Smallholder outgrowers in the Chelchele kebele VARIETY Heirloom PROCESS Washed NOTES Jasmine, Toffee, Lemon Custard"
+		)
+	).toEqual([
+		"Process: Washed. Variety: Heirloom. Region: Yirgacheffe, Ethiopia. Producer: Smallholder outgrowers in the Chelchele kebele. Tasting notes: Jasmine, Toffee, Lemon Custard.",
+	]);
+	// The last value still loses first-person shop voice, whichever pronoun.
+	expect(
+		catalogPassages(
+			"ORIGIN Colombia VARIETY Caturra PROCESS Washed NOTES Cherry, Cocoa Our team loves this one"
+		)
+	).toEqual([
+		"Process: Washed. Variety: Caturra. Region: Colombia. Tasting notes: Cherry, Cocoa.",
+	]);
+	// A cut that leaves only a function word is prose, not a value, and a
+	// single mapped fact without notes is below the bar.
+	expect(
+		catalogPassages("ORIGIN Colombia PROCESS Washed NOTES This is a sweet cup")
+	).toEqual(["Process: Washed. Region: Colombia."]);
+	expect(
+		catalogPassages("ORIGIN Colombia AMOUNT 12 oz NOTES This is a sweet cup")
+	).toEqual([]);
+	// Elevation units written in caps are value tokens, not header cells.
+	expect(
+		catalogPassages(
+			"ORIGIN Ethiopia VARIETY Landrace ELEVATION 1900 MASL PROCESS Washed NOTES Apricot, Bergamot"
+		)
+	).toEqual([
+		"Process: Washed. Variety: Landrace. Region: Ethiopia. Elevation: 1900 MASL. Tasting notes: Apricot, Bergamot.",
+	]);
+	// A capitalised word followed by a lowercase function word opens a clause
+	// even after a capitalised last note ("Sugar Traffic is", and the live
+	// La Reserva shape "Butterscotch Located in the ...").
+	expect(
+		catalogPassages(
+			"PRODUCER Habtamu Gato VARIETY Heirloom PROCESS Washed NOTES Strawberry, Brown Sugar Traffic is one of Atlanta's best"
+		)
+	).toEqual([
+		"Process: Washed. Variety: Heirloom. Producer: Habtamu Gato. Tasting notes: Strawberry, Brown Sugar.",
+	]);
+	expect(
+		catalogPassages(
+			"ORIGIN Ciudad Bolivar, Antioquia, Colombia PRODUCER Finca La Reserva VARIETY Colombia & Caturra PROCESS Washed NOTES Apricot, Brown Sugar, Butterscotch Located in the Andes, the farm sits high above the town"
+		)
+	).toEqual([
+		"Process: Washed. Variety: Colombia & Caturra. Region: Ciudad Bolivar, Antioquia, Colombia. Producer: Finca La Reserva. Tasting notes: Apricot, Brown Sugar, Butterscotch.",
+	]);
+	// Remaining blind spot, pinned so a change here is deliberate: a
+	// capitalised prose word before an open-class word shows no seam and
+	// rides along until the next function word.
+	expect(
+		catalogPassages(
+			"PRODUCER Habtamu Gato VARIETY Heirloom PROCESS Washed NOTES Strawberry, Brown Sugar Traffic flows through Atlanta"
+		)
+	).toEqual([
+		"Process: Washed. Variety: Heirloom. Producer: Habtamu Gato. Tasting notes: Strawberry, Brown Sugar Traffic flows.",
+	]);
+});
+
 test("page passages label verified facts, keep verbatim sentences and skip everything else", () => {
 	const markdown = [
 		"![Verve Coffee Roasters - Chelchele - 12oz - Single Origin - Yirgacheffe, Ethiopia - Process: Washed - Variety: Heirloom - Tasting Notes: Jasmine, Toffee, Lemon Custard](https://cdn.example/bag.jpg)",
