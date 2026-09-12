@@ -298,8 +298,15 @@ const CATALOG_LABEL_KEYS: Record<string, CatalogFactKey> = {
 const HEADER_EDGE = /[.:,;]+$/u;
 const VALUE_EDGE = /[.:,;!\s]+$/u;
 // Shop prose glued to the last value ("... Brown Sugar We are thrilled to
-// bring on this Washed Ethiopian!") ends the facts there.
+// bring on this Washed Ethiopian!") ends the facts there. The extractor
+// flattens table and following sentence into one paragraph with no boundary,
+// so the seam is found inside the value: a closed-class word that starts a
+// clause, or a capitalised word directly after an all-lowercase one
+// ("finish Traffic is one of ..."). A comma or a capitalised neighbour
+// ("Huila, Colombia", "Stone Fruit") does not cut.
 const VALUE_PROSE = /(?<=\S)\s+(?:We|We're|We've|Our|Ours|Us)\b/u;
+const VALUE_FUNCTION_WORD =
+	/^(?:a|an|the|this|that|these|those|it|its|is|are|was|were|has|have|had|will|we|you|they)$/iu;
 
 const isUpperToken = (token: string): boolean =>
 	token.length > 0 && token === token.toUpperCase();
@@ -362,13 +369,24 @@ const scanLabelRun = (tokens: string[]): Map<CatalogFactKey, string> => {
 	return values;
 };
 
-// Cut shop voice, then trailing punctuation, so the joined line keeps the
-// server's own sentence ends.
+// Cut shop voice, then the prose seam, then trailing punctuation, so the
+// joined line keeps the server's own sentence ends.
 const cutValue = (raw: string): string => {
 	const voice = VALUE_PROSE.exec(raw);
-	return (voice === null ? raw : raw.slice(0, voice.index))
-		.replace(VALUE_EDGE, "")
-		.trim();
+	let text = voice === null ? raw : raw.slice(0, voice.index);
+	const tokens = text.split(/\s+/u).filter(Boolean);
+	for (let index = 1; index < tokens.length; index += 1) {
+		const word = tokens[index].replace(HEADER_EDGE, "");
+		const previous = tokens[index - 1].replace(VALUE_EDGE, "");
+		const clauseStart =
+			VALUE_FUNCTION_WORD.test(word) ||
+			(/^[A-Z]/u.test(word) && /^[a-z]+$/u.test(previous));
+		if (clauseStart) {
+			text = tokens.slice(0, index).join(" ");
+			break;
+		}
+	}
+	return text.replace(VALUE_EDGE, "").trim();
 };
 
 /**

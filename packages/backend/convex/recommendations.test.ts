@@ -1161,6 +1161,16 @@ test("catalog label runs from flattened tables become labelled facts, not one sh
 	expect(
 		catalogPassages("New Column AMOUNT 12 oz. bag SUBSCRIBE ORIGIN")
 	).toEqual([]);
+	// Real dev data (East Pole "Traffic"): the table and the next prose
+	// sentence flatten into one paragraph with no boundary between them.
+	expect(
+		catalogPassages(
+			"PRODUCER EXCELSO AMOUNT 12 oz bag, 2 lb bag, 5 lb bag ORIGIN Huila, Colombia ALTITUDE ~1,600 meters above sea level VARIETY Caturra PROCESS Washed NOTES Dark Chocolate, Full-bodied, Sweet finish Traffic is one of Atlanta’s most dependable experiences. In a city that’s always changing, with weather that’s never predictable, traffic is the constant."
+		)
+	).toEqual([
+		"Process: Washed. Variety: Caturra. Region: Huila, Colombia. Elevation: ~1,600 meters above sea level. Tasting notes: Dark Chocolate, Full-bodied, Sweet finish.",
+		"In a city that’s always changing, with weather that’s never predictable, traffic is the constant.",
+	]);
 });
 
 test("page passages label verified facts, keep verbatim sentences and skip everything else", () => {
