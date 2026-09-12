@@ -3,6 +3,7 @@
 // commit through crawlSources.applyCrawlResult.
 
 import { FirecrawlClient } from "@firecrawl/firecrawl-convex";
+import type { Infer } from "convex/values";
 import { v } from "convex/values";
 
 import { internal, components } from "./_generated/api";
@@ -21,6 +22,8 @@ import {
 	walkFeedPages,
 } from "./extraction";
 import type { ExtractedProduct, ProductsJsonPage } from "./extraction";
+import { confirmShopMarket } from "./shopMarket";
+import type { shopMarketValidator } from "./shopMarket";
 
 const firecrawl = new FirecrawlClient(components.firecrawl);
 
@@ -47,6 +50,7 @@ interface CommitInput {
 	// Drop events (alerts start from crawl #2). Decided here, once, so every
 	// batch of the crawl agrees.
 	isBaseline: boolean;
+	market?: Infer<typeof shopMarketValidator>;
 	products: ExtractedProduct[];
 	rawCapture?: RawCapture;
 	// externalIds the lot classifier rejected (§16); finalizeCrawl purges any
@@ -101,6 +105,7 @@ const commitCatalog = async (
 		crawlSourceId,
 		fetchedAt,
 		fetchedExternalIds: products.map((product) => product.externalId),
+		market: input.market,
 		success: true,
 		...capture,
 		...rejected,
@@ -162,6 +167,7 @@ const crawlProductsJson = async (
 ): Promise<void> => {
 	const fetchedAt = Date.now();
 	const firstUrl = shopifyProductsUrl(input.websiteUrl);
+	const market = await confirmShopMarket(input.websiteUrl, fetchedAt);
 
 	// Page 1 picks the fetcher: whichever works also fetches later pages.
 	const bodyText = await fetchPageText(firstUrl);
@@ -221,6 +227,7 @@ const crawlProductsJson = async (
 		crawlSourceId: input.crawlSourceId,
 		fetchedAt,
 		isBaseline: input.isBaseline,
+		market,
 		products,
 		rejectedExternalIds,
 		...(rawCapture === undefined ? {} : { rawCapture }),

@@ -18,6 +18,7 @@ import { extractedProduct } from "./extraction";
 import type { ExtractedProduct, ExtractedVariant } from "./extraction";
 import { notifyWatchersOfEvent } from "./notifications";
 import schema from "./schema";
+import { shopMarketValidator } from "./shopMarket";
 
 /** Source + roaster fields the crawler action needs. */
 export const getSource = internalQuery({
@@ -64,7 +65,9 @@ const diffVariant = async (
 	await ctx.db.patch(variant._id, {
 		available: next.available,
 		...(next.grams === undefined ? {} : { grams: next.grams }),
+		observedAt: input.fetchedAt,
 		priceCents: next.priceCents,
+		sizeObservedAt: next.grams === undefined ? undefined : input.fetchedAt,
 	});
 	if (!input.eventsAllowed) {
 		return;
@@ -185,8 +188,10 @@ const applyVariants = async (
 				available: next.available,
 				...(next.grams === undefined ? {} : { grams: next.grams }),
 				name: next.name,
+				observedAt: input.fetchedAt,
 				priceCents: next.priceCents,
 				productId: input.productId,
+				sizeObservedAt: next.grams === undefined ? undefined : input.fetchedAt,
 			});
 			return { priceCents: next.priceCents, variantId };
 		})
@@ -429,6 +434,7 @@ export const finalizeCrawl = internalMutation({
 		fetchedAt: v.number(),
 		// externalIds of every product the crawl saw; drives the archive rule.
 		fetchedExternalIds: v.optional(v.array(v.string())),
+		market: v.optional(shopMarketValidator),
 		rawCapture: v.optional(
 			v.object({
 				extractionOk: v.boolean(),
@@ -524,6 +530,7 @@ export const finalizeCrawl = internalMutation({
 			health: "watching",
 			lastCheckedAt: now,
 			lastSuccessAt: now,
+			market: args.market,
 			nextCrawlDueAt: now + cadenceMs,
 		});
 		return null;

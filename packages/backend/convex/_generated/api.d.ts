@@ -23,8 +23,13 @@ import type * as identity from "../identity.js";
 import type * as logs from "../logs.js";
 import type * as lots from "../lots.js";
 import type * as notifications from "../notifications.js";
+import type * as recommendationCatalog from "../recommendationCatalog.js";
+import type * as recommendationRules from "../recommendationRules.js";
+import type * as recommendationWorker from "../recommendationWorker.js";
+import type * as recommendations from "../recommendations.js";
 import type * as roasters from "../roasters.js";
 import type * as seed from "../seed.js";
+import type * as shopMarket from "../shopMarket.js";
 import type * as users from "../users.js";
 import type * as watches from "../watches.js";
 
@@ -50,8 +55,13 @@ declare const fullApi: ApiFromModules<{
   logs: typeof logs;
   lots: typeof lots;
   notifications: typeof notifications;
+  recommendationCatalog: typeof recommendationCatalog;
+  recommendationRules: typeof recommendationRules;
+  recommendationWorker: typeof recommendationWorker;
+  recommendations: typeof recommendations;
   roasters: typeof roasters;
   seed: typeof seed;
+  shopMarket: typeof shopMarket;
   users: typeof users;
   watches: typeof watches;
 }>;
@@ -87,6 +97,7 @@ export declare const components: {
   agentmail: import("@agentmail/convex/_generated/component.js").ComponentApi<"agentmail">;
   aggregate: import("@convex-dev/aggregate/_generated/component.js").ComponentApi<"aggregate">;
   rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
+  recommendationPool: import("@convex-dev/workpool/_generated/component.js").ComponentApi<"recommendationPool">;
   firecrawl: import("@firecrawl/firecrawl-convex/_generated/component.js").ComponentApi<"firecrawl">;
   auth: import("@convex-dev/auth/core/_generated/component.js").ComponentApi<"auth">;
   oauthGoogle: import("@convex-dev/auth/providers/oauth/_generated/component.js").ComponentApi<"oauthGoogle">;

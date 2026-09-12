@@ -106,6 +106,12 @@ const HomeComponent = () => {
 							</Link>
 						</nav>
 					</header>
+					<Link
+						className="text-primary mb-6 inline-flex min-h-11 items-center font-medium underline underline-offset-4"
+						to="/next-bag"
+					>
+						Find my next bag
+					</Link>
 					<PersonalizedFeed />
 				</>
 			) : (

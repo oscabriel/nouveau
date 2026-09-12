@@ -4,6 +4,7 @@ import auth from "@convex-dev/auth/core/convex.config";
 import oauth from "@convex-dev/auth/providers/oauth/convex.config";
 import rateLimiter from "@convex-dev/rate-limiter/convex.config";
 import staticHosting from "@convex-dev/static-hosting/convex.config";
+import workpool from "@convex-dev/workpool/convex.config";
 import firecrawl from "@firecrawl/firecrawl-convex/convex.config";
 import { defineApp } from "convex/server";
 import { v } from "convex/values";
@@ -26,6 +27,8 @@ const app = defineApp({
 		FIRECRAWL_API_KEY: v.string(),
 		// Webhook deliveries are signature-checked only when this is set.
 		FIRECRAWL_WEBHOOK_SECRET: v.optional(v.string()),
+		// Optional so an unconfigured recommendation feature cannot break browsing.
+		OPENAI_API_KEY: v.optional(v.string()),
 		// Origin the OAuth flow may redirect back to (the browsed dev/prod URL).
 		SITE_URL: v.optional(v.string()),
 	},
@@ -43,6 +46,7 @@ app.use(agentmail, {
 });
 app.use(aggregate);
 app.use(rateLimiter);
+app.use(workpool, { name: "recommendationPool" });
 // Mounts the crawl webhook route at <site>/firecrawl/webhook.
 app.use(firecrawl, {
 	env: {

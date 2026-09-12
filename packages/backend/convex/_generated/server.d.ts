@@ -37,6 +37,7 @@ type Env = {
   readonly AUTH_PRIVATE_KEY: string;
   readonly FIRECRAWL_API_KEY: string;
   readonly FIRECRAWL_WEBHOOK_SECRET: string | undefined;
+  readonly OPENAI_API_KEY: string | undefined;
   readonly SITE_URL: string | undefined;
 };
 

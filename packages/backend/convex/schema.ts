@@ -2,6 +2,13 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 import { healthValidator } from "./health";
+import {
+	candidateValidator,
+	preferenceValidator,
+	recommendationInput,
+	selectionValidator,
+} from "./recommendationRules";
+import { shopMarketValidator } from "./shopMarket";
 
 export default defineSchema({
 	crawlSources: defineTable({
@@ -12,6 +19,7 @@ export default defineSchema({
 		lastErrorAt: v.optional(v.number()),
 		lastErrorMessage: v.optional(v.string()),
 		lastSuccessAt: v.optional(v.number()),
+		market: v.optional(shopMarketValidator),
 		mode: v.union(v.literal("products_json"), v.literal("html")),
 		nextCrawlDueAt: v.number(),
 		roasterId: v.id("roasters"),
@@ -90,8 +98,10 @@ export default defineSchema({
 		available: v.boolean(),
 		grams: v.optional(v.number()),
 		name: v.string(),
+		observedAt: v.optional(v.number()),
 		priceCents: v.number(),
 		productId: v.id("products"),
+		sizeObservedAt: v.optional(v.number()),
 	}).index("by_product_id", ["productId"]),
 
 	products: defineTable({
@@ -119,6 +129,13 @@ export default defineSchema({
 		tags: v.optional(v.array(v.string())),
 	})
 		.index("by_roaster_and_external_id", ["roasterId", "externalId"])
+		// Recommendation candidates: one roaster's current lots from its latest
+		// confirmed crawl, so no roaster's crawl timing crowds out the others.
+		.index("by_roaster_and_status_and_last_seen_at", [
+			"roasterId",
+			"status",
+			"lastSeenAt",
+		])
 		// Lot discovery on the roaster page (§14.1): a taster finds the lot they
 		// tried by name; big catalogs (Sey ~887 lots) make paging alone useless.
 		.searchIndex("search_name", {
@@ -135,6 +152,40 @@ export default defineSchema({
 	})
 		.index("by_roaster_id", ["roasterId"])
 		.index("by_captured_at", ["capturedAt"]),
+
+	// Only public source prose belongs here. Never cache user history or prompts.
+	recommendationEvidence: defineTable({
+		observedAt: v.number(),
+		passages: v.array(v.string()),
+		productId: v.id("products"),
+		url: v.string(),
+	}).index("by_product_id", ["productId"]),
+
+	recommendationRuns: defineTable({
+		attempt: v.number(),
+		candidates: v.array(candidateValidator),
+		createdAt: v.number(),
+		enrichments: v.number(),
+		// Watchdog for the current attempt; cancelled once the run settles.
+		expireId: v.optional(v.id("_scheduled_functions")),
+		input: recommendationInput,
+		message: v.string(),
+		model: v.optional(v.string()),
+		preferences: v.array(preferenceValidator),
+		requestKey: v.string(),
+		selections: v.array(selectionValidator),
+		status: v.union(
+			v.literal("queued"),
+			v.literal("running"),
+			v.literal("ready"),
+			v.literal("failed")
+		),
+		updatedAt: v.number(),
+		userId: v.id("users"),
+	})
+		.index("by_user_id_and_created_at", ["userId", "createdAt"])
+		.index("by_user_id_and_status", ["userId", "status"])
+		.index("by_user_id_and_request_key", ["userId", "requestKey"]),
 
 	roasters: defineTable({
 		city: v.string(),
