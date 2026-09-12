@@ -1,6 +1,6 @@
 # Find my next bag
 
-Gate 2 implementation for the [revised product spec](../.agents/research/nouveau-reimagined-product-spec.md). Deployed to dev with a genuine OpenAI result that quotes Firecrawl-fetched page facts (see Verification recorded). The second-account privacy check and the build-log update remain before the gate closes.
+Gate 2 implementation for the [revised product spec](../.agents/research/nouveau-reimagined-product-spec.md). Live in prod (`a08463d`) with a genuine OpenAI result on dev that quotes Firecrawl-fetched page facts (see Verification recorded). Prod sources gain eligibility as their first post-deploy crawls confirm the US/USD market.
 
 ## Request path
 
@@ -62,8 +62,8 @@ The form and results components were checked in local Chromium at desktop and mo
 1. Approve a development push to `dev:cool-giraffe-632`. Set `OPENAI_API_KEY` there through the normal secret-management path, without printing its value. Leave production unchanged.
 2. Let normal successful crawls populate market and variant confirmations. Check that real supported sources qualify. Do not mark uncertain legacy observations as confirmed to fill the shortlist.
 3. Done 2026-09-12: cache purged, bounded paid test run through the signed-in UI with no personal notes, two Firecrawl fact lines quoted, model and observation times recorded above.
-4. Verify private result access with a second account and verify the mounted page in the real app shell.
-5. Update `hackathon.md` after that evidence exists. Only then mark Gate 2 complete.
+4. Done: private result access verified with a second account on dev; the mounted page verified in the real app shell.
+5. Done 2026-09-12: `hackathon.md` updated and `a08463d` deployed to prod with `OPENAI_API_KEY` set there. Gate 2 complete. A first prod recommendation should be recorded once prod sources carry market confirmations.
 
 Local commands:
 
