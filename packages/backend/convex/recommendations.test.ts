@@ -1151,6 +1151,18 @@ test("catalog passages do not split on units and skip fragments", () => {
 	expect(catalogPassages("bag, 5 lb.\nOnly four words here.")).toEqual([]);
 });
 
+test("catalog label runs from flattened tables become labelled facts, not one shouted line", () => {
+	const eastPole =
+		"New Column New Column PRODUCER Habtamu Gato AMOUNT 12 oz., 2 lbs., 5 lbs. ORIGIN Djimmaha Gera,Sadi Ioya Kebele ALTITUDE 2,300 meters above sea level VARIETY Heirloom PROCESS Washed NOTES Strawberry, Lemonade, Brown Sugar We are thrilled to bring on this Washed Ethiopian!";
+	expect(catalogPassages(eastPole)).toEqual([
+		"Process: Washed. Variety: Heirloom. Region: Djimmaha Gera,Sadi Ioya Kebele. Elevation: 2,300 meters above sea level. Producer: Habtamu Gato. Tasting notes: Strawberry, Lemonade, Brown Sugar.",
+	]);
+	// A sheet of unknown headers maps to nothing and stays out entirely.
+	expect(
+		catalogPassages("New Column AMOUNT 12 oz. bag SUBSCRIBE ORIGIN")
+	).toEqual([]);
+});
+
 test("page passages label verified facts, keep verbatim sentences and skip everything else", () => {
 	const markdown = [
 		"![Verve Coffee Roasters - Chelchele - 12oz - Single Origin - Yirgacheffe, Ethiopia - Process: Washed - Variety: Heirloom - Tasting Notes: Jasmine, Toffee, Lemon Custard](https://cdn.example/bag.jpg)",

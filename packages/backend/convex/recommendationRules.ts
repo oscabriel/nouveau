@@ -263,16 +263,173 @@ const readablePassage = (line: string, minLength: number): boolean =>
 	wordCount(line) >= MIN_PASSAGE_WORDS &&
 	!(MARKUP.test(line) || UNSUITABLE_PROSE.test(line));
 
-export const catalogPassages = (text: string): string[] =>
-	[
-		...new Set(
-			text
-				.split(/\n+/u)
-				.flatMap((paragraph) => paragraph.split(SENTENCE_END))
-				.map((line) => stripMarkdown(line))
-				.filter((line) => readablePassage(line, 8))
-		),
-	].slice(0, 3);
+// Server-owned labels, in a fixed order. The model never sees or writes them.
+const FACT_LABELS = [
+	["process", "Process"],
+	["variety", "Variety"],
+	["region", "Region"],
+	["elevation", "Elevation"],
+	["producer", "Producer"],
+	["roastLevel", "Roast level"],
+] as const;
+const MAX_PASSAGE_LENGTH = 350;
+
+type CatalogFactKey = (typeof FACT_LABELS)[number][0] | "tastingNotes";
+
+// A body_html table flattened by the extractor arrives as one line of
+// ALL-CAPS header cells with their values. Known coffee labels map onto the
+// fixed fact labels the structured page path uses, so catalog and page
+// evidence look the same. Unknown headers (AMOUNT, layout cells) drop out
+// with their values; an all-caps value is indistinguishable from a header
+// and is lost with them.
+const CATALOG_LABEL_KEYS: Record<string, CatalogFactKey> = {
+	ALTITUDE: "elevation",
+	ELEVATION: "elevation",
+	NOTES: "tastingNotes",
+	ORIGIN: "region",
+	PROCESS: "process",
+	PRODUCER: "producer",
+	REGION: "region",
+	ROAST: "roastLevel",
+	VARIETAL: "variety",
+	VARIETY: "variety",
+};
+// Punctuation that rides on a header cell ("NOTES:") or trails a value.
+const HEADER_EDGE = /[.:,;]+$/u;
+const VALUE_EDGE = /[.:,;!\s]+$/u;
+// Shop prose glued to the last value ("... Brown Sugar We are thrilled to
+// bring on this Washed Ethiopian!") ends the facts there.
+const VALUE_PROSE = /(?<=\S)\s+(?:We|We're|We've|Our|Ours|Us)\b/u;
+
+const isUpperToken = (token: string): boolean =>
+	token.length > 0 && token === token.toUpperCase();
+
+const isLabelRun = (line: string): boolean => {
+	const tokens = line.split(/\s+/u).filter(Boolean);
+	const headers = tokens.filter((token) =>
+		/^[A-Z]{4,}$/u.test(token.replace(HEADER_EDGE, ""))
+	).length;
+	return headers >= 3 || /\bnew column\b/iu.test(line);
+};
+
+// Two-word header cells, mapped like the single-word ones.
+const PAIR_LABEL_KEYS: Record<string, CatalogFactKey> = {
+	"ROAST LEVEL": "roastLevel",
+	"TASTING NOTES": "tastingNotes",
+};
+
+const scanLabelRun = (tokens: string[]): Map<CatalogFactKey, string> => {
+	const values = new Map<CatalogFactKey, string>();
+	let key: CatalogFactKey | null = null;
+	let skipping = false;
+	for (let index = 0; index < tokens.length; index += 1) {
+		const token = tokens[index];
+		const bare = token.replace(HEADER_EDGE, "");
+		const pair = `${bare} ${(tokens[index + 1] ?? "").replace(
+			HEADER_EDGE,
+			""
+		)}`.toUpperCase();
+		if (pair === "NEW COLUMN") {
+			key = null;
+			skipping = true;
+			index += 1;
+			continue;
+		}
+		if (isUpperToken(token)) {
+			const mapped =
+				PAIR_LABEL_KEYS[pair] ?? CATALOG_LABEL_KEYS[bare.toUpperCase()];
+			if (mapped !== undefined) {
+				key = mapped;
+				// A repeated label's second value is layout, not a correction.
+				skipping = values.has(mapped);
+				if (PAIR_LABEL_KEYS[pair] !== undefined) {
+					index += 1;
+				}
+				continue;
+			}
+			if (bare.length >= 4 && /^[A-Z]+$/u.test(bare)) {
+				// An unknown header cell: its value is layout, not coffee data.
+				key = null;
+				skipping = true;
+				continue;
+			}
+		}
+		if (key !== null && !skipping) {
+			const current = values.get(key);
+			values.set(key, current === undefined ? token : `${current} ${token}`);
+		}
+	}
+	return values;
+};
+
+// Cut shop voice, then trailing punctuation, so the joined line keeps the
+// server's own sentence ends.
+const cutValue = (raw: string): string => {
+	const voice = VALUE_PROSE.exec(raw);
+	return (voice === null ? raw : raw.slice(0, voice.index))
+		.replace(VALUE_EDGE, "")
+		.trim();
+};
+
+/**
+ * Joins mapped values under the fixed labels; null when nothing usable
+ * maps, because a flattened sheet that stays a sheet is layout, not prose.
+ * Same bar as the structured path: one roast label alone says little.
+ */
+const joinLabelFacts = (values: Map<CatalogFactKey, string>): string | null => {
+	const facts: string[] = [];
+	for (const [field, label] of FACT_LABELS) {
+		const raw = values.get(field);
+		if (raw === undefined) {
+			continue;
+		}
+		const value = cutValue(raw);
+		if (value.length > 0) {
+			facts.push(`${label}: ${value}.`);
+		}
+	}
+	const rawNotes = values.get("tastingNotes");
+	const notes = rawNotes === undefined ? null : cutValue(rawNotes);
+	if (notes === null && facts.length < 2) {
+		return null;
+	}
+	if (notes !== null && notes.length > 0) {
+		facts.push(`Tasting notes: ${notes}.`);
+	}
+	const passage = facts.join(" ");
+	if (
+		passage.length === 0 ||
+		passage.length > MAX_PASSAGE_LENGTH ||
+		MARKUP.test(passage) ||
+		UNSUITABLE_PROSE.test(passage)
+	) {
+		return null;
+	}
+	return passage;
+};
+
+const labelRunFacts = (line: string): string | null =>
+	joinLabelFacts(scanLabelRun(line.split(/\s+/u).filter(Boolean)));
+
+export const catalogPassages = (text: string): string[] => {
+	const passages: string[] = [];
+	for (const paragraph of text.split(/\n+/u)) {
+		for (const sentence of paragraph.split(SENTENCE_END)) {
+			const line = stripMarkdown(sentence);
+			if (isLabelRun(line)) {
+				const facts = labelRunFacts(line);
+				if (facts !== null) {
+					passages.push(facts);
+				}
+				continue;
+			}
+			if (readablePassage(line, 8)) {
+				passages.push(line);
+			}
+		}
+	}
+	return [...new Set(passages)].slice(0, 3);
+};
 
 // Markdown rendering of the same body_html changes emphasis, spacing and
 // punctuation. Compare letters and digits only so a restyled duplicate of
@@ -329,21 +486,11 @@ export const enrichmentSchema = {
 	type: "object",
 } as const;
 
-// Server-owned labels, in a fixed order. The model never sees or writes them.
-const FACT_LABELS = [
-	["process", "Process"],
-	["variety", "Variety"],
-	["region", "Region"],
-	["elevation", "Elevation"],
-	["producer", "Producer"],
-	["roastLevel", "Roast level"],
-] as const;
 const MIN_FACT_LETTERS = 3;
 const MAX_FACT_LENGTH = 120;
 const MAX_NOTE_LENGTH = 60;
 const MAX_NOTES = 8;
 const MAX_SENTENCES = 10;
-const MAX_PASSAGE_LENGTH = 350;
 
 // Tolerant readers: a field of the wrong shape is ignored, not fatal.
 const textField = (value: unknown, maxLength: number): string | null =>
