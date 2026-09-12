@@ -19,6 +19,33 @@ const CADENCE_MINUTES = 60;
 const CADENCE_MS = CADENCE_MINUTES * 60_000;
 const T0 = 1_700_000_000_000;
 
+// commitExtractedCatalog confirms the shop market with a homepage fetch, so
+// every commit test needs a stub. The default page carries no Shopify
+// globals: market confirmation fails closed and stays absent, which is what
+// all pre-existing tests assumed.
+const htmlResponse = (html: string, url: string, status = 200) => {
+	const response = new Response(html, {
+		headers: { "content-type": "text/html" },
+		status,
+	});
+	Object.defineProperty(response, "url", { value: url });
+	return response;
+};
+const US_USD =
+	'<script>Shopify.currency = {"active":"USD","rate":"1.0"}; Shopify.country = "US";</script>';
+
+beforeEach(() => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn((_url: string, _init?: RequestInit) =>
+			htmlResponse("<html></html>", "https://www.sey.example.com/")
+		)
+	);
+});
+afterEach(() => {
+	vi.unstubAllGlobals();
+});
+
 interface Fixture {
 	crawlSourceId: Id<"crawlSources">;
 	roasterId: Id<"roasters">;
@@ -1063,5 +1090,51 @@ describe("tick", () => {
 			args: [{ crawlSourceId: fx.crawlSourceId }],
 			name: "crawler:crawlSource",
 		});
+	});
+});
+
+describe("commit: market confirmation", () => {
+	test("a US/USD homepage stamps the market with confirmedAt equal to the commit time", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn((_url: string, _init?: RequestInit) =>
+				htmlResponse(US_USD, "https://www.sey.example.com/")
+			)
+		);
+		const fx = await setup();
+		await crawl(fx, T0 + CADENCE_MS, [product("a")]);
+		expect(await readSource(fx)).toMatchObject({
+			health: "watching",
+			market: {
+				confirmedAt: T0 + CADENCE_MS,
+				country: "US",
+				currency: "USD",
+				url: "https://www.sey.example.com/",
+			},
+		});
+		const source = await readSource(fx);
+		expect(source?.market?.confirmedAt).toBe(source?.lastSuccessAt);
+	});
+
+	test.each([
+		["a page without Shopify globals", "<html></html>"],
+		["a fetch rejection", null],
+	])("%s fails closed and the crawl still succeeds", async (_label, html) => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn((_url: string, _init?: RequestInit) =>
+				html === null
+					? Promise.reject(new Error("offline"))
+					: htmlResponse(html, "https://www.sey.example.com/")
+			)
+		);
+		const fx = await setup();
+		await crawl(fx, T0 + CADENCE_MS, [product("a")]);
+		const source = await readSource(fx);
+		expect(source?.health).toBe("watching");
+		expect(source?.market).toBeUndefined();
+		expect(source?.lastSuccessAt).toBe(T0 + CADENCE_MS);
+		const { products } = await readAll(fx);
+		expect(products.some((doc) => doc.externalId === "a")).toBe(true);
 	});
 });

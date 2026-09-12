@@ -343,7 +343,12 @@ export const crawlSource = internalAction({
 /**
  * Commit an already-extracted catalog for a source. The html-mode completion
  * callback schedules this (a mutation cannot run the batched commit itself);
- * tests drive the commit path through it too.
+ * tests drive the commit path through it too. Confirms the shop market here
+ * like the products_json path does, so an html-mode source can satisfy the
+ * recommendation eligibility gate (`confirmedAt === lastSuccessAt`): the
+ * confirmation stamps `fetchedAt`, which finalizeCrawl writes as
+ * `lastSuccessAt`. Fails closed: no confirmation, absent market, crawl still
+ * succeeds.
  */
 export const commitExtractedCatalog = internalAction({
 	args: {
@@ -365,10 +370,15 @@ export const commitExtractedCatalog = internalAction({
 		if (loaded === null) {
 			return null;
 		}
+		const market = await confirmShopMarket(
+			loaded.roaster.websiteUrl,
+			args.fetchedAt
+		);
 		await commitCatalog(ctx, {
 			crawlSourceId: args.crawlSourceId,
 			fetchedAt: args.fetchedAt,
 			isBaseline: loaded.source.lastSuccessAt === undefined,
+			market,
 			products: args.products,
 			...(args.rawCapture === undefined ? {} : { rawCapture: args.rawCapture }),
 			...(args.rejectedExternalIds === undefined
