@@ -21,9 +21,9 @@ The judged artifacts are the video, the public URL and the post. Every task belo
 
 Shipped in `c7b18bc`, on prod, issues closed. Replaying the dev `products` export showed 201 of 2,570 descriptions used colon-labelled sheets, so #24 was much wider than three rows. Parked for the owner's planned scraped-data cleanup revisit: sentence-shaped notes values are still cut at the first clause seam (`Tasting notes: Fragrance and aroma.`). Replay method, if needed again: `npx convex export --path x.zip` on dev, `UNZIP_DISABLE_ZIPBOMB_DETECTION=TRUE unzip x.zip 'products/*'`, run `catalogPassages` over `description` from old and new copies of `recommendationRules.ts` with `bun run` from `packages/backend` so `convex/values` resolves.
 
-## Task 2: Record the first prod recommendation
+## Task 2: Record the first prod recommendation — DONE 2026-09-15
 
-`recommendationRuns` on prod was empty at the last deploy; all 20 prod sources now carry US/USD market confirmations (Passenger since the #26 fix). Have the owner fire one real request through the signed-in prod UI (no personal notes), then read the run back and record in `hackathon.md`: model string returned, candidate count and roaster count, whether a Firecrawl fact line was quoted, and the run id. This is the sponsor evidence the fit assessment said was missing. Do not run it yourself against prod without consent.
+Run `ks752hap2q63hkq4b28ymwapa58efhbc`, recorded in `hackathon.md`: `gpt-5.6-luna`, 20 candidates over 10 roasters, one Firecrawl fact line in the pool (La Colombe) but the model quoted three catalog passages. For the video, either pick a run where a Firecrawl line is quoted or show the unquoted "Also on the product page" bullets.
 
 ## Task 3: Save (Want to try)
 
