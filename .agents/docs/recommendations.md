@@ -1,6 +1,6 @@
 # Find my next bag
 
-Gate 2 implementation for the [revised product spec](../.agents/research/nouveau-reimagined-product-spec.md). Live in prod (`a08463d`) with a genuine OpenAI result on dev that quotes Firecrawl-fetched page facts (see Verification recorded). Prod sources gain eligibility as their first post-deploy crawls confirm the US/USD market.
+Gate 2 implementation for the [revised product spec](../research/nouveau-reimagined-product-spec.md). Live in prod (`a08463d`) with a genuine OpenAI result on dev that quotes Firecrawl-fetched page facts (see Verification recorded). Prod sources gain eligibility as their first post-deploy crawls confirm the US/USD market.
 
 ## Request path
 

@@ -1,6 +1,6 @@
 # Nouveau — product context
 
-_(Captured from the locked build spec, `docs/build-spec.md` — the binding source.)_
+_(Captured from the locked build spec, `.agents/docs/build-spec.md` — the binding source.)_
 
 ## What it is
 

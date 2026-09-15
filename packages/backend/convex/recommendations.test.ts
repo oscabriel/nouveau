@@ -1175,7 +1175,7 @@ test("catalog label runs from flattened tables become labelled facts, not one sh
 
 test("catalog label runs cut glued prose from the last value only", () => {
 	// Function words inside an interior value are the roaster's phrasing
-	// (the Verve producer line from docs/recommendations.md) and stay whole.
+	// (the Verve producer line from .agents/docs/recommendations.md) and stay whole.
 	expect(
 		catalogPassages(
 			"ORIGIN Yirgacheffe, Ethiopia PRODUCER Smallholder outgrowers in the Chelchele kebele VARIETY Heirloom PROCESS Washed NOTES Jasmine, Toffee, Lemon Custard"

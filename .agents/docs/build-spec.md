@@ -61,7 +61,7 @@ Ten tables. High-churn crawl ops are split from the roaster profile per the chur
 
 ## 6. Extraction pipeline
 
-**ADR-0001: Shopify `/products.json` is the primary extraction target** (`docs/adr/0001-shopify-products-json-as-primary-extraction.md`). All 20 seed roasters expose it with name, price, grams, per-variant availability. HTML grid parsing (Firecrawl structured extraction) is the fallback for non-Shopify submissions and badge/copy detail.
+**ADR-0001: Shopify `/products.json` is the primary extraction target** (`.agents/docs/adr/0001-shopify-products-json-as-primary-extraction.md`). All 20 seed roasters expose it with name, price, grams, per-variant availability. HTML grid parsing (Firecrawl structured extraction) is the fallback for non-Shopify submissions and badge/copy detail.
 
 - Firecrawl runs in **webhook mode in prod** (`httpPrefix: "/firecrawl/"`, `FIRECRAWL_WEBHOOK_SECRET`); `mode: "poll"` or the bundled mock server for local dev. `onComplete` is where orchestration belongs — carry ids via `context`, guard `status`, check `unstored` for oversized pages.
 - Stock-status semantics vary by roaster (variant-level `available`, grid badges, preorders) — normalize at extraction, cite the Variant on events.
