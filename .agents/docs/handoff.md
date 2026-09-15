@@ -38,7 +38,11 @@ The revised spec's demo sequence (§11) is: log → Find my next bag → **save 
 - Tests: two users can't see each other's saves; save then unsave; save from a run records `fromRunId`.
 - Public profiles do not show saved coffees (spec §6).
 
-## Task 4: Repo truthfulness
+## Task 4: Repo truthfulness — DONE 2026-09-15
+
+Shipped in `7d0e305`, on prod. PRODUCT.md rewritten, hackathon.md header updated (Demo line still a placeholder for Task 6), ADR-0004 written, #14 and #12 closed, directory search built. Open issues left: #25 (setSourceMode code half), #20 (post-hackathon list), #15 (settings stub, deliberately not this week).
+
+Original task text:
 
 A judge opening the repo should not find promised screens that don't exist.
 
