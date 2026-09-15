@@ -229,6 +229,13 @@ const UNSUITABLE_PROSE =
 // Shop-wide copy speaks for the roaster ("we source", "our offerings") and
 // sits on every product page; lot prose speaks about the coffee.
 const SHOP_VOICE = /\b(?:we|we're|we've|our|ours|us)\b/iu;
+// Customer reviews sit on the product page too, pass the verbatim check, and
+// speak as one drinker ("one of my go to coffees", "I've had a tough time").
+// Producer prose in the first person singular is rare enough to lose.
+const REVIEWER_VOICE = /\bI(?:['’](?:ve|m|d|ll))?\b|\b(?:my|me)\b/iu;
+// Any first-person line: the roaster talking about itself or a reviewer.
+const isFirstPerson = (line: string): boolean =>
+	SHOP_VOICE.test(line) || REVIEWER_VOICE.test(line);
 // Tables, inline HTML and image/link syntax are layout, not prose.
 const MARKUP = /[|<>]|!\[|\]\(/u;
 // Sentence end, but not after a unit or common abbreviation ("12 oz. bag").
@@ -301,6 +308,14 @@ const PAIR_LABEL_KEYS: Record<string, CatalogFactKey> = {
 	"ROAST LEVEL": "roastLevel",
 	"TASTING NOTES": "tastingNotes",
 };
+// Two-word layout cells seen on live colon sheets ("Relationship Since:
+// 2020", "Washing Station: Moplaco"). Only the second word carries the
+// colon, so without this the first word would ride along as a value.
+const PAIR_LAYOUT_CELLS = new Set([
+	"COE SCORE",
+	"RELATIONSHIP SINCE",
+	"WASHING STATION",
+]);
 // All-caps tokens that are part of a value, not a header cell. Elevations
 // are written "1900 MASL" on many pages; losing the unit leaves a bare number.
 const VALUE_UNITS = new Set(["FASL", "MAMSL", "MASL"]);
@@ -323,7 +338,7 @@ const VALUE_EDGE = /[.:,;!\s]+$/u;
 // and before an open-class word ("Brown Sugar Traffic flows ...") shows no
 // seam and rides along until the next closed-class word.
 const VALUE_FUNCTION_WORD =
-	/^(?:a|an|the|this|that|these|those|it|its|is|are|was|were|has|have|had|will|we|we're|we've|our|ours|us|you|they|in|of|on|at|from|with|by|for|into|through)$/iu;
+	/^(?:a|an|the|this|that|these|those|it|its|is|are|was|were|has|have|had|will|we|we're|we've|our|ours|us|i|i've|i'm|my|me|you|they|in|of|on|at|from|with|by|for|into|through)$/iu;
 
 const isUpperToken = (token: string): boolean =>
 	token.length > 0 && token === token.toUpperCase();
@@ -333,17 +348,67 @@ const isUpperToken = (token: string): boolean =>
 const isHeaderCell = (bare: string): boolean =>
 	/^[A-Z]{4,}$/u.test(bare) && !VALUE_UNITS.has(bare);
 
+// A colon-marked cell ("Region:", "Tasting Notes:") in any case. Mixed-case
+// sheets have no all-caps headers, so the colon is the only header signal.
+const COLON_CELL = /^[A-Za-z]+:$/u;
+const isColonCell = (token: string): boolean => COLON_CELL.test(token);
+// Unknown colon cells ("Recipe:", "About:") are headers only when they look
+// like one: a capitalised word. A lowercase "farm:" mid-sentence is prose.
+const isUnknownColonCell = (token: string): boolean =>
+	isColonCell(token) && /^[A-Z]/u.test(token);
+
+// A known label ending in a colon, alone ("Process:") or as the second word of
+// a pair ("Tasting Notes:"). Case-insensitive; only the colon marks it.
+const isKnownColonCell = (previous: string, token: string): boolean => {
+	if (!isColonCell(token)) {
+		return false;
+	}
+	const bare = token.replace(HEADER_EDGE, "").toUpperCase();
+	return (
+		CATALOG_LABEL_KEYS[bare] !== undefined ||
+		PAIR_LABEL_KEYS[`${previous.toUpperCase()} ${bare}`] !== undefined
+	);
+};
+
+const MIN_RUN_HEADERS = 3;
+
+// Whitespace split, with a spaced colon ("Recipes : Espresso") glued back
+// onto its label so it reads as one cell.
+const tokenize = (line: string): string[] =>
+	line
+		.replaceAll(/\s+:(?=\s|$)/gu, ":")
+		.split(/\s+/u)
+		.filter(Boolean);
+
+// Two signals: three all-caps header cells (#21), or three known colon-marked
+// labels in any case (#24). One colon in a real sentence ("Notes: chocolate up
+// front, then citrus.") is one label, so the threshold keeps it as prose.
 const isLabelRun = (line: string): boolean => {
-	const tokens = line.split(/\s+/u).filter(Boolean);
-	const headers = tokens.filter((token) =>
-		isHeaderCell(token.replace(HEADER_EDGE, ""))
-	).length;
-	return headers >= 3 || /\bnew column\b/iu.test(line);
+	const tokens = tokenize(line);
+	let capsHeaders = 0;
+	let colonHeaders = 0;
+	for (const [index, token] of tokens.entries()) {
+		if (isHeaderCell(token.replace(HEADER_EDGE, ""))) {
+			capsHeaders += 1;
+		}
+		if (isKnownColonCell(tokens[index - 1] ?? "", token)) {
+			colonHeaders += 1;
+		}
+	}
+	return (
+		capsHeaders >= MIN_RUN_HEADERS ||
+		colonHeaders >= MIN_RUN_HEADERS ||
+		/\bnew column\b/iu.test(line)
+	);
 };
 
 interface HeaderCell {
 	key: CatalogFactKey | null;
 	width: number;
+	// A colon marks the cell explicitly ("Weight:"), so the value before it
+	// is bounded and nothing is glued to it. A bare caps word could as well be
+	// an acronym inside trailing prose ("the Iyenga AMCOS"), so it does not.
+	bounds: boolean;
 }
 
 /**
@@ -352,29 +417,50 @@ interface HeaderCell {
  * corner cell), whose value is layout, not coffee data.
  */
 const headerAt = (tokens: string[], index: number): HeaderCell | null => {
-	const bare = tokens[index].replace(HEADER_EDGE, "");
-	const next = (tokens[index + 1] ?? "").replace(HEADER_EDGE, "");
+	const token = tokens[index];
+	const nextToken = tokens[index + 1] ?? "";
+	const bare = token.replace(HEADER_EDGE, "");
+	const next = nextToken.replace(HEADER_EDGE, "");
 	const pair = `${bare} ${next}`.toUpperCase();
 	if (pair === "NEW COLUMN") {
-		return { key: null, width: 2 };
+		return { bounds: false, key: null, width: 2 };
+	}
+	if (PAIR_LAYOUT_CELLS.has(pair) && isColonCell(nextToken)) {
+		return { bounds: true, key: null, width: 2 };
+	}
+	const pairKey = PAIR_LABEL_KEYS[pair];
+	// "TASTING NOTES" in caps, or "Tasting Notes:" with the colon on the
+	// second word and none on the first.
+	if (
+		pairKey !== undefined &&
+		((isUpperToken(bare) && isUpperToken(next)) ||
+			(isColonCell(nextToken) && !isColonCell(token)))
+	) {
+		return { bounds: isColonCell(nextToken), key: pairKey, width: 2 };
+	}
+	if (isColonCell(token)) {
+		const colonKey = CATALOG_LABEL_KEYS[bare.toUpperCase()];
+		if (colonKey !== undefined) {
+			return { bounds: true, key: colonKey, width: 1 };
+		}
+		return isUnknownColonCell(token)
+			? { bounds: true, key: null, width: 1 }
+			: null;
 	}
 	if (!isUpperToken(bare)) {
 		return null;
 	}
-	const pairKey = PAIR_LABEL_KEYS[pair];
-	if (pairKey !== undefined && isUpperToken(next)) {
-		return { key: pairKey, width: 2 };
-	}
 	const singleKey = CATALOG_LABEL_KEYS[bare];
 	if (singleKey !== undefined) {
-		return { key: singleKey, width: 1 };
+		return { bounds: false, key: singleKey, width: 1 };
 	}
-	return isHeaderCell(bare) ? { key: null, width: 1 } : null;
+	return isHeaderCell(bare) ? { bounds: false, key: null, width: 1 } : null;
 };
 
 interface LabelRun {
 	values: Map<CatalogFactKey, string>;
 	// The key whose value ends the run; the only one prose can be glued to.
+	// Null when an explicit colon header (even an unmapped one) follows it.
 	last: CatalogFactKey | null;
 }
 
@@ -390,6 +476,9 @@ const scanLabelRun = (tokens: string[]): LabelRun => {
 			({ key } = header);
 			// A repeated label's second value is layout, not a correction.
 			skipping = key === null || values.has(key);
+			if (header.bounds) {
+				last = null;
+			}
 			index += header.width;
 			continue;
 		}
@@ -479,7 +568,7 @@ const joinLabelFacts = ({ values, last }: LabelRun): string | null => {
 };
 
 const labelRunFacts = (line: string): string | null =>
-	joinLabelFacts(scanLabelRun(line.split(/\s+/u).filter(Boolean)));
+	joinLabelFacts(scanLabelRun(tokenize(line)));
 
 export const catalogPassages = (text: string): string[] => {
 	const passages: string[] = [];
@@ -526,7 +615,7 @@ export const enrichmentPassages = (
 		.filter((line) => {
 			if (
 				!(readablePassage(line, 30) && COFFEE_PROSE.test(line)) ||
-				SHOP_VOICE.test(line)
+				isFirstPerson(line)
 			) {
 				return false;
 			}
@@ -623,7 +712,7 @@ const extractedPassages = (
 	}
 	for (const sentence of listField(fields.sentences, 1000, MAX_SENTENCES)) {
 		const text = verified(sentence);
-		if (text && readablePassage(text, 30) && !SHOP_VOICE.test(text)) {
+		if (text && readablePassage(text, 30) && !isFirstPerson(text)) {
 			passages.push(text);
 		}
 	}

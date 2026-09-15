@@ -4,7 +4,7 @@ Gate 2 implementation for the [revised product spec](../research/nouveau-reimagi
 
 ## Request path
 
-`/next-bag` opens from the signed-in home page. A user enters preferences, optional USD budget and minimum bag size, and up to five logs from their own paginated history. Notes require a separate checkbox. The backend does not add the account email, authentication identifier, or unselected history to the OpenAI request.
+`/next-bag` opens from the signed-in home page. A user enters preferences, optional USD budget and minimum bag size, and up to five logs from their own paginated history. The bag size is prefilled with 200 g so a 2 oz sample does not win as the cheapest qualifying variant by default; the user can clear it, which means any confirmed size, or type another value. The server does not know about the default and keeps the cheapest-qualifying rule as is. Notes require a separate checkbox. The backend does not add the account email, authentication identifier, or unselected history to the OpenAI request.
 
 `recommendations.request` validates ownership, records the explicit input, consumes quotas and queues `recommendationWorker.run` through Workpool. The caller subscribes to their latest request. Requests move through queued, running, ready and failed. A ready result may contain no matches. Only failed requests permit one manual retry, which consumes quota again. Repeated submissions with the same key return the original request.
 

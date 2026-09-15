@@ -48,11 +48,11 @@ const Recommendation = ({ result }: { result: Result }) => {
 					</Link>
 				</h3>
 				<p className="shrink-0 text-sm tabular-nums">
-					{formatPrice(candidate.priceCents)} USD / {candidate.grams} g
+					{`${formatPrice(candidate.priceCents)} USD · ${candidate.variantName} (${candidate.grams} g)`}
 				</p>
 			</div>
 			<p className="text-muted-foreground mt-1 text-sm">
-				{candidate.roasterName} · {candidate.variantName}
+				{candidate.roasterName}
 			</p>
 			<p className="mt-4 text-sm font-medium">
 				{comparisonLabels[selection.relation]}

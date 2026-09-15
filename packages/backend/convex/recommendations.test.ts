@@ -1236,6 +1236,99 @@ test("catalog label runs cut glued prose from the last value only", () => {
 	]);
 });
 
+test("mixed-case spec sheets with colon labels become labelled facts too", () => {
+	// Three live dev sheets (#24). Zero all-caps headers, so the colon-marked
+	// labels are the run signal. Unknown cells ("Recipe:", "About:",
+	// "Relationship:") drop with their values, like AMOUNT does.
+	expect(
+		catalogPassages(
+			"Region: Finca Los Primos, Santa Barbara Varietal: Pacas Process: Natural Recipe: Espresso - 1:2.5 Filter - 1:17 About the farm: We did it…and it's bloody fantastic!"
+		)
+	).toEqual([
+		"Process: Natural. Variety: Pacas. Region: Finca Los Primos, Santa Barbara.",
+	]);
+	expect(
+		catalogPassages(
+			"Region: Kochere, Yirgachefe Elevation: 1800 - 2100 masl Variety: Heirloom (Walisho, Dega, & Kurume) Process: Natural Notes: Brown sugar, jasmine, melon, berries, & syrupy About: This is a really good Ethiopian Coffee."
+		)
+	).toEqual([
+		"Process: Natural. Variety: Heirloom (Walisho, Dega, & Kurume). Region: Kochere, Yirgachefe. Elevation: 1800 - 2100 masl. Tasting notes: Brown sugar, jasmine, melon, berries, & syrupy.",
+	]);
+	// "Tasting Notes:" is the pair label with the colon on the second word.
+	// The last value is still cut at the first clause seam ("of"), the same
+	// price the all-caps path pays for catching glued shop prose.
+	expect(
+		catalogPassages(
+			"Region: Nueva Suiza, Chiriqui Producer: Helen Russell, Brooke McDonnell, Catherine Cadloni, & Willem Boot Relationship: 2023 Altitude: 2,175 masl Tasting Notes: Fragrance and aroma of cherry and bergamot orange."
+		)
+	).toEqual([
+		"Region: Nueva Suiza, Chiriqui. Elevation: 2,175 masl. Producer: Helen Russell, Brooke McDonnell, Catherine Cadloni, & Willem Boot. Tasting notes: Fragrance and aroma.",
+	]);
+	// One colon in a real sentence is one label, not a run; it stays prose.
+	expect(
+		catalogPassages("Notes: chocolate up front, then citrus and a long finish.")
+	).toEqual(["Notes: chocolate up front, then citrus and a long finish."]);
+	// Colon cells in an all-caps sheet still read as before.
+	expect(
+		catalogPassages("ORIGIN: Colombia PROCESS: Washed NOTES: Cherry, Cocoa")
+	).toEqual([
+		"Process: Washed. Region: Colombia. Tasting notes: Cherry, Cocoa.",
+	]);
+	// Shapes from the dev replay (2,570 rows): a two-word layout cell whose
+	// first word would otherwise ride along as a value, a spaced colon, and
+	// a colon header after the last mapped value, which bounds it so the
+	// clause-seam cut does not eat a Spanish farm name.
+	expect(
+		catalogPassages(
+			"Varietal: Heirloom Process: Washed Relationship Since: 2020 Recipes : Espresso: 1:2.5 Region: Sidamo"
+		)
+	).toEqual(["Process: Washed. Variety: Heirloom. Region: Sidamo."]);
+	expect(
+		catalogPassages(
+			"Varietal: Geisha Process: Anaerobic Natural Region: Finca Ojo de Agua Weight: 100gms About: This tiny lot comes from the highest of the two farms."
+		)
+	).toEqual([
+		"Process: Anaerobic Natural. Variety: Geisha. Region: Finca Ojo de Agua.",
+	]);
+	// A bare caps word after the last value may be an acronym inside glued
+	// prose, so it does not bound the value and the cut still applies.
+	expect(
+		catalogPassages(
+			"ORIGIN Mbozi, Tanzania VARIETY Bourbon PROCESS Washed NOTES Brown sugar, papaya Founded in the wake of the Cooperative Act, today the Iyenga AMCOS has members"
+		)
+	).toEqual([
+		"Process: Washed. Variety: Bourbon. Region: Mbozi, Tanzania. Tasting notes: Brown sugar, papaya.",
+	]);
+});
+
+test("customer reviews on the product page are not roaster passages", () => {
+	// Blossom "Deja Vu", dev run mh7ahzj41xhj1gwg2twqnsgrfs8e9enw (#23). The
+	// review is on the page verbatim, so only its voice gives it away.
+	const review =
+		"This is one of my 'go to' coffees. However, it is different this time and I've had a tough time adjusting strength/grind to make it taste as good as usual.";
+	const description =
+		"A natural process lot from Sidama dried slowly on raised beds, with tasting notes of blueberry and cocoa.";
+	const markdown = [review, description].join("\n\n");
+	expect(
+		pagePassages({ json: { sentences: [review, description] }, markdown }, "")
+	).toEqual([description]);
+	// The regex fallback has the same gap and the same fix.
+	expect(
+		enrichmentPassages(
+			`${markdown}\n\nI roast this natural lot light so the blueberry shows.`,
+			""
+		)
+	).toEqual([description]);
+	// A first-person note glued to the last value of a label run is cut too.
+	expect(
+		catalogPassages(
+			"ORIGIN Colombia VARIETY Caturra PROCESS Washed NOTES Cherry, Cocoa I love this one"
+		)
+	).toEqual([
+		"Process: Washed. Variety: Caturra. Region: Colombia. Tasting notes: Cherry, Cocoa.",
+	]);
+});
+
 test("page passages label verified facts, keep verbatim sentences and skip everything else", () => {
 	const markdown = [
 		"![Verve Coffee Roasters - Chelchele - 12oz - Single Origin - Yirgacheffe, Ethiopia - Process: Washed - Variety: Heirloom - Tasting Notes: Jasmine, Toffee, Lemon Custard](https://cdn.example/bag.jpg)",

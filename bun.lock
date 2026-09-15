@@ -51,6 +51,7 @@
         "tailwindcss": "catalog:",
         "typescript": "catalog:",
         "vite": "^8.1.5",
+        "vitest": "^4.1.11",
       },
     },
     "packages/backend": {

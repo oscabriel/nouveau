@@ -7,6 +7,10 @@ import { useMutation, usePaginatedQuery } from "convex/react";
 import { useRef, useState } from "react";
 
 import { describeMutationError } from "@/lib/errors";
+import {
+	buildRecommendationInput,
+	DEFAULT_MIN_GRAMS,
+} from "@/lib/recommendation-input";
 
 export const RecommendationForm = ({ busy }: { busy: boolean }) => {
 	const history = usePaginatedQuery(
@@ -19,22 +23,20 @@ export const RecommendationForm = ({ busy }: { busy: boolean }) => {
 	const [preferences, setPreferences] = useState("");
 	const [includeNotes, setIncludeNotes] = useState(false);
 	const [budget, setBudget] = useState("");
-	const [grams, setGrams] = useState("");
+	const [grams, setGrams] = useState(String(DEFAULT_MIN_GRAMS));
 	const [submitting, setSubmitting] = useState(false);
 	const [failure, setFailure] = useState<string | null>(null);
 	const submission = useRef<{ key: string; payload: string } | null>(null);
 
 	const submit = async () => {
 		setFailure(null);
-		const input = {
+		const input = buildRecommendationInput({
+			budget,
+			grams,
 			includeNotes,
 			logIds: selected,
-			preferences: preferences.trim(),
-			...(budget === ""
-				? {}
-				: { maxPriceCents: Math.round(Number(budget) * 100) }),
-			...(grams === "" ? {} : { minGrams: Number(grams) }),
-		};
+			preferences,
+		});
 		if (!input.preferences && selected.length === 0) {
 			setFailure(
 				"Describe what you want or choose a coffee from your history."
@@ -116,6 +118,7 @@ export const RecommendationForm = ({ busy }: { busy: boolean }) => {
 							Minimum bag size, grams
 						</label>
 						<Input
+							aria-describedby="bag-size-help"
 							className="min-h-11 text-base"
 							id="bag-size"
 							inputMode="numeric"
@@ -128,9 +131,14 @@ export const RecommendationForm = ({ busy }: { busy: boolean }) => {
 							value={grams}
 						/>
 					</div>
-					<p className="text-muted-foreground text-sm sm:col-span-2">
-						US market, USD only. Shipping and tax are excluded. Coffees without
-						confirmed stock, price or size cannot qualify.
+					<p
+						className="text-muted-foreground text-sm sm:col-span-2"
+						id="bag-size-help"
+					>
+						Starts at {DEFAULT_MIN_GRAMS} g so samples stay out of the
+						shortlist; clear it to allow any confirmed size. US market, USD
+						only. Shipping and tax are excluded. Coffees without confirmed
+						stock, price or size cannot qualify.
 					</p>
 				</div>
 				<details>

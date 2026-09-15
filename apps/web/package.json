@@ -8,7 +8,8 @@
 		"build": "vite build",
 		"serve": "vite preview",
 		"start": "vite",
-		"check-types": "vite build && tsc --noEmit"
+		"check-types": "vite build && tsc --noEmit",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@convex-dev/auth": "2.0.0-alpha.1",
@@ -37,6 +38,7 @@
 		"postcss": "^8.5.24",
 		"tailwindcss": "catalog:",
 		"typescript": "catalog:",
-		"vite": "^8.1.5"
+		"vite": "^8.1.5",
+		"vitest": "^4.1.11"
 	}
 }
