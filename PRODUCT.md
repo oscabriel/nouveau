@@ -1,34 +1,43 @@
 # Nouveau — product context
 
-_(Captured from the locked build spec, `.agents/docs/build-spec.md` — the binding source.)_
+_(Captured from the revised product spec, `.agents/research/nouveau-reimagined-product-spec.md`, with ADR-0004 recording the hackathon scope cut. Vocabulary is `CONTEXT.md`.)_
 
 ## What it is
 
-Nouveau is the alert layer for US specialty coffee roasters: it crawls roaster shops (Shopify `products.json` / Firecrawl), emits Drop events (`new`, `back_in_stock`, `price_drop`, plus silently-stored `sold_out` / `price_rise`), and lets people watch roasters and get told the moment a drop happens. The roaster's own shop is where the action is; Nouveau links out ("See the lot"), it is not a store.
+Nouveau remembers the coffees you tried, helps you choose your next bag, and watches roasters for the releases you care about. It crawls US specialty roasters' shops (Shopify `products.json`, Firecrawl for the rest), keeps a catalog of lots, fires drop events (`new`, `back_in_stock`, `price_drop`; `sold_out` and `price_rise` are stored silently), and emails watchers through a per-user AgentMail inbox. On top of that catalog people log what they drank, save what they want to try, and ask Find my next bag for a shortlist that OpenAI explains from the roaster's own words. Buying happens at the roaster; Nouveau links out and is not a store.
 
-## Audience & scene
+## Audience
 
-Specialty-coffee people who chase limited drops (Onyx, Sey, Regalia...) and miss them because roasters don't do notifications. They check roaster sites manually, repeatedly, from phones and laptops in the morning. The cold-start proof: the signed-out home shows a real-time global feed of live drops — watching is happening before you sign up.
+Home brewers who buy from several specialty roasters. They want to remember what they tried, find another coffee they might like, and know when something they want comes back. Signed-out visitors see the live global drop feed and the public activity feed before being asked to sign in.
 
-## Screen inventory (locked, §11)
+## Screens that exist
 
-Home (global feed signed-out / your feed + delivery footers + unhealthy banner signed-in), Directory, Add-roastery flow, Watches page (status chips, mute), Roaster page (Lots grid, drop history, prediction card, watch button, chip), Local scenes, Sign-in (Google only), Settings.
+- **Home**: signed out, the live global drop feed and a roaster teaser. Signed in, Find my next bag, Want to try (saved lots), and the personalized drop feed from watched roasters with delivery footers and one quiet unhealthy-watch banner.
+- **Find my next bag** (`/next-bag`): pick a few of your logs or state preferences, set a price cap and minimum bag size, get a short list of currently available lots. Each card quotes the roaster's published words (catalog or a Firecrawl page fetch, timestamped), gives OpenAI's comparison to your preference, and links to the lot page and the shop.
+- **Lot page** (`/lots/$lotId`): the roaster's published copy, availability, Save and Log actions, and the lot's public logs. Archived lots resolve fully so links never rot.
+- **Activity** (`/activity`): the public feed of recent logs across all users.
+- **Profile** (`/profile/$userId`): a taster's public logs and the roasters they watch. Saved lots never appear here.
+- **Roasters** (`/roasters`, `/roasters/$slug`): the directory with search, and each roaster's lots (searchable), drop history, watch button, and crawl-status chip.
+- **Watches** (`/watches`): the roasters you watch, with status chips and mute.
+- **Saved** (`/saved`): everything on Want to try, paginated.
+- **Live feed** (`/feed`): the global drop feed on its own page.
+- **Sign-in**: Google only, self-service.
 
-## Feed UX (locked, §8)
+## Rules that matter
 
-- Feeds carry alert-worthy events only: `new`, `back_in_stock`, `price_drop`.
-- Personalized cards carry a delivery footer from the notifications ledger; global feed cards stay clean.
-- One quiet unhealthy banner above the personalized feed, no per-item noise.
-- Watch status chips: "● Watching — last checked 4 min ago", "● Stale — last success 2h ago, still checking", "● Crawl failed — the shop stopped responding; we'll keep trying".
+- Logs are public in this release and say so. Saves are private, do not email, and do not watch.
+- Roaster notes are descriptors literally present in the roaster's copy. Nothing is invented; OpenAI compares, it does not predict you will like something.
+- Feeds carry alert-worthy events only. A baseline crawl fires no alerts. A failed crawl never implies "sold out" or "nothing new"; the watch status says what the system is actually doing.
+- Watch status copy tells the truth: "Watching, last checked 4 min ago", "Stale, still checking", "Crawl failed, we'll keep trying".
+
+## Not in this release
+
+Coffee-specific watches, dated logs, log privacy, in-app updates independent of email, add-a-roastery submissions, local scenes, settings page, drop-rhythm prediction, per-route social previews. See ADR-0004.
 
 ## Tone
 
-Plain, honest, specific. No gamification, no hype. Status copy tells the truth about what the system is doing ("still checking", "we'll keep trying").
-
-## Mode
-
-Operate (scanability, truth of state), with a Persuade duty on the signed-out home: prove the product works before asking for a sign-up.
+Plain, honest, specific. No gamification, no hype.
 
 ## Platform
 
-Web (desktop + mobile browsers). TanStack Router + Tailwind v4 + Convex react subscriptions (feeds are real-time).
+Web (desktop and mobile browsers). TanStack Router + Tailwind v4 + Convex realtime subscriptions, served from `@convex-dev/static-hosting` on the deployment's `convex.site` origin.

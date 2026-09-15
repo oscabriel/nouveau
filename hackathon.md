@@ -2,7 +2,8 @@
 
 - **Project:** nouveau
 - **Event:** Convex All Gas Hackathon
-- **What it does:** Drop alerts for home coffee brewers: watches specialty roasters, detects new releases, and notifies matched users by email and a live feed.
+- **What it does:** A coffee memory for home brewers. Log the lots you tried, ask Find my next bag for a shortlist of coffees in stock right now (OpenAI compares them to your logs using the roaster's own words, fetched with Firecrawl), save the ones you want to try, and watch roasters so AgentMail emails you when a new lot drops, one comes back in stock, or a price falls.
+- **Demo:** _video link to be added at submission (Task 6)_
 - **Live app:** https://artful-chameleon-402.convex.site
 - **Repo:** https://github.com/oscabriel/nouveau
 - **Frontend:** Convex static hosting
@@ -12,7 +13,7 @@
 - **Auth:** Convex Auth
 - **AI models:** OpenAI `gpt-5.6-luna` (Responses API, low reasoning effort, strict JSON schema) for Find my next bag, live in prod at `/next-bag`. Firecrawl JSON extraction reads product pages for the same feature.
 - **Started:** 2026-08-29T18:06:09Z
-- **Last updated:** 2026-09-15T22:15:00Z
+- **Last updated:** 2026-09-15T23:00:00Z
 
 ## Log
 
