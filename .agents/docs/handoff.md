@@ -17,17 +17,9 @@ The judged artifacts are the video, the public URL and the post. Every task belo
 - Vocabulary per `CONTEXT.md`: lot, roaster, watch, log, roaster notes. Never "product" in UI copy.
 - Never fabricate a drop, a run, or tester feedback. A prior alert is labelled as earlier.
 
-## Task 1: Next bag result quality (#22, #23, #24)
+## Task 1: Next bag result quality (#22, #23, #24) — DONE 2026-09-15
 
-These three bugs show up on the `/next-bag` result cards, which is the centrepiece of the demo. All have fix sketches in their issues; follow them.
-
-**#22, sample size wins.** `apps/web/src/components/recommendation-form.tsx`: prefill minimum bag size with `200` (editable; cleared means any size), update the helper text. `recommendation-results.tsx`: move the variant name beside the price (`$6 USD · 2oz (85 g)`). Do not change the server's cheapest-qualifying rule. Mention the default in `.agents/docs/recommendations.md` "Request path". Form test covers untouched / cleared / typed.
-
-**#23, customer reviews in page passages.** `packages/backend/convex/recommendationRules.ts`: `SHOP_VOICE` (line ~231) only knows we/our. Add a first-person reviewer marker (`\bI\b|I've|I'm|\bmy\b|\bme\b`) applied wherever `SHOP_VOICE` is applied in `extractedPassages` and `enrichmentPassages`. Fixture: the Blossom Deja Vu review sentence from the issue. After deploying, purge the evidence cache on each target: `bun x convex run internal.recommendations.purgeEvidence '{}'` (cached passages hold the review for 24h).
-
-**#24, Title Case spec sheets.** Extend `isLabelRun` (line ~336) with a second signal: three or more `Label:` tokens matched case-insensitively against `CATALOG_LABEL_KEYS` / `PAIR_LABEL_KEYS`, then reuse `scanLabelRun`. Unknown `Word:` cells drop with their values like `AMOUNT`. The issue gives three real fixtures and the expected output for the first. Guard the false positive: one colon in a real sentence is not a run. Existing label-run tests must stay green.
-
-Deploy all three to dev, replay against the dev `products` dump if the previous sessions' replay script is still around (check `scripts/`), then to prod with consent. Close the issues with a comment pointing at the commit.
+Shipped in `c7b18bc`, on prod, issues closed. Replaying the dev `products` export showed 201 of 2,570 descriptions used colon-labelled sheets, so #24 was much wider than three rows. Parked for the owner's planned scraped-data cleanup revisit: sentence-shaped notes values are still cut at the first clause seam (`Tasting notes: Fragrance and aroma.`). Replay method, if needed again: `npx convex export --path x.zip` on dev, `UNZIP_DISABLE_ZIPBOMB_DETECTION=TRUE unzip x.zip 'products/*'`, run `catalogPassages` over `description` from old and new copies of `recommendationRules.ts` with `bun run` from `packages/backend` so `convex/values` resolves.
 
 ## Task 2: Record the first prod recommendation
 
