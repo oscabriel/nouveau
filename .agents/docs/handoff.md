@@ -25,7 +25,9 @@ Shipped in `c7b18bc`, on prod, issues closed. Replaying the dev `products` expor
 
 Run `ks752hap2q63hkq4b28ymwapa58efhbc`, recorded in `hackathon.md`: `gpt-5.6-luna`, 20 candidates over 10 roasters, one Firecrawl fact line in the pool (La Colombe) but the model quoted three catalog passages. For the video, either pick a run where a Firecrawl line is quoted or show the unquoted "Also on the product page" bullets.
 
-## Task 3: Save (Want to try)
+## Task 3: Save (Want to try) — DONE 2026-09-15 (code), not yet deployed
+
+Shipped in `0522e79` as specced below, plus a `/saved` route with the paginated full list and a "Saved" header link. Deviations: `recentMine` (capped at 5, with a `more` flag) feeds the home section instead of paging `listMine` there; `fromRunId` is kept only when the run belongs to the caller, otherwise dropped silently; the Save button renders nothing signed out. First save shows a one-line toast ("Only you can see it; no email, no watch."). Schema change, so dev then prod deploy need announcing; prod needs consent.
 
 The revised spec's demo sequence (§11) is: log → Find my next bag → **save one** → choose an alert → see a genuine alert → share a log. Save is the one step that doesn't exist. Build only Save; skip the rest of #20 (see "Deliberately not this week").
 
