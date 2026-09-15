@@ -210,6 +210,18 @@ export default defineSchema({
 		.index("by_slug", ["slug"])
 		.index("by_status_and_state", ["status", "state"]),
 
+	// "Want to try" (product spec §6): a private bookmark on a lot. Saving
+	// does not email, does not watch a roaster, and never shows on a public
+	// profile. fromRunId records the Find-my-next-bag run it came from.
+	savedCoffees: defineTable({
+		fromRunId: v.optional(v.id("recommendationRuns")),
+		productId: v.id("products"),
+		savedAt: v.number(),
+		userId: v.id("users"),
+	})
+		.index("by_user_and_saved_at", ["userId", "savedAt"])
+		.index("by_user_and_product", ["userId", "productId"]),
+
 	users: defineTable({
 		// The per-user AgentMail inbox (build spec §8.3) that sends this
 		// user's alerts; provisioned after signup, so optional.

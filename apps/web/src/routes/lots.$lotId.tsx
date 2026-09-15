@@ -10,6 +10,7 @@ import { useState } from "react";
 import Loader from "@/components/loader";
 import { LogCard } from "@/components/log-card";
 import { LogForm } from "@/components/log-form";
+import { SaveButton } from "@/components/save-button";
 import { SignInCta } from "@/components/sign-in-cta";
 
 export type LotPageData = FunctionReturnType<typeof api.lots.get>;
@@ -133,15 +134,18 @@ const LotComponent = () => {
 						{page.logsTruncated ? "Recent logs" : "Logs"}
 					</h2>
 					{isAuthenticated ? (
-						<Button
-							onClick={() => {
-								setLogging((value) => !value);
-							}}
-							size="sm"
-							variant={logging ? "ghost" : "outline"}
-						>
-							{logging ? "Close" : "Log this lot"}
-						</Button>
+						<div className="flex items-center gap-2">
+							<SaveButton lotId={lot.id} size="sm" />
+							<Button
+								onClick={() => {
+									setLogging((value) => !value);
+								}}
+								size="sm"
+								variant={logging ? "ghost" : "outline"}
+							>
+								{logging ? "Close" : "Log this lot"}
+							</Button>
+						</div>
 					) : (
 						<SignInCta />
 					)}

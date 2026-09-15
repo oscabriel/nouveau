@@ -6,6 +6,7 @@ import { useQuery } from "convex/react";
 import { FeedCard } from "@/components/feed-card";
 import { GlobalFeed } from "@/components/global-feed";
 import Loader from "@/components/loader";
+import { SavedCoffeeCard } from "@/components/saved-coffee-card";
 import { SignInCta } from "@/components/sign-in-cta";
 import { HealthDot } from "@/components/status-chip";
 
@@ -44,6 +45,29 @@ const PersonalizedFeed = () => {
 				</div>
 			)}
 		</>
+	);
+};
+
+/** The signed-in home's "Want to try" section; hidden until the first save. */
+const WantToTry = () => {
+	const saved = useQuery(api.savedCoffees.recentMine, {});
+	if (saved === undefined || saved.items.length === 0) {
+		return null;
+	}
+	return (
+		<section className="mb-8">
+			<div className="mb-1 flex items-baseline justify-between gap-4">
+				<h2 className="font-semibold">Want to try</h2>
+				<Link className="text-sm hover:underline" to="/saved">
+					{saved.more ? "All saved lots" : "Saved lots"}
+				</Link>
+			</div>
+			<div className="divide-y">
+				{saved.items.map((item) => (
+					<SavedCoffeeCard item={item} key={item.savedId} />
+				))}
+			</div>
+		</section>
 	);
 };
 
@@ -112,6 +136,7 @@ const HomeComponent = () => {
 					>
 						Find my next bag
 					</Link>
+					<WantToTry />
 					<PersonalizedFeed />
 				</>
 			) : (

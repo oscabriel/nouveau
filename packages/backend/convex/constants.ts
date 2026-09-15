@@ -67,3 +67,10 @@ export const LOT_PAGE_LOGS_LIMIT = 20;
 
 // Lots returned by a name search on one roaster's catalog.
 export const LOT_SEARCH_LIMIT = 20;
+
+// Saved coffees ("Want to try", spec §6) read per user for the save-button
+// state. Bookmarks are cheap to make, so this sits above the watch cap.
+export const MAX_SAVED_COFFEES_PER_USER = 500;
+
+// Saved coffees shown in the home "Want to try" section; the full list pages.
+export const HOME_SAVED_COFFEES_LIMIT = 5;

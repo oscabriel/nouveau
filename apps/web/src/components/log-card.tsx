@@ -8,6 +8,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { LogForm } from "@/components/log-form";
+import { SaveButton } from "@/components/save-button";
 import { Stars } from "@/components/stars";
 import { relativeTime } from "@/lib/format";
 
@@ -19,7 +20,8 @@ export type LogCardData = FunctionReturnType<
 /**
  * One log row. The activity feed shows the taster (showUser); the profile
  * already belongs to them, so it passes showUser={false} and may pass isMine
- * to get inline edit and delete.
+ * to get inline edit and delete. Someone else's log offers Save on its lot
+ * instead: a log you read is the main way a lot gets onto "Want to try".
  */
 export const LogCard = ({
 	log,
@@ -93,6 +95,9 @@ export const LogCard = ({
 					<span className="font-medium not-italic">Roaster notes:</span>{" "}
 					{log.lot.roasterNotes}
 				</p>
+			)}
+			{!isMine && (
+				<SaveButton className="mt-1 self-start" lotId={log.lot.id} size="sm" />
 			)}
 			{isMine && (
 				<div className="flex gap-1">

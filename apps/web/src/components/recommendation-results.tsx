@@ -5,6 +5,7 @@ import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useState } from "react";
 
+import { SaveButton } from "@/components/save-button";
 import { describeMutationError } from "@/lib/errors";
 import { formatPrice } from "@/lib/format";
 
@@ -26,7 +27,13 @@ const basisLabel = (logCount: number): string => {
 	return `Based on ${logCount} selected logs and your request.`;
 };
 
-const Recommendation = ({ result }: { result: Result }) => {
+const Recommendation = ({
+	result,
+	runId,
+}: {
+	result: Result;
+	runId: Run["id"];
+}) => {
 	const { candidate, selection } = result;
 	const evidence = candidate.evidence.find(
 		(item) => item.id === selection.evidenceId
@@ -137,7 +144,8 @@ const Recommendation = ({ result }: { result: Result }) => {
 					source before deciding.
 				</output>
 			)}
-			<div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+			<div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+				<SaveButton fromRunId={runId} lotId={candidate.productId} />
 				<Link
 					className="inline-flex min-h-11 items-center underline underline-offset-4"
 					params={{ lotId: candidate.productId }}
@@ -203,7 +211,11 @@ export const RecommendationResults = ({ run }: { run: Run | null }) => {
 			)}
 			<div className="divide-y">
 				{run.results.map((result) => (
-					<Recommendation key={result.candidate.productId} result={result} />
+					<Recommendation
+						key={result.candidate.productId}
+						result={result}
+						runId={run.id}
+					/>
 				))}
 			</div>
 			{run.canRetry && (

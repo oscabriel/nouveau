@@ -28,6 +28,7 @@ import type * as recommendationRules from "../recommendationRules.js";
 import type * as recommendationWorker from "../recommendationWorker.js";
 import type * as recommendations from "../recommendations.js";
 import type * as roasters from "../roasters.js";
+import type * as savedCoffees from "../savedCoffees.js";
 import type * as seed from "../seed.js";
 import type * as shopMarket from "../shopMarket.js";
 import type * as users from "../users.js";
@@ -60,6 +61,7 @@ declare const fullApi: ApiFromModules<{
   recommendationWorker: typeof recommendationWorker;
   recommendations: typeof recommendations;
   roasters: typeof roasters;
+  savedCoffees: typeof savedCoffees;
   seed: typeof seed;
   shopMarket: typeof shopMarket;
   users: typeof users;

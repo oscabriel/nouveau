@@ -102,6 +102,7 @@ const Header = () => {
 				{ label: "Activity", to: "/activity" },
 				{ label: "Roasters", to: "/roasters" },
 				{ label: "Watches", to: "/watches" },
+				{ label: "Saved", to: "/saved" },
 			]
 		: [
 				{ label: "Home", to: "/" },
