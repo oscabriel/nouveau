@@ -1575,36 +1575,34 @@ describe("walkFeedPages", () => {
 
 describe("parseHtmlPage", () => {
 	const pageUrl = "https://roaster.example.com/shop/";
+	const products = (json: unknown) => parseHtmlPage(json, pageUrl).products;
 
 	test("returns nothing for a non-matching extraction", () => {
-		expect(parseHtmlPage(null, pageUrl)).toEqual([]);
-		expect(parseHtmlPage({ products: "nope" }, pageUrl)).toEqual([]);
+		expect(parseHtmlPage(null, pageUrl)).toEqual({
+			products: [],
+			rejectedExternalIds: [],
+		});
+		expect(products({ products: "nope" })).toEqual([]);
 	});
 
 	test("drops items without a name", () => {
 		expect(
-			parseHtmlPage(
-				{ products: [{ name: "", price: 1 }, { price: 2 }] },
-				pageUrl
-			)
+			products({ products: [{ name: "", price: 1 }, { price: 2 }] })
 		).toEqual([]);
 	});
 
 	test("keys URL-bearing items on their URL", () => {
-		const [product] = parseHtmlPage(
-			{
-				products: [
-					{
-						available: false,
-						grams: 250,
-						name: "Kiamabara",
-						price: 22.5,
-						url: "https://roaster.example.com/products/kiamabara",
-					},
-				],
-			},
-			pageUrl
-		);
+		const [product] = products({
+			products: [
+				{
+					available: false,
+					grams: 250,
+					name: "Kiamabara",
+					price: 22.5,
+					url: "https://roaster.example.com/products/kiamabara",
+				},
+			],
+		});
 		expect(product).toEqual({
 			externalId: "https://roaster.example.com/products/kiamabara",
 			handle: "kiamabara",
@@ -1615,25 +1613,71 @@ describe("parseHtmlPage", () => {
 		});
 	});
 
-	test("keys URL-less items on page + name so they do not collapse", () => {
-		const products = parseHtmlPage(
+	test("strips the query string and hash from the URL before it keys the lot (#35)", () => {
+		const [product] = products({
+			products: [
+				{
+					name: "Agaro",
+					price: 24,
+					url: "https://drinkpassenger.com/products/agaro?Size=250%20g#top",
+				},
+			],
+		});
+		expect(product?.externalId).toBe(
+			"https://drinkpassenger.com/products/agaro"
+		);
+		expect(product?.handle).toBe("agaro");
+	});
+
+	test("reads the bag size from the title when the extraction has none (#35)", () => {
+		const [product] = products({
+			products: [{ name: "Ninga Washed 250g", price: 24 }],
+		});
+		expect(product?.variants[0]?.grams).toBe(250);
+	});
+
+	test("drops subscriptions and bundles and names them as rejects (#35)", () => {
+		const parsed = parseHtmlPage(
 			{
 				products: [
-					{ name: "Lot A", price: 18 },
-					{ name: "Lot B", price: 20 },
+					{
+						name: "Foundational Subscription",
+						price: 20,
+						url: "https://drinkpassenger.com/products/foundational-subscription",
+					},
+					{ name: "Gift Card", price: 25 },
+					{
+						name: "Agaro",
+						price: 24,
+						url: "https://drinkpassenger.com/products/agaro?Size=250%20g",
+					},
 				],
 			},
 			pageUrl
 		);
-		expect(products.map((p) => p.externalId)).toEqual([
+		expect(parsed.products.map((p) => p.name)).toEqual(["Agaro"]);
+		expect(parsed.rejectedExternalIds).toEqual([
+			"https://drinkpassenger.com/products/foundational-subscription",
+			"https://roaster.example.com/shop#Gift Card",
+		]);
+	});
+
+	test("keys URL-less items on page + name so they do not collapse", () => {
+		const parsed = products({
+			products: [
+				{ name: "Lot A", price: 18 },
+				{ name: "Lot B", price: 20 },
+			],
+		});
+		expect(parsed.map((p) => p.externalId)).toEqual([
 			"https://roaster.example.com/shop#Lot A",
 			"https://roaster.example.com/shop#Lot B",
 		]);
-		expect(products.every((p) => p.handle === "shop")).toBe(true);
+		expect(parsed.every((p) => p.handle === "shop")).toBe(true);
 	});
 
 	test("defaults availability to true and price to 0", () => {
-		const [product] = parseHtmlPage({ products: [{ name: "Lot" }] }, pageUrl);
+		const [product] = products({ products: [{ name: "Lot" }] });
 		expect(product?.variants[0]).toEqual({
 			available: true,
 			name: "Default",

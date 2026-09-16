@@ -313,8 +313,9 @@ const startHtmlCrawl = async (
 const collectCrawlProducts = async (
 	ctx: MutationCtx,
 	input: { crawlId: string }
-): Promise<ExtractedProduct[]> => {
+): Promise<{ products: ExtractedProduct[]; rejectedExternalIds: string[] }> => {
 	const products: ExtractedProduct[] = [];
+	const rejected = new Set<string>();
 	const seen = new Set<string>();
 	let cursor: string | null = null;
 	for (let page = 0; page < MAX_CRAWL_PAGE_ITERATIONS; page += 1) {
@@ -329,7 +330,11 @@ const collectCrawlProducts = async (
 			if (doc.json === undefined) {
 				continue;
 			}
-			for (const product of parseHtmlPage(doc.json, doc.url)) {
+			const parsed = parseHtmlPage(doc.json, doc.url);
+			for (const id of parsed.rejectedExternalIds) {
+				rejected.add(id);
+			}
+			for (const product of parsed.products) {
 				if (seen.has(product.externalId)) {
 					continue;
 				}
@@ -342,7 +347,7 @@ const collectCrawlProducts = async (
 		}
 		cursor = result.continueCursor;
 	}
-	return products;
+	return { products, rejectedExternalIds: [...rejected] };
 };
 
 export const crawlSource = internalAction({
@@ -475,9 +480,12 @@ export const onFirecrawlCrawlComplete = internalMutation({
 			);
 		}
 
-		const products = await collectCrawlProducts(ctx, { crawlId: args.crawlId });
+		const { products, rejectedExternalIds } = await collectCrawlProducts(ctx, {
+			crawlId: args.crawlId,
+		});
 		const fetchedAt = Date.now();
-		if (products.length === 0) {
+		// A page of nothing but rejects is still a read shop, not a failure.
+		if (products.length === 0 && rejectedExternalIds.length === 0) {
 			await ctx.runMutation(internal.crawlSources.finalizeCrawl, {
 				crawlSourceId,
 				errorMessage: "HTML extraction found no products",
@@ -490,6 +498,7 @@ export const onFirecrawlCrawlComplete = internalMutation({
 			crawlSourceId,
 			fetchedAt,
 			products,
+			rejectedExternalIds,
 		});
 		return null;
 	},

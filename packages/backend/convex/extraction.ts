@@ -1480,25 +1480,62 @@ interface HtmlExtraction {
 	}[];
 }
 
-/** Map one crawled page's structured extraction to a product. */
+/** A product URL without its query string or hash (`?Size=250%20g`). */
+const bareProductUrl = (url: string): string => {
+	try {
+		const parsed = new URL(url);
+		return `${parsed.origin}${parsed.pathname}`;
+	} catch {
+		return url.split(/[?#]/u)[0] ?? url;
+	}
+};
+
+export interface HtmlPageParse {
+	products: ExtractedProduct[];
+	/** Items the lot classifier rejected; finalizeCrawl purges old rows. */
+	rejectedExternalIds: string[];
+}
+
+/**
+ * Map one crawled page's structured extraction to products (#35). The URL
+ * is keyed bare: a variant picker's `?Size=` would otherwise mint a new lot
+ * per flap and archive the old one. The classifier runs on the title alone
+ * (html mode has no product_type or tags) and only a positive title or
+ * wholesale verdict rejects; an untyped, untagged coffee name is kept, since
+ * that is every real lot on such a shop. Bag size comes from the title when
+ * the extraction found none.
+ */
 export const parseHtmlPage = (
 	json: unknown,
 	pageUrl: string
-): ExtractedProduct[] => {
+): HtmlPageParse => {
 	const extraction = (json as HtmlExtraction | null | undefined)?.products;
+	const rejectedExternalIds: string[] = [];
 	if (!Array.isArray(extraction)) {
-		return [];
+		return { products: [], rejectedExternalIds };
 	}
 	const base = pageUrl.replace(/\/$/u, "");
-	return extraction.flatMap((item) => {
+	const products = extraction.flatMap((item) => {
 		if (typeof item.name !== "string" || item.name.length === 0) {
 			return [];
 		}
 		const url =
-			typeof item.url === "string" && item.url.length > 0 ? item.url : null;
+			typeof item.url === "string" && item.url.length > 0
+				? bareProductUrl(item.url)
+				: null;
 		// URL-less items key on page + name so products extracted from the same
 		// listing page don't collapse into one externalId.
 		const externalId = url ?? `${base}#${item.name}`;
+		const verdict = classifyLot({
+			productType: null,
+			tags: null,
+			title: item.name,
+		});
+		if (!verdict.isLot && verdict.rule !== "default") {
+			rejectedExternalIds.push(externalId);
+			return [];
+		}
+		const grams = parseVariantGrams(item.name, [], item.grams);
 		const product: ExtractedProduct = {
 			externalId,
 			handle: (url ?? base).split("/").pop() ?? externalId,
@@ -1506,7 +1543,7 @@ export const parseHtmlPage = (
 			variants: [
 				{
 					available: item.available !== false,
-					...(typeof item.grams === "number" ? { grams: item.grams } : {}),
+					...(grams === undefined ? {} : { grams }),
 					name: "Default",
 					priceCents: Math.round((item.price ?? 0) * 100),
 				},
@@ -1514,4 +1551,5 @@ export const parseHtmlPage = (
 		};
 		return [product];
 	});
+	return { products, rejectedExternalIds };
 };
