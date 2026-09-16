@@ -17,17 +17,26 @@ export const FEED_LIMIT = 30;
 /** Per-roaster slice of the personalized feed merge. */
 const PER_ROASTER_LIMIT = 10;
 
-/** Card shape for feed rendering; the lot links to the roaster's own shop. */
+/**
+ * Card shape for feed rendering; the lot links to the roaster's own shop.
+ * Carries the lot image and the roaster's city so the landing can render
+ * the image row and the table (lot, roaster, city, origin, process, price).
+ */
 const feedCard = {
 	detectedAt: v.number(),
 	eventId: v.id("dropEvents"),
+	imageUrl: v.union(v.string(), v.null()),
 	lotUrl: v.string(),
 	newPriceCents: v.union(v.number(), v.null()),
 	oldPriceCents: v.union(v.number(), v.null()),
+	origin: v.union(v.string(), v.null()),
+	process: v.union(v.string(), v.null()),
 	productId: v.id("products"),
 	productName: v.string(),
+	roasterCity: v.string(),
 	roasterName: v.string(),
 	roasterSlug: v.string(),
+	roasterState: v.string(),
 	type: v.union(
 		v.literal("new"),
 		v.literal("back_in_stock"),
@@ -41,13 +50,18 @@ type AlertType = (typeof ALERT_WORTHY_TYPES)[number];
 interface FeedCard {
 	detectedAt: number;
 	eventId: Id<"dropEvents">;
+	imageUrl: string | null;
 	lotUrl: string;
 	newPriceCents: number | null;
 	oldPriceCents: number | null;
+	origin: string | null;
+	process: string | null;
 	productName: string;
 	productId: Id<"products">;
+	roasterCity: string;
 	roasterName: string;
 	roasterSlug: string;
+	roasterState: string;
 	type: AlertType;
 	variantName: string | null;
 }
@@ -71,13 +85,18 @@ const toCard = async (
 	return {
 		detectedAt: event.detectedAt,
 		eventId: event._id,
+		imageUrl: product.imageUrl ?? null,
 		lotUrl: `${roaster.websiteUrl}/products/${product.handle}`,
 		newPriceCents: event.newPriceCents ?? null,
 		oldPriceCents: event.oldPriceCents ?? null,
+		origin: product.origin ?? null,
+		process: product.process ?? null,
 		productId: product._id,
 		productName: product.name,
+		roasterCity: roaster.city,
 		roasterName: roaster.name,
 		roasterSlug: roaster.slug,
+		roasterState: roaster.state,
 		type: event.type,
 		variantName: variant?.name ?? null,
 	};

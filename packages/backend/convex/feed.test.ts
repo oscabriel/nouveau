@@ -135,7 +135,53 @@ describe("globalFeed", () => {
 			lotUrl: "https://onyx.example.com/products/ethiopia-mullugeta",
 			newPriceCents: 3500,
 			oldPriceCents: 4000,
+			roasterCity: "Portland",
 			roasterName: "Onyx",
+			roasterState: "OR",
+		});
+	});
+
+	test("carries the lot image, origin and process; null when the feed had none", async () => {
+		const { roasterA, t } = await setup();
+		const thin = await addProduct(t, roasterA);
+		const rich = await t.run((ctx) =>
+			ctx.db.insert("products", {
+				externalId: "gid://shopify/Product/2",
+				firstSeenAt: T0,
+				handle: "rwanda-kanzu",
+				imageUrl: "https://cdn.example.com/kanzu.jpg",
+				lastSeenAt: T0,
+				name: "Rwanda Kanzu Station",
+				origin: "Rwanda",
+				process: "Washed",
+				roasterId: roasterA,
+				status: "current",
+			})
+		);
+		await addEvent(t, {
+			detectedAt: T0 + 1,
+			productId: thin,
+			roasterId: roasterA,
+			type: "new",
+		});
+		await addEvent(t, {
+			detectedAt: T0 + 2,
+			productId: rich,
+			roasterId: roasterA,
+			type: "new",
+		});
+
+		const feed = await t.query(api.feed.globalFeed, {});
+		expect(feed[0]).toMatchObject({
+			imageUrl: "https://cdn.example.com/kanzu.jpg",
+			origin: "Rwanda",
+			process: "Washed",
+			productName: "Rwanda Kanzu Station",
+		});
+		expect(feed[1]).toMatchObject({
+			imageUrl: null,
+			origin: null,
+			process: null,
 		});
 	});
 
