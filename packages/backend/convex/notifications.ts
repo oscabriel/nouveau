@@ -107,9 +107,10 @@ export const alertBody = (input: AlertEmail): string => {
 		"",
 		`Roaster page: ${appLink(input.siteOrigin, `/roasters/${input.roasterSlug}`)}`,
 		"",
-		// Alert settings is a stub (§8.2); the mute toggle lives on the
-		// watches page, so that is the only footer link until it ships.
+		// The locked §8.2 footer: "Mute this roaster · Alert settings". Mute
+		// lives on the watches page; settings is the stub at /settings/alerts.
 		`You're watching ${roasterName}. Mute this roaster: ${appLink(input.siteOrigin, "/watches")}`,
+		`Alert settings: ${appLink(input.siteOrigin, "/settings/alerts")}`,
 	].join("\n");
 };
 

@@ -32,6 +32,8 @@ A drop-alert service with a social layer for home coffee brewers: watches US spe
 
 **Submission**: A user's attempt to add a roaster by pasting its URL. Validated automatically; a submission becomes a roaster when its baseline crawl succeeds, or fails visibly with a retry. _Avoid_: Request, suggestion
 
+**Alert inbox**: The per-user AgentMail address that receives the user's alert emails. Provisioned at first sign-in; one per user. _Avoid_: Email address (that's the Google account's), mailbox
+
 **Degraded alert**: An alert sent when structured extraction failed but the raw page shows something changed. Worse data beats no alert.
 
 **Log**: A user's record of trying a lot: the lot, an optional rating, optional personal notes, and when it was logged. The unit of the social layer; logs are public. _Avoid_: Review, check-in, entry

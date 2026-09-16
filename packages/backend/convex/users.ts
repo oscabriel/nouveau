@@ -58,11 +58,17 @@ export const getCurrentUser = query({
 		if (user === null) {
 			return null;
 		}
-		return { id: user._id, imageUrl: user.imageUrl, name: user.name };
+		return {
+			alertInboxAddress: user.agentmailInbox?.address,
+			id: user._id,
+			imageUrl: user.imageUrl,
+			name: user.name,
+		};
 	},
 	returns: v.union(
 		v.null(),
 		v.object({
+			alertInboxAddress: v.optional(v.string()),
 			id: v.id("users"),
 			imageUrl: v.optional(v.string()),
 			name: v.optional(v.string()),

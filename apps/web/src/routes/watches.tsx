@@ -57,9 +57,14 @@ const WatchesComponent = () => {
 		<div className="container mx-auto max-w-3xl px-4 py-8">
 			<header className="mb-6 flex items-baseline justify-between gap-4">
 				<h1 className="text-2xl font-semibold">Your watches</h1>
-				<Link className="text-sm hover:underline" to="/roasters">
-					Find roasters
-				</Link>
+				<div className="flex items-baseline gap-4">
+					<Link className="text-sm hover:underline" to="/settings/alerts">
+						Alert settings
+					</Link>
+					<Link className="text-sm hover:underline" to="/roasters">
+						Find roasters
+					</Link>
+				</div>
 			</header>
 			{watches.length === 0 ? (
 				<p className="text-muted-foreground py-8 text-sm">

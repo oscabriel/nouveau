@@ -78,6 +78,9 @@ describe("alert email template", () => {
 		expect(text).toContain(
 			"You're watching Sey. Mute this roaster: https://nouveau.example.com/watches"
 		);
+		expect(text).toContain(
+			"Alert settings: https://nouveau.example.com/settings/alerts"
+		);
 	});
 
 	test("summary slot is omitted when there is no summary", () => {
