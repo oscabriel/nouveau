@@ -302,6 +302,58 @@ export const shopifyProductsUrl = (websiteUrl: string, page = 1): string => {
 	return `${origin}/products.json?limit=${PRODUCTS_JSON_PAGE_SIZE}&page=${page}`;
 };
 
+/** The `www.` form of a shop origin, or null when the host already has it. */
+export const wwwOrigin = (websiteUrl: string): string | null => {
+	const url = new URL(websiteUrl);
+	if (url.hostname.startsWith("www.")) {
+		return null;
+	}
+	url.hostname = `www.${url.hostname}`;
+	return url.origin;
+};
+
+export interface FeedPageResponse {
+	/** HTTP status, or 0 when the request itself failed. */
+	status: number;
+	/** Body text, or null when the page is unavailable. */
+	text: string | null;
+}
+
+export interface FirstFeedPageInput {
+	fetchPage: (url: string) => Promise<FeedPageResponse>;
+	websiteUrl: string;
+}
+
+export interface FirstFeedPageResult {
+	text: string | null;
+	/** The origin that answered; later pages and the market check use it. */
+	websiteUrl: string;
+}
+
+/**
+ * Fetch page 1 of the feed. A headless storefront can leave the apex with no
+ * products.json while the Shopify shop lives on `www.` (Passenger: apex 404,
+ * `www.drinkpassenger.com` a full feed), so an apex 404 earns one retry on
+ * `www.`. Any other failure returns as-is for the Firecrawl fallback.
+ */
+export const fetchFirstFeedPage = async (
+	input: FirstFeedPageInput
+): Promise<FirstFeedPageResult> => {
+	const first = await input.fetchPage(shopifyProductsUrl(input.websiteUrl));
+	if (first.status !== 404) {
+		return { text: first.text, websiteUrl: input.websiteUrl };
+	}
+	const www = wwwOrigin(input.websiteUrl);
+	if (www === null) {
+		return { text: null, websiteUrl: input.websiteUrl };
+	}
+	const retry = await input.fetchPage(shopifyProductsUrl(www));
+	if (retry.text === null) {
+		return { text: null, websiteUrl: input.websiteUrl };
+	}
+	return { text: retry.text, websiteUrl: www };
+};
+
 /**
  * A product_type or title that says wholesale: Ruby "Wholesale Coffee",
  * "Ethiopia Reko - Wholesale"; Madcap "Karinga (WS)". `wholesale` has no

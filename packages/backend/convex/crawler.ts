@@ -13,6 +13,7 @@ import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { COMMIT_BATCH_PRODUCTS } from "./constants";
 import {
 	extractedProduct,
+	fetchFirstFeedPage,
 	HTML_EXTRACTION_PROMPT,
 	htmlExtractionSchema,
 	parseHtmlPage,
@@ -21,7 +22,11 @@ import {
 	shopifyProductsUrl,
 	walkFeedPages,
 } from "./extraction";
-import type { ExtractedProduct, ProductsJsonPage } from "./extraction";
+import type {
+	ExtractedProduct,
+	FeedPageResponse,
+	ProductsJsonPage,
+} from "./extraction";
 import { confirmShopMarket } from "./shopMarket";
 import type { shopMarketValidator } from "./shopMarket";
 
@@ -115,22 +120,28 @@ const commitCatalog = async (
 interface ProductsJsonInput {
 	crawlSourceId: Id<"crawlSources">;
 	isBaseline: boolean;
+	roasterId: Id<"roasters">;
 	websiteUrl: string;
 }
 
-const fetchPageText = async (url: string): Promise<string | null> => {
+const fetchFeedPage = async (url: string): Promise<FeedPageResponse> => {
 	try {
 		const res = await fetch(url, {
 			headers: SHOPIFY_FETCH_HEADERS,
 			redirect: "follow",
 		});
 		if (!res.ok) {
-			return null;
+			return { status: res.status, text: null };
 		}
-		return await res.text();
+		return { status: res.status, text: await res.text() };
 	} catch {
-		return null;
+		return { status: 0, text: null };
 	}
+};
+
+const fetchPageText = async (url: string): Promise<string | null> => {
+	const response = await fetchFeedPage(url);
+	return response.text;
 };
 
 // Bot protection or a non-Shopify response: let Firecrawl render it.
@@ -166,11 +177,24 @@ const crawlProductsJson = async (
 	input: ProductsJsonInput
 ): Promise<void> => {
 	const fetchedAt = Date.now();
-	const firstUrl = shopifyProductsUrl(input.websiteUrl);
-	const market = await confirmShopMarket(input.websiteUrl, fetchedAt);
 
-	// Page 1 picks the fetcher: whichever works also fetches later pages.
-	const bodyText = await fetchPageText(firstUrl);
+	// Page 1 picks the host (apex, or www. after an apex 404) and the fetcher:
+	// whichever works also fetches later pages and confirms the market.
+	const first = await fetchFirstFeedPage({
+		fetchPage: fetchFeedPage,
+		websiteUrl: input.websiteUrl,
+	});
+	const { websiteUrl } = first;
+	if (websiteUrl !== input.websiteUrl) {
+		await ctx.runMutation(internal.crawlSources.recordFeedOrigin, {
+			roasterId: input.roasterId,
+			websiteUrl,
+		});
+	}
+	const firstUrl = shopifyProductsUrl(websiteUrl);
+	const market = await confirmShopMarket(websiteUrl, fetchedAt);
+
+	const bodyText = first.text;
 	let firstPage = bodyText === null ? null : parsePage(bodyText);
 	let viaFirecrawl = false;
 	let fallbackText: string | null = null;
@@ -192,7 +216,7 @@ const crawlProductsJson = async (
 			fetchPage: (url) =>
 				viaFirecrawl ? scrapePageText(ctx, url) : fetchPageText(url),
 			firstPage,
-			websiteUrl: input.websiteUrl,
+			websiteUrl,
 		});
 		({ pageError, rejectedExternalIds } = walked);
 		products = pageError === null ? walked.products : null;
@@ -333,6 +357,7 @@ export const crawlSource = internalAction({
 		await crawlProductsJson(ctx, {
 			crawlSourceId: source._id,
 			isBaseline: source.lastSuccessAt === undefined,
+			roasterId: roaster._id,
 			websiteUrl: roaster.websiteUrl,
 		});
 		return null;

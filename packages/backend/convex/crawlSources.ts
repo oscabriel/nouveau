@@ -554,6 +554,80 @@ export const rebaselineSource = internalMutation({
 });
 
 /**
+ * Operator tool: switch a source between products_json and html. Clears the
+ * failure streak so the next crawl judges the new mode on its own. #25.
+ */
+export const setSourceMode = internalMutation({
+	args: {
+		crawlSourceId: v.id("crawlSources"),
+		mode: v.union(v.literal("products_json"), v.literal("html")),
+	},
+	handler: async (ctx, args) => {
+		await ctx.db.patch(args.crawlSourceId, {
+			consecutiveFailures: 0,
+			health: "watching",
+			mode: args.mode,
+		});
+		return null;
+	},
+	returns: v.null(),
+});
+
+/**
+ * The crawler found the feed on a different host than the roaster row names
+ * (apex 404, `www.` answered). Move the row so later crawls skip the 404 and
+ * the market check lands on the shop that actually serves the feed.
+ */
+export const recordFeedOrigin = internalMutation({
+	args: { roasterId: v.id("roasters"), websiteUrl: v.string() },
+	handler: async (ctx, args) => {
+		const roaster = await ctx.db.get(args.roasterId);
+		if (roaster === null || roaster.websiteUrl === args.websiteUrl) {
+			return null;
+		}
+		const path = new URL(roaster.productPageUrl).pathname;
+		await ctx.db.patch(args.roasterId, {
+			productPageUrl: `${args.websiteUrl}${path}`,
+			websiteUrl: args.websiteUrl,
+		});
+		return null;
+	},
+	returns: v.null(),
+});
+
+/**
+ * Operator tool: remove a roaster's products whose externalId starts with
+ * `externalIdPrefix`, with their variants and events. For rows a retired
+ * source mode left behind (html-mode Passenger rows keyed by product URL)
+ * that no later crawl will ever name again. Logged lots archive instead,
+ * as in the non-lot purge. Batched; reschedules while a full batch returns.
+ */
+export const purgeProductsByPrefix = internalMutation({
+	args: { externalIdPrefix: v.string(), roasterId: v.id("roasters") },
+	handler: async (ctx, args) => {
+		const docs = await ctx.db
+			.query("products")
+			.withIndex("by_roaster_and_external_id", (q) =>
+				q
+					.eq("roasterId", args.roasterId)
+					.gte("externalId", args.externalIdPrefix)
+					.lt("externalId", `${args.externalIdPrefix}\uFFFF`)
+			)
+			.take(PRUNE_BATCH);
+		await Promise.all(docs.map((doc) => purgeNonLot(ctx, doc)));
+		if (docs.length === PRUNE_BATCH) {
+			await ctx.scheduler.runAfter(
+				0,
+				internal.crawlSources.purgeProductsByPrefix,
+				args
+			);
+		}
+		return null;
+	},
+	returns: v.null(),
+});
+
+/**
  * Operator tool: delete a roaster's Drop events, optionally only those
  * detected at or after `since`. Pairs with rebaselineSource when a crawl
  * defect (e.g. a feed served in the wrong currency) has already emitted

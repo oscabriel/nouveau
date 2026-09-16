@@ -942,6 +942,93 @@ describe("rebaselineSource", () => {
 	});
 });
 
+describe("setSourceMode", () => {
+	test("flips the mode and clears the failure streak", async () => {
+		const fx = await setup({ mode: "html" });
+		await fail(fx, T0);
+		await fail(fx, T0 + CADENCE_MS);
+		await fail(fx, T0 + 2 * CADENCE_MS);
+		expect(await readHealth(fx)).toBe("crawl_failed");
+
+		await fx.t.mutation(internal.crawlSources.setSourceMode, {
+			crawlSourceId: fx.crawlSourceId,
+			mode: "products_json",
+		});
+		const source = await readSource(fx);
+		expect(source?.mode).toBe("products_json");
+		expect(source?.consecutiveFailures).toBe(0);
+		expect(source?.health).toBe("watching");
+	});
+});
+
+describe("recordFeedOrigin", () => {
+	test("moves the roaster's website and product page to the host that answered", async () => {
+		const fx = await setup();
+		await fx.t.mutation(internal.crawlSources.recordFeedOrigin, {
+			roasterId: fx.roasterId,
+			websiteUrl: "https://www.sey.example.com",
+		});
+		const { roaster } = await readAll(fx);
+		expect(roaster?.websiteUrl).toBe("https://www.sey.example.com");
+		expect(roaster?.productPageUrl).toBe(
+			"https://www.sey.example.com/collections/coffee"
+		);
+	});
+});
+
+describe("purgeProductsByPrefix", () => {
+	test("removes url-keyed rows with their variants and events, archives logged ones", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [
+			product("https://shop.example.com/products/a?Size=250"),
+			product("https://shop.example.com/products/b"),
+			product("12345"),
+		]);
+		await crawl(fx, T0 + CADENCE_MS, [
+			product("https://shop.example.com/products/a?Size=250"),
+			product("https://shop.example.com/products/b"),
+			product("12345"),
+			product("https://shop.example.com/products/c"),
+		]);
+		const before = await readEvents(fx);
+		expect(before.length).toBe(1);
+		const logged = await readProduct(fx, "https://shop.example.com/products/b");
+		if (logged === undefined) {
+			throw new Error("fixture: b missing");
+		}
+		await fx.t.run(async (ctx) => {
+			const userId = await ctx.db.insert("users", {
+				name: "Taster",
+				providerAccountId: "google-1",
+			});
+			await ctx.db.insert("logs", {
+				loggedAt: T0,
+				productId: logged._id,
+				userId,
+			});
+		});
+
+		await fx.t.mutation(internal.crawlSources.purgeProductsByPrefix, {
+			externalIdPrefix: "https://shop.example.com/products/",
+			roasterId: fx.roasterId,
+		});
+		const state = await readAll(fx);
+		const remaining = new Map(
+			state.products.map((p) => [p.externalId, p.status])
+		);
+		expect(remaining).toEqual(
+			new Map([
+				["12345", "current"],
+				["https://shop.example.com/products/b", "archived"],
+			])
+		);
+		expect(state.events).toEqual([]);
+		expect(new Set(state.variants.map((variant) => variant.productId))).toEqual(
+			new Set(state.products.map((p) => p._id))
+		);
+	});
+});
+
 describe("sweepStale", () => {
 	test("flips a quiet watching source to stale and leaves fresh ones alone", async () => {
 		const now = Date.now();

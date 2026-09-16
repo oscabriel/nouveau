@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
 	classifyLot,
 	extractRoasterNotes,
+	fetchFirstFeedPage,
 	isWholesale,
 	MAX_PRODUCTS_JSON_PAGES,
 	parseHtmlPage,
@@ -857,6 +858,73 @@ describe("parseProductsJson lot copy (§14.4)", () => {
 		);
 		const [product] = page.products;
 		expect(product?.lotCopy?.description?.length).toBeLessThanOrEqual(2000);
+	});
+});
+
+const feedResponse = (status: number, text: string | null = null) =>
+	Promise.resolve({ status, text });
+
+describe("fetchFirstFeedPage", () => {
+	test("returns the apex page when it answers", async () => {
+		const fetchPage = vi.fn(() =>
+			feedResponse(200, feedBody([feedProduct(1)]))
+		);
+		const result = await fetchFirstFeedPage({
+			fetchPage,
+			websiteUrl: "https://drinkpassenger.com",
+		});
+		expect(fetchPage).toHaveBeenCalledTimes(1);
+		expect(result.websiteUrl).toBe("https://drinkpassenger.com");
+		expect(result.text).toContain('"products"');
+	});
+
+	test("retries on www. after an apex 404 and reports the host that worked", async () => {
+		const fetchPage = vi.fn((url: string) =>
+			url.startsWith("https://www.")
+				? feedResponse(200, feedBody([feedProduct(1)]))
+				: feedResponse(404)
+		);
+		const result = await fetchFirstFeedPage({
+			fetchPage,
+			websiteUrl: "https://drinkpassenger.com",
+		});
+		expect(fetchPage.mock.calls.map(([url]) => url)).toEqual([
+			shopifyProductsUrl("https://drinkpassenger.com"),
+			shopifyProductsUrl("https://www.drinkpassenger.com"),
+		]);
+		expect(result.websiteUrl).toBe("https://www.drinkpassenger.com");
+		expect(result.text).toContain('"products"');
+	});
+
+	test("does not retry when the host already has www. or the failure is not a 404", async () => {
+		const www = vi.fn(() => feedResponse(404));
+		const first = await fetchFirstFeedPage({
+			fetchPage: www,
+			websiteUrl: "https://www.example.com",
+		});
+		expect(www).toHaveBeenCalledTimes(1);
+		expect(first).toEqual({
+			text: null,
+			websiteUrl: "https://www.example.com",
+		});
+
+		const blocked = vi.fn(() => feedResponse(403));
+		const second = await fetchFirstFeedPage({
+			fetchPage: blocked,
+			websiteUrl: "https://example.com",
+		});
+		expect(blocked).toHaveBeenCalledTimes(1);
+		expect(second).toEqual({ text: null, websiteUrl: "https://example.com" });
+	});
+
+	test("keeps the apex when the www. retry fails too", async () => {
+		const fetchPage = vi.fn(() => feedResponse(404));
+		const result = await fetchFirstFeedPage({
+			fetchPage,
+			websiteUrl: "https://example.com",
+		});
+		expect(fetchPage).toHaveBeenCalledTimes(2);
+		expect(result).toEqual({ text: null, websiteUrl: "https://example.com" });
 	});
 });
 

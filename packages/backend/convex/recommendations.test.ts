@@ -1404,6 +1404,48 @@ test("market confirmation follows an apex to www redirect on the same shop", asy
 	expect(fetchMock.mock.calls[0]?.[1]?.redirect).toBe("follow");
 });
 
+test("market confirmation falls back to the shop's meta.json when the homepage carries no globals", async () => {
+	// Passenger: www. hosts the Shopify shop, but its homepage 301s to a
+	// headless apex with no Shopify globals. /meta.json stays on the shop.
+	const fetchMock = vi.fn((url: string, _init?: RequestInit) =>
+		url.endsWith("/meta.json")
+			? htmlResponse(
+					'{"id":1,"country":"US","currency":"USD","domain":"www.drinkpassenger.example"}',
+					"https://www.drinkpassenger.example/meta.json"
+				)
+			: htmlResponse("<html>headless</html>", "https://drinkpassenger.example/")
+	);
+	vi.stubGlobal("fetch", fetchMock);
+	expect(
+		await confirmShopMarket("https://www.drinkpassenger.example", NOW)
+	).toEqual({
+		confirmedAt: NOW,
+		country: "US",
+		currency: "USD",
+		url: "https://www.drinkpassenger.example/meta.json",
+	});
+	expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+		"https://www.drinkpassenger.example/",
+		"https://www.drinkpassenger.example/meta.json",
+	]);
+});
+
+test.each([
+	["a non-US shop", '{"country":"CA","currency":"CAD"}'],
+	["a USD shop outside the US", '{"country":"AE","currency":"USD"}'],
+	["a page that is not shop metadata", "<html>404</html>"],
+])("meta.json fallback rejects %s", async (_label, body) => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn((url: string) =>
+			htmlResponse(url.endsWith("/meta.json") ? body : "<html></html>", url)
+		)
+	);
+	expect(
+		await confirmShopMarket("https://heartroasters.example", NOW)
+	).toBeUndefined();
+});
+
 test.each([
 	["another domain", "https://other-shop.example/", 200],
 	["plain http", "http://www.heartroasters.example/", 200],
