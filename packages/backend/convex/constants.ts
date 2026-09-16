@@ -47,6 +47,17 @@ export const PRUNE_BATCH = 200;
 // well under the per-transaction read and write limits.
 export const COMMIT_BATCH_PRODUCTS = 50;
 
+// Check now (#34). A runningSince stamp older than this is a crawl whose
+// action died before finalizeCrawl; the source is treated as idle again.
+export const CRAWL_RUNNING_STALE_MS = 10 * 60_000;
+// A source checked more recently than this answers "fresh" without crawling.
+export const CHECK_NOW_FRESH_MS = 2 * 60_000;
+// Per-user token bucket: 3 checks per 10 minutes, burst of 3.
+export const CHECK_NOW_USER_RATE = 3;
+export const CHECK_NOW_USER_PERIOD_MS = 10 * 60_000;
+// Per-source fixed window: one check per 2 minutes across all users.
+export const CHECK_NOW_SOURCE_PERIOD_MS = 2 * 60_000;
+
 // Submission quotas (enforced with the rate-limiter component).
 export const MAX_ACTIVE_SUBMISSIONS_PER_USER = 5;
 export const MAX_SUBMISSIONS_PER_DAY = 3;

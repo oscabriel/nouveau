@@ -16,6 +16,7 @@ import {
 } from "./constants";
 import { extractedProduct } from "./extraction";
 import type { ExtractedProduct, ExtractedVariant } from "./extraction";
+import { isCrawlRunning } from "./health";
 import { notifyWatchersOfEvent } from "./notifications";
 import schema from "./schema";
 import { shopMarketValidator } from "./shopMarket";
@@ -440,8 +441,8 @@ const purgeNonLot = async (
 
 /**
  * Close out one crawl after its batches: raw capture, failure bookkeeping or
- * the 3-strike archive, non-lot purge, roaster activation, health, and the
- * next due date.
+ * the 3-strike archive, non-lot purge, roaster activation, health, the next
+ * due date, and the runningSince stamp cleared either way.
  * The archive pass reads the roaster's whole catalog (one index range), which
  * is fine up to a few thousand products.
  */
@@ -491,6 +492,7 @@ export const finalizeCrawl = internalMutation({
 				lastErrorAt: now,
 				lastErrorMessage: args.errorMessage ?? "Unknown crawl error",
 				nextCrawlDueAt: now + cadenceMs,
+				runningSince: undefined,
 			});
 			return null;
 		}
@@ -550,6 +552,7 @@ export const finalizeCrawl = internalMutation({
 			lastSuccessAt: now,
 			market: args.market,
 			nextCrawlDueAt: now + cadenceMs,
+			runningSince: undefined,
 		});
 		return null;
 	},
@@ -676,10 +679,30 @@ export const purgeRoasterEvents = internalMutation({
 });
 
 /**
+ * Claim a source and hand it to the crawler action. The one code path every
+ * crawl starts from: the scheduler tick, the operator's crawlNow and a
+ * user's Check now (#34). The claim (runningSince stamped, due date pushed
+ * to now + cadence) keeps a concurrent tick from double-running the source;
+ * finalizeCrawl clears the stamp and sets the real next due date.
+ */
+export const startCrawl = async (
+	ctx: MutationCtx,
+	source: Doc<"crawlSources">,
+	now: number
+): Promise<void> => {
+	await ctx.db.patch(source._id, {
+		nextCrawlDueAt: now + source.cadenceMinutes * 60_000,
+		runningSince: now,
+	});
+	await ctx.scheduler.runAfter(0, internal.crawler.crawlSource, {
+		crawlSourceId: source._id,
+	});
+};
+
+/**
  * Scheduler tick: claim every source whose crawl is due and hand it to the
- * crawler action. The claim (due date pushed to now + cadence) keeps a
- * concurrent tick from double-running the same source; applyCrawlResult sets
- * the real next due date when the crawl commits.
+ * crawler action. A source still running from a Check now is skipped; its
+ * finalizeCrawl sets the next due date.
  */
 export const tick = internalMutation({
 	args: {},
@@ -690,14 +713,9 @@ export const tick = internalMutation({
 			.withIndex("by_next_crawl_due_at", (q) => q.lte("nextCrawlDueAt", now))
 			.take(TICK_BATCH);
 		await Promise.all(
-			due.map(async (source) => {
-				await ctx.db.patch(source._id, {
-					nextCrawlDueAt: now + source.cadenceMinutes * 60_000,
-				});
-				await ctx.scheduler.runAfter(0, internal.crawler.crawlSource, {
-					crawlSourceId: source._id,
-				});
-			})
+			due
+				.filter((source) => !isCrawlRunning(source, now))
+				.map((source) => startCrawl(ctx, source, now))
 		);
 		return null;
 	},

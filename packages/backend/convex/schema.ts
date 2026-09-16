@@ -23,6 +23,9 @@ export default defineSchema({
 		mode: v.union(v.literal("products_json"), v.literal("html")),
 		nextCrawlDueAt: v.number(),
 		roasterId: v.id("roasters"),
+		// Set when a crawl is scheduled, cleared by finalizeCrawl. Refuses a
+		// double start and gives the status chip its "checking" state (#34).
+		runningSince: v.optional(v.number()),
 	})
 		.index("by_roaster_id", ["roasterId"])
 		.index("by_next_crawl_due_at", ["nextCrawlDueAt"])
