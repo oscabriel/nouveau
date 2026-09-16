@@ -17,8 +17,14 @@ const TONE = {
 	},
 } as const;
 
-/** The locked chip lines from build spec §8.4, one per health state. */
+/**
+ * The locked chip lines from build spec §8.4, one per health state. A crawl
+ * in flight (#34) says so instead, whatever the health was.
+ */
 const chipLine = (status: CrawlStatus): string => {
+	if (status.checking) {
+		return "Checking now — reading the shop";
+	}
 	switch (status.health) {
 		case "watching": {
 			return status.lastCheckedAt === null
@@ -40,10 +46,17 @@ const chipLine = (status: CrawlStatus): string => {
 };
 
 /** The chip's dot on its own, for pills too dense to carry the line. */
-export const HealthDot = ({ health }: { health: CrawlStatus["health"] }) => (
+export const HealthDot = ({
+	checking = false,
+	health,
+}: {
+	/** Pulses while a crawl is in flight. */
+	checking?: boolean;
+	health: CrawlStatus["health"];
+}) => (
 	<span
 		aria-hidden
-		className={`inline-block size-2 shrink-0 rounded-full ${TONE[health].dot}`}
+		className={`inline-block size-2 shrink-0 rounded-full ${TONE[health].dot} ${checking ? "motion-safe:animate-pulse" : ""}`}
 	/>
 );
 
@@ -66,7 +79,7 @@ export const StatusChip = ({
 			className={`inline-flex items-center gap-1.5 text-sm ${TONE[status.health].text}`}
 			title={compact ? line : undefined}
 		>
-			<HealthDot health={status.health} />
+			<HealthDot checking={status.checking} health={status.health} />
 			{label}
 		</span>
 	);

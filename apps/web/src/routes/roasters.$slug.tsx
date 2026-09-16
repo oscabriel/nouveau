@@ -4,6 +4,7 @@ import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 
+import { CheckNowButton } from "@/components/check-now-button";
 import { FeedCard } from "@/components/feed-card";
 import Loader from "@/components/loader";
 import { Lots } from "@/components/lots";
@@ -63,8 +64,11 @@ const RoasterComponent = () => {
 						{roaster.city}, {roaster.state} · {roaster.followerCount}{" "}
 						{roaster.followerCount === 1 ? "watcher" : "watchers"}
 					</p>
-					<div className="mt-1.5">
+					<div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
 						<StatusChip status={roaster.status} />
+						{isAuthenticated && (
+							<CheckNowButton roasterId={roaster.id} status={roaster.status} />
+						)}
 					</div>
 				</div>
 				{isAuthenticated && <WatchButton roasterId={roaster.id} />}
