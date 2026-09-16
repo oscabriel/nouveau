@@ -2,14 +2,86 @@ import { useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { ArrowRight } from "lucide-react";
 
+import { DropIndex } from "@/components/drop-index";
 import { FeedCard } from "@/components/feed-card";
-import { GlobalFeed } from "@/components/global-feed";
+import { LatestTiles } from "@/components/latest-tiles";
 import Loader from "@/components/loader";
 import { SavedCoffeeCard } from "@/components/saved-coffee-card";
 import { SignInCta } from "@/components/sign-in-cta";
-import { HealthDot } from "@/components/status-chip";
+import { SiteFooter } from "@/components/site-footer";
+
+/*
+ * Direction contract (owner-pinned to two references, 2026-09-16; the
+ * pinned brief beats the roll, so no concept-seed run):
+ * THESIS: Nouveau is an index, not a store. One column, centered, sparse;
+ *   the page refuses the two-column pitch-plus-feed landing and every card.
+ * OWN-WORLD: white ground, black type, one grey, hairline rules, square
+ *   corners. Grotesk caps labels at 11px tracked; a text serif for the one
+ *   sentence of prose. No accent color; the only color is the coffee itself
+ *   (Thornton's 1808 Coffea arabica plate, lot photos).
+ * STORY: a visitor sees a specimen, a name, one sentence, three lots, then
+ *   the whole recent index; they open a lot, a roaster, or sign in.
+ * FIRST VIEWPORT: caps nav top; plate centered ~260px tall; NOUVEAU
+ *   wordmark; serif sentence; sign-in block; LATEST/SHUFFLE and three tiles
+ *   start at the fold.
+ * SIGNATURE: table row hover slides the lot photo in from the left over its
+ *   number; footer wordmark NOUVEAU.COFFEE at 22vw scrolls, cropped at the
+ *   baseline.
+ * FORM: reference-pinned (theindex.website structure, vanschneider.com
+ *   row hover). Code-led, no comp.
+ * FINISH: unreviewed and undocumented is unfinished; this build ends with
+ *   the finish review, the verdict, DESIGN.md, and every shipping raster
+ *   carrying its provenance.
+ */
+
+/** How many drop events the landing index lists. */
+const INDEX_LIMIT = 50;
+
+const SignedOutHome = () => {
+	const feed = useQuery(api.feed.globalFeed, { limit: INDEX_LIMIT });
+	return (
+		<main>
+			<section className="flex flex-col items-center px-5 pt-14 text-center md:pt-20">
+				<img
+					alt="Coffea arabica: a flowering, fruiting branch, engraved and hand-colored for Robert Thornton in 1808"
+					className="h-56 w-auto md:h-[17rem]"
+					fetchPriority="high"
+					height={900}
+					src="/coffea-arabica.png"
+					width={580}
+				/>
+				<h1 className="mt-10 text-[1.75rem] leading-none font-semibold tracking-[0.01em] uppercase md:mt-12 md:text-[2.25rem]">
+					Nouveau
+				</h1>
+				<p className="mt-4 max-w-[44rem] font-serif text-[1.375rem] leading-[1.3] text-balance md:text-[1.75rem]">
+					A live index of American specialty coffee. Every new lot, restock and
+					price drop from the roasters we watch, and a place to remember what
+					you tried.
+				</p>
+				<div className="mt-9">
+					<SignInCta />
+				</div>
+			</section>
+
+			{feed === undefined ? (
+				<div className="py-24">
+					<Loader />
+				</div>
+			) : (
+				<>
+					<div className="mt-20 px-5 md:mt-28 md:px-10">
+						<LatestTiles rows={feed} />
+					</div>
+					<div className="mt-20 px-5 md:mt-28 md:px-10">
+						<DropIndex rows={feed} />
+					</div>
+				</>
+			)}
+			<SiteFooter />
+		</main>
+	);
+};
 
 const PersonalizedFeed = () => {
 	const feed = useQuery(api.feed.personalizedFeed, {});
@@ -21,7 +93,7 @@ const PersonalizedFeed = () => {
 		<>
 			{unhealthy.length > 0 && (
 				<Link
-					className="mb-4 block rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-700 hover:underline dark:text-amber-400"
+					className="mb-4 block bg-amber-500/10 px-3 py-2 text-sm text-amber-700 hover:underline dark:text-amber-400"
 					to="/watches"
 				>
 					{unhealthy.length === 1
@@ -72,107 +144,7 @@ const WantToTry = () => {
 	);
 };
 
-/** How many roaster pills the signed-out home shows before "All roasters". */
-const TEASER_LIMIT = 8;
-
-const RoasterTeaser = () => {
-	const roasters = useQuery(api.roasters.listActive, {});
-	if (roasters === undefined || roasters.length === 0) {
-		return null;
-	}
-	const shown = roasters.slice(0, TEASER_LIMIT);
-	return (
-		<section className="mt-12">
-			<div className="mb-3 flex items-baseline justify-between gap-4">
-				<h2 className="font-semibold">Roasters being watched</h2>
-				<Link className="text-sm hover:underline" to="/roasters">
-					All {roasters.length} roasters
-				</Link>
-			</div>
-			<div className="flex flex-wrap gap-2">
-				{shown.map((roaster) => (
-					<Link
-						className="bg-card hover:bg-accent inline-flex min-h-9 items-center gap-2 rounded-full border px-3.5 text-sm transition-colors"
-						key={roaster.id}
-						params={{ slug: roaster.slug }}
-						to="/roasters/$slug"
-					>
-						<HealthDot health={roaster.status.health} />
-						{roaster.name}
-					</Link>
-				))}
-			</div>
-		</section>
-	);
-};
-
-/**
- * Signed-out home. Persuade duty: the live global feed is the proof, sitting
- * right beside the pitch; on desktop the pitch sticks so the sign-in CTA
- * stays in view while the feed scrolls. Real data only — the feed and the
- * roaster pills are the same queries the signed-in app reads.
- *
- * Direction contract (brief-pinned from spec §8 and handoff 3f; no roll run):
- * THESIS: the live feed is the hero, proof before persuasion; the page
- *   refuses the stock landing-page stack of feature cards and testimonials.
- * OWN-WORLD: light neutral ground, graphite text, one deep blue action
- *   color; hairline-divided typographic feed rows, no card containers.
- * STORY: a visitor understands what Nouveau watches, sees real drops
- *   arriving, and signs in or browses the directory.
- * FIRST VIEWPORT: two columns at desktop — pitch and CTA left, live feed
- *   right; the pitch sticks while the feed scrolls. Mobile stacks pitch,
- *   feed, directory.
- * FORM: brief-pinned (spec §8 vocabulary); composition shaped directly from
- *   build-spec §11's locked signed-out-home contents.
- */
-const SignedOutHome = () => (
-	<div className="mx-auto w-full max-w-6xl px-4 md:px-6">
-		<div className="grid gap-2 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:gap-0">
-			<section className="flex flex-col pt-10 pb-4 md:sticky md:top-6 md:self-start md:pt-14 md:pb-0">
-				<h1 className="max-w-md text-4xl font-semibold tracking-tight text-balance md:text-[2.75rem] md:leading-[1.1]">
-					Know the moment coffee drops
-				</h1>
-				<p className="text-muted-foreground mt-4 max-w-[34rem] leading-relaxed">
-					Nouveau watches specialty roasters&apos; shops around the clock and
-					tells you when a new lot lands, a sold-out one comes back, or a price
-					drops. The feed beside this is live; no account needed to read it.
-				</p>
-				<div className="mt-7">
-					<SignInCta />
-				</div>
-				<Link
-					className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium hover:underline"
-					to="/roasters"
-				>
-					Browse the roaster directory
-					<ArrowRight aria-hidden className="size-4" />
-				</Link>
-				<p className="text-muted-foreground mt-8 max-w-sm text-sm leading-relaxed">
-					Buying happens at the roaster. Nouveau watches their shops, keeps your
-					coffee history, and links out when it&apos;s time to buy.
-				</p>
-			</section>
-			<section className="min-w-0 pb-16 md:border-l md:py-14 md:pl-12">
-				<div className="mb-1 flex items-baseline justify-between gap-4">
-					<h2 className="flex items-center gap-2 font-semibold">
-						Live now
-						<span
-							aria-hidden
-							className="inline-block size-1.5 rounded-full bg-emerald-500 motion-safe:animate-pulse"
-						/>
-					</h2>
-					<Link className="text-sm hover:underline" to="/feed">
-						Full feed
-					</Link>
-				</div>
-				<GlobalFeed limit={8} />
-				<RoasterTeaser />
-			</section>
-		</div>
-	</div>
-);
-
-/** Signed-in home; reshaped into the My coffee page in its own task. */
+/** Signed-in home; its redesign in the new world is a later task. */
 const SignedInHome = () => (
 	<div className="mx-auto max-w-3xl px-4 py-8">
 		<header className="mb-6 flex items-baseline justify-between gap-4">
@@ -190,7 +162,7 @@ const SignedInHome = () => (
 			</nav>
 		</header>
 		<Link
-			className="text-primary mb-6 inline-flex min-h-11 items-center font-medium underline underline-offset-4"
+			className="mb-6 inline-flex min-h-11 items-center font-medium underline underline-offset-4"
 			to="/next-bag"
 		>
 			Find my next bag

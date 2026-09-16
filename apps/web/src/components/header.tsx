@@ -10,6 +10,10 @@ import { useEffect } from "react";
 
 import { ModeToggle } from "./mode-toggle";
 
+/** Caps text link, 44px tall hit area, underline on hover. */
+const navLinkClass =
+	"label-caps inline-flex min-h-11 items-center hover:underline";
+
 const SignInButton = () => {
 	const { signInGoogle } = useSignInWithGoogle(api.auth);
 	const { flowError } = useOauth();
@@ -21,22 +25,21 @@ const SignInButton = () => {
 		}
 	};
 	return (
-		<div className="flex items-center gap-2">
-			<button
-				className="bg-primary text-primary-foreground inline-flex min-h-10 items-center rounded-md px-3 text-sm font-medium transition-opacity hover:opacity-90 sm:px-3.5"
-				onClick={() => {
-					startSignIn();
-				}}
-				type="button"
-			>
-				<span className="sm:hidden">Sign in</span>
-				<span className="hidden sm:inline">Sign in with Google</span>
-			</button>
+		<div className="flex items-center gap-4">
 			{flowError !== null && (
 				<span className="text-destructive text-sm" role="alert">
 					{flowError.message ?? "Sign-in failed. Please try again."}
 				</span>
 			)}
+			<button
+				className={navLinkClass}
+				onClick={() => {
+					startSignIn();
+				}}
+				type="button"
+			>
+				Sign in
+			</button>
 		</div>
 	);
 };
@@ -59,21 +62,18 @@ const SignOutButton = () => {
 	};
 
 	return (
-		<div className="flex items-center gap-2">
-			<span className="text-muted-foreground text-sm">
-				{user?.name ?? "Signed in"}
-			</span>
+		<div className="flex items-center gap-4 md:gap-5">
 			{user !== undefined && user !== null && (
 				<Link
-					className="text-sm hover:underline"
+					className={navLinkClass}
 					params={{ userId: user.id }}
 					to="/profile/$userId"
 				>
-					Profile
+					{user.name ?? "Profile"}
 				</Link>
 			)}
 			<button
-				className="rounded-md border px-3 py-1.5 text-sm"
+				className={navLinkClass}
 				onClick={() => {
 					endSession();
 				}}
@@ -94,11 +94,15 @@ const AuthControls = () => {
 	return isAuthenticated ? <SignOutButton /> : <SignInButton />;
 };
 
+/**
+ * Site header: one row of tracked caps labels, wordmark first. No bar, no
+ * rule under it; the page's own hero carries the weight below.
+ */
 const Header = () => {
 	const { isAuthenticated } = useConvexAuth();
 	const links = isAuthenticated
 		? [
-				{ label: "Live feed", to: "/feed" },
+				{ label: "Feed", to: "/feed" },
 				{ label: "Activity", to: "/activity" },
 				{ label: "Roasters", to: "/roasters" },
 				{ label: "Watches", to: "/watches" },
@@ -110,29 +114,22 @@ const Header = () => {
 			];
 
 	return (
-		<div>
-			<div className="mx-auto flex w-full max-w-6xl flex-row items-center justify-between px-4 py-2.5 md:px-6">
-				<nav className="flex items-center gap-4 text-base md:gap-5">
-					<Link className="font-semibold tracking-tight" to="/">
-						Nouveau
+		<header className="flex w-full flex-row items-center justify-between gap-4 px-5 pt-3 md:px-10 md:pt-4">
+			<nav className="flex flex-wrap items-center gap-x-4 md:gap-x-5">
+				<Link className={`${navLinkClass} font-semibold`} to="/">
+					Nouveau
+				</Link>
+				{links.map(({ to, label }) => (
+					<Link className={navLinkClass} key={to} to={to}>
+						{label}
 					</Link>
-					{links.map(({ to, label }) => (
-						<Link
-							className="text-muted-foreground hover:text-foreground text-sm hover:underline"
-							key={to}
-							to={to}
-						>
-							{label}
-						</Link>
-					))}
-				</nav>
-				<div className="flex items-center gap-2">
-					<AuthControls />
-					<ModeToggle />
-				</div>
+				))}
+			</nav>
+			<div className="flex items-center gap-4 md:gap-5">
+				<AuthControls />
+				<ModeToggle />
 			</div>
-			<hr />
-		</div>
+		</header>
 	);
 };
 

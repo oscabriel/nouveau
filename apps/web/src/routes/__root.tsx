@@ -18,11 +18,11 @@ const RootComponent = () => (
 		<HeadContent />
 		<ThemeProvider
 			attribute="class"
-			defaultTheme="dark"
+			defaultTheme="light"
 			disableTransitionOnChange
 			storageKey="vite-ui-theme"
 		>
-			<div className="grid h-svh grid-rows-[auto_1fr]">
+			<div className="grid min-h-svh grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr]">
 				<Header />
 				<Outlet />
 			</div>

@@ -4,7 +4,10 @@ import {
 } from "@convex-dev/auth/providers/oauth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
 
-/** Primary Google sign-in button with the OAuth flow error beside it. */
+/**
+ * Primary Google sign-in: a square black block with a tracked caps label,
+ * the one filled control in the system. OAuth flow errors render beside it.
+ */
 export const SignInCta = () => {
 	const { signInGoogle } = useSignInWithGoogle(api.auth);
 	const { flowError } = useOauth();
@@ -16,9 +19,9 @@ export const SignInCta = () => {
 		}
 	};
 	return (
-		<div className="flex flex-wrap items-center gap-3">
+		<div className="flex flex-wrap items-center gap-4">
 			<button
-				className="bg-primary text-primary-foreground inline-flex min-h-11 items-center rounded-md px-5 text-sm font-medium transition-opacity hover:opacity-90"
+				className="label-caps bg-foreground text-background inline-flex min-h-11 items-center px-5 transition-opacity hover:opacity-80"
 				onClick={startSignIn}
 				type="button"
 			>
