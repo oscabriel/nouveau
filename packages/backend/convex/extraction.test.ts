@@ -9,6 +9,7 @@ import {
 	parseHtmlPage,
 	parseLotAttributes,
 	parseProductsJson,
+	parseVariantGrams,
 	PRODUCTS_JSON_PAGE_SIZE,
 	SHOPIFY_FETCH_HEADERS,
 	shopifyProductsUrl,
@@ -132,6 +133,7 @@ describe("parseProductsJson", () => {
 						{ available: true, grams: 340, price: "19.50", title: "12oz" },
 						{ available: false, grams: null, price: 64, title: "5lb" },
 						{ available: null, price: "n/a" },
+						{ available: true, grams: 397, price: "20", title: "12 oz." },
 					],
 				}),
 			])
@@ -145,8 +147,10 @@ describe("parseProductsJson", () => {
 				name: "Lot 1",
 				variants: [
 					{ available: true, grams: 340, name: "12oz", priceCents: 1950 },
-					{ available: false, name: "5lb", priceCents: 6400 },
+					{ available: false, grams: 2268, name: "5lb", priceCents: 6400 },
 					{ available: false, name: "Default", priceCents: 0 },
+					// East Pole: Shopify grams is the shipping weight (397); the name wins.
+					{ available: true, grams: 340, name: "12 oz.", priceCents: 2000 },
 				],
 			},
 		]);
@@ -213,6 +217,73 @@ describe("parseProductsJson", () => {
 // 2026-09-10. The classifier is only as good as the vocabulary it saw.
 const lot = (productType: string, tags: string[], title: string): boolean =>
 	classifyLot({ productType, tags, title }).isLot;
+
+describe("parseVariantGrams (#28)", () => {
+	test.each([
+		// The audit's mismatches: the name is right, Shopify grams is shipping weight.
+		["12 oz.", 397, 340],
+		["2 lb.", 1134, 907],
+		["12oz", 0, 340],
+		["1lb", 0, 454],
+		["125g", 454, 125],
+		["2lb / Whole Bean", 340, 907],
+		["10 OZ / Whole Bean", 340, 283],
+		["8oz", 326, 227],
+		["5lb", 363, 2268],
+		["2lb Whole Bean", 15_241, 907],
+		["1kg / Ground for Espresso", 250, 1000],
+		// Conventions seen across the 20 feeds.
+		["250gms / Whole Bean", 250, 250],
+		["250gm Wholebean", 0, 250],
+		["100gms / Small", 0, 100],
+		["5lbs", 0, 2268],
+		["2.2 LBS / Whole Bean", 0, 998],
+		["1 KILO / Whole Bean", 0, 1000],
+		["Drip - Whole Bean / 2 KILO", 0, 2000],
+		["1 x 300 gram bag", 0, 300],
+		["1.5 lb (24 oz) / Whole Bean", 0, 680],
+		["2lb (.9kg)", 0, 907],
+		["10.9oz / Whole Bean", 0, 309],
+		["Whole Bean / 12 OZ", 0, 340],
+		["Aster / 70g", 0, 70],
+		["8oz / 25%", 0, 227],
+		["50g jar w/gift box", 0, 50],
+	])("%s (Shopify %d g) -> %d g", (name, shopifyGrams, expected) => {
+		expect(parseVariantGrams(name, [], shopifyGrams)).toBe(expected);
+	});
+
+	test.each([
+		["2 x 250g bags", 500],
+		["2x 8oz — Whole Bean", 454],
+		["6 x 284g", 1704],
+		["12 - 4oz bags", 1361],
+		["5x 100G Tin", 500],
+		["10oz Case Pack (6)", 1701],
+		["5lbs Case Pack (8)", 18_144],
+	])("multi-packs weigh count times size: %s -> %d g", (name, expected) => {
+		expect(parseVariantGrams(name, [], 0)).toBe(expected);
+	});
+
+	test("reads option values when the title carries no size", () => {
+		expect(parseVariantGrams("Default Title", ["Whole Bean", "12oz"], 0)).toBe(
+			340
+		);
+	});
+
+	test("falls back to a positive Shopify weight only when no size is named", () => {
+		expect(parseVariantGrams("Whole Bean", [], 340)).toBe(340);
+		expect(parseVariantGrams("Default Title", [], 0)).toBeUndefined();
+		expect(parseVariantGrams("Default Title", [], null)).toBeUndefined();
+		expect(parseVariantGrams("1 Bag / Drip", [], 0)).toBeUndefined();
+		expect(parseVariantGrams("$25 Gift Card", [], 0)).toBeUndefined();
+	});
+
+	test("a bare number or a grind word is not a size", () => {
+		expect(parseVariantGrams("10 Pack", [], 0)).toBeUndefined();
+		expect(parseVariantGrams("Ground", [], 0)).toBeUndefined();
+		expect(parseVariantGrams("Grind for Espresso", [], 0)).toBeUndefined();
+	});
+});
 
 describe("classifyLot (§16)", () => {
 	test("a typed coffee is a lot", () => {

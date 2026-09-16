@@ -666,9 +666,73 @@ const toCents = (price: unknown): number => {
 interface ShopifyVariant {
 	available?: boolean | null;
 	grams?: number | null;
+	option1?: string | null;
+	option2?: string | null;
+	option3?: string | null;
 	price?: string | number;
 	title?: string | null;
 }
+
+// A size in a variant name, with an optional pack count in front ("2 x 250g",
+// "2x 8oz", Counter Culture "12 - 4oz bags"). Longer unit spellings come
+// first so "250gms" is not read as "g".
+const SIZE_TOKEN =
+	/(?:(?<count>\d+)\s*[x-]\s*)?(?<qty>\d*\.?\d+)\s*-?\s*(?<unit>kilos?|kg|pounds?|lbs?|ounces?|oz|grams?|gms|gm|gr|g)\b/iu;
+const CASE_PACK = /case\s*pack\s*\((?<count>\d+)\)/iu;
+const GRAMS_PER_OZ = 28.3495;
+const GRAMS_PER_LB = 453.592;
+
+const unitGrams = (unit: string): number => {
+	const u = unit.toLowerCase();
+	if (u.startsWith("k")) {
+		return 1000;
+	}
+	if (u.startsWith("l") || u.startsWith("p")) {
+		return GRAMS_PER_LB;
+	}
+	if (u.startsWith("o")) {
+		return GRAMS_PER_OZ;
+	}
+	return 1;
+};
+
+const gramsFromText = (text: string): number | undefined => {
+	const groups = SIZE_TOKEN.exec(text)?.groups;
+	if (groups === undefined) {
+		return;
+	}
+	const qty = Number(groups.qty);
+	if (!(Number.isFinite(qty) && qty > 0)) {
+		return;
+	}
+	const count = Number(
+		groups.count ?? CASE_PACK.exec(text)?.groups?.count ?? 1
+	);
+	return Math.round(qty * unitGrams(groups.unit ?? "g") * count);
+};
+
+/**
+ * Bag size in grams from the variant name, then any option value, then
+ * Shopify's `grams` when it is positive. Shopify `grams` is the shipping
+ * weight (East Pole "12 oz." carries 397; every Blossom bag carries 0), while
+ * the name is right essentially always (#28). Multi-packs ("2 x 250g",
+ * "10oz Case Pack (6)") weigh count times size.
+ */
+export const parseVariantGrams = (
+	name: string,
+	optionValues: string[],
+	shopifyGrams: number | null | undefined
+): number | undefined => {
+	for (const text of [name, ...optionValues]) {
+		const grams = gramsFromText(text);
+		if (grams !== undefined) {
+			return grams;
+		}
+	}
+	return typeof shopifyGrams === "number" && shopifyGrams > 0
+		? shopifyGrams
+		: undefined;
+};
 
 interface ShopifyImage {
 	src?: string | null;
@@ -766,14 +830,22 @@ export const parseProductsJson = (text: string): ProductsJsonPage => {
 			}
 			continue;
 		}
-		const variants: ExtractedVariant[] = (raw.variants ?? []).map(
-			(variant) => ({
+		const variants: ExtractedVariant[] = (raw.variants ?? []).map((variant) => {
+			const name = variant.title ?? "Default";
+			const grams = parseVariantGrams(
+				name,
+				[variant.option1, variant.option2, variant.option3].filter(
+					(value): value is string => typeof value === "string"
+				),
+				variant.grams
+			);
+			return {
 				available: variant.available === true,
-				...(typeof variant.grams === "number" ? { grams: variant.grams } : {}),
-				name: variant.title ?? "Default",
+				...(grams === undefined ? {} : { grams }),
+				name,
 				priceCents: toCents(variant.price),
-			})
-		);
+			};
+		});
 		products.push({
 			externalId,
 			handle: raw.handle ?? "",
