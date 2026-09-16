@@ -220,29 +220,145 @@ export const parseLotAttributes = (tags: string[]): LotAttributes => {
  */
 const TRIM_TAIL = /(?:\s+and|[\s,&-])+$/iu;
 
+/** Anything after the last letter, digit or closing paren: " .", " 🌑", "," */
+const NON_WORD_TAIL = /[^\p{L}\p{N})]+$/u;
+
 /**
  * Descriptor-clause patterns over the roaster's prose, tried in order. Each
  * captures `clause`; the lead-in words are anchored on a word boundary so
  * "Footnotes of the harvest" is not a `notes of` match.
  */
-const NOTES_PATTERNS: readonly RegExp[] = [
+const NOTES_PATTERNS: readonly { needsList: boolean; pattern: RegExp }[] = [
 	// Ruby lists descriptors dash-separated in their own block; the newline
-	// (not the boilerplate that follows) ends the capture.
-	/\bwe\s+taste:?\s*(?<clause>[^\n]{5,200})/iu,
-	/\bin\s+the\s+cup,?\s+we\s+(?:find|taste|get)\s+(?<clause>[^.!?\n]{5,200})/iu,
-	/\b(?:tasting\s+)?notes\s+of\s+(?<clause>[^\u2014\u2013.!?\n]{5,160})/iu,
-	/\bflavors\s+of\s+(?<clause>[^\u2014\u2013.!?\n]{5,160})/iu,
+	// (not the boilerplate that follows) ends the capture. Blossom writes the
+	// same lead-in as prose, which boundProse() cuts at the sentence end.
+	{
+		needsList: true,
+		pattern: /\bwe\s+taste\b:?\s*(?<clause>[^\n]{5,200})/iu,
+	},
+	{
+		needsList: false,
+		pattern:
+			/\bin\s+the\s+cup,?\s+we\s+(?:find|taste|get)\s+(?<clause>[^.!?\n]{5,200})/iu,
+	},
+	{
+		needsList: false,
+		pattern:
+			/\b(?:tasting\s+)?notes\s+of\s+(?<clause>[^\u2014\u2013.!?\n]{5,160})/iu,
+	},
+	{
+		needsList: false,
+		pattern: /\bflavors\s+of\s+(?<clause>[^\u2014\u2013.!?\n]{5,160})/iu,
+	},
 ];
 
+/** A `we taste` line without Ruby's ` - ` separators is prose: stop at the sentence end. */
+const boundProse = (clause: string): string =>
+	clause.includes(" - ") ? clause : (clause.split(/\s*[.!?]/u)[0] ?? clause);
+
+/**
+ * "we taste" is also ordinary prose (Sey: "one of the most dynamic we taste
+ * each season"), so its clause has to read as a list of at least two items
+ * before it counts; otherwise the later patterns get their turn.
+ */
+const LOOKS_LIKE_LIST = /,|\s(?:and|&|-)\s/iu;
+
+/**
+ * Cut the prose that rides after a descriptor list: "..., and berries,
+ * Gradient is the perfect choice" keeps "berries". The list's final item
+ * starts at the last Oxford conjunction (", and C" / ", & C"), else at the
+ * bare "and"; after that point, a comma followed by a clause-starting word
+ * or a capitalised subject ends the list. A bare "and" can sit inside an
+ * item ("intense and complex profile of ..."), and a capitalised item can
+ * precede the conjunction ("rose, Meyer lemon, and bergamot"), so the
+ * capital-letter test only runs after a conjunction. With no conjunction at
+ * all, only the clause words cut, so a Title Case list stays whole.
+ */
+const OXFORD_CONJUNCTION = /,\s*(?:and|&)\s+/giu;
+const BARE_CONJUNCTION = /\s+(?:and|&)\s+/iu;
+const CLAUSE_WORDS =
+	"this|these|that|it|making|reflecting|creating|resulting|giving|offering|leaving|while|which|ideal|perfect";
+const CLAUSE_AFTER_COMMA = new RegExp(`,\\s*(?:${CLAUSE_WORDS})\\b`, "iu");
+// Case-sensitive on purpose: under the `i` flag \p{Lu} matches every letter.
+const SUBJECT_AFTER_COMMA = /,\s*\p{Lu}/u;
+
+const firstSeam = (text: string, patterns: RegExp[]): number | null => {
+	const indexes = patterns
+		.map((pattern) => pattern.exec(text)?.index)
+		.filter((index): index is number => index !== undefined);
+	return indexes.length === 0 ? null : Math.min(...indexes);
+};
+
+/** Where the list's final item starts: after the last Oxford conjunction, else the bare one. */
+const finalItemStart = (clause: string): number | null => {
+	let start: number | null = null;
+	for (const match of clause.matchAll(OXFORD_CONJUNCTION)) {
+		start = match.index + match[0].length;
+	}
+	if (start !== null) {
+		return start;
+	}
+	const bare = BARE_CONJUNCTION.exec(clause);
+	return bare === null ? null : bare.index + bare[0].length;
+};
+
+const cutAfterList = (clause: string): string => {
+	const tailStart = finalItemStart(clause);
+	if (tailStart === null) {
+		const seam = CLAUSE_AFTER_COMMA.exec(clause);
+		return seam === null ? clause : clause.slice(0, seam.index);
+	}
+	const seam = firstSeam(clause.slice(tailStart), [
+		CLAUSE_AFTER_COMMA,
+		SUBJECT_AFTER_COMMA,
+	]);
+	return seam === null ? clause : clause.slice(0, tailStart + seam);
+};
+
+/**
+ * Merit (and others) open the copy with the notes as a separator list in
+ * its own block: "Prunes • Fig Danish • Nutmeg". Three to six short items
+ * on the first line; two could as easily be an origin ("Ethiopia • Guji").
+ */
+const BULLET_SEPARATOR = /\s+[•·|]\s+/u;
+const BULLET_ITEM = /^[\p{L}][\p{L}\s'’-]{0,29}$/u;
+const MAX_BULLET_ITEM_WORDS = 3;
+
+const matchBulletLine = (description: string): string | null => {
+	const firstLine = description.split("\n")[0]?.trim() ?? "";
+	const items = firstLine.split(BULLET_SEPARATOR);
+	const isList =
+		items.length >= 3 &&
+		items.length <= 6 &&
+		items.every(
+			(item) =>
+				BULLET_ITEM.test(item) &&
+				item.split(/\s+/u).length <= MAX_BULLET_ITEM_WORDS
+		);
+	return isList ? firstLine : null;
+};
+
 const matchClause = (description: string): string | null => {
-	for (const pattern of NOTES_PATTERNS) {
-		const clause = pattern
-			.exec(description)
-			?.groups?.clause.replace(TRIM_TAIL, "")
-			.trim();
-		if (clause !== undefined && clause !== "") {
-			return clause;
+	const bulletLine = matchBulletLine(description);
+	if (bulletLine !== null) {
+		return bulletLine;
+	}
+	for (const { needsList, pattern } of NOTES_PATTERNS) {
+		const raw = pattern.exec(description)?.groups?.clause;
+		if (raw === undefined) {
+			continue;
 		}
+		const clause = cutAfterList(boundProse(raw))
+			.replace(TRIM_TAIL, "")
+			.replace(NON_WORD_TAIL, "")
+			.trim();
+		if (clause === "") {
+			continue;
+		}
+		if (needsList && !LOOKS_LIKE_LIST.test(clause)) {
+			continue;
+		}
+		return clause;
 	}
 	return null;
 };

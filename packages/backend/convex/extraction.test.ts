@@ -796,6 +796,24 @@ describe("extractRoasterNotes", () => {
 		).toBe("black currant, ruby grapefruit, and molasses");
 	});
 
+	test("a prose 'we taste' that is not a list yields to the later lead-in", () => {
+		expect(
+			extractRoasterNotes(
+				"Her Chiroso continues to be one of the most dynamic we taste each season. In the cup we find tropical fruit, ripe strawberry, and delicate florals.",
+				[]
+			)
+		).toBe("tropical fruit, ripe strawberry, and delicate florals");
+	});
+
+	test("'we tasted' is not the 'we taste' lead-in", () => {
+		expect(
+			extractRoasterNotes(
+				"We were so excited with what we tasted from this year's harvest that we sourced nine lots. In the cup we find black currant and cassis.",
+				[]
+			)
+		).toBe("black currant and cassis");
+	});
+
 	test("needs a word boundary before the lead-in", () => {
 		// "Footnotes of" is not "notes of"; nothing here is a descriptor.
 		expect(
@@ -838,6 +856,138 @@ describe("extractRoasterNotes", () => {
 	test("returns null when nothing matches", () => {
 		expect(extractRoasterNotes("", [])).toBeNull();
 		expect(extractRoasterNotes("Roasted to order.", [])).toBeNull();
+	});
+
+	// #29 A: the descriptor list's trailing clause rode along.
+	test.each([
+		[
+			"Passenger",
+			"With comforting flavors of bittersweet chocolate and graham cracker, this classic Dark Roast tastes great on its own or with the addition of cream and sugar.",
+			"bittersweet chocolate and graham cracker",
+		],
+		[
+			"Counter Culture",
+			"With notes of dark chocolate, roasted nuts, and berries, Gradient is the perfect choice for coffee lovers who enjoy vibrant acidity.",
+			"dark chocolate, roasted nuts, and berries",
+		],
+		[
+			"Madcap",
+			"With notes of molasses, silky sweetness, and a smooth finish, this is the coffee you reach for after hours.",
+			"molasses, silky sweetness, and a smooth finish",
+		],
+		[
+			"Blossom",
+			"Expect notes of blackberry and strawberry , making it a perfect choice for a bright morning.",
+			"blackberry and strawberry",
+		],
+		[
+			"no conjunction",
+			"Notes of prunes, fig danish, nutmeg , reflecting the rich character of the region.",
+			"prunes, fig danish, nutmeg",
+		],
+		[
+			"a list with a comma-free tail keeps every item",
+			"In the cup we find peach, melon, red tea, and lovely florality.",
+			"peach, melon, red tea, and lovely florality",
+		],
+		[
+			"a bare and inside an item does not end the list (Sey)",
+			"In the cup we find an intense and complex profile of blackberry lemonade, coffee blossom florals, and ripe nectarine.",
+			"an intense and complex profile of blackberry lemonade, coffee blossom florals, and ripe nectarine",
+		],
+		[
+			"a capitalised subject after the comma ends a bare-and list",
+			"With notes of graham cracker and molasses, Even Keel is a smooth and satisfying coffee.",
+			"graham cracker and molasses",
+		],
+		[
+			"a two-adjective final item is not a clause seam",
+			"In the cup we find dark fruits, pink grapefruit, and a rich, jam-like sweetness.",
+			"dark fruits, pink grapefruit, and a rich, jam-like sweetness",
+		],
+		[
+			"a capitalised item before the conjunction stays",
+			"In the cup we find an intensely floral profile of jasmine and rose, Meyer lemon, and bergamot, with a slightly tropical finish.",
+			"an intensely floral profile of jasmine and rose, Meyer lemon, and bergamot, with a slightly tropical finish",
+		],
+		[
+			"a Title Case list with no conjunction stays whole",
+			"Notes of Cherry, Chocolate, Almond.",
+			"Cherry, Chocolate, Almond",
+		],
+		[
+			"a lowercase continuation after a bare-and list stays",
+			"Notes of dried apricot and honey, bolstered by a tea-like mouthfeel.",
+			"dried apricot and honey, bolstered by a tea-like mouthfeel",
+		],
+	])("cuts the clause after the list: %s", (_label, text, expected) => {
+		expect(extractRoasterNotes(text, [])).toBe(expected);
+	});
+
+	// #29 B: Blossom's "we taste" is prose, not Ruby's dash list.
+	test("bounds a prose we-taste at the sentence and drops the emoji tail", () => {
+		expect(
+			extractRoasterNotes(
+				stripHtml(
+					'<p dir="ltr"><strong>We taste dark chocolate and stewed blueberries, a perfect balance of refreshing and sweet</strong><span>. 🌑</span></p>'
+				),
+				[]
+			)
+		).toBe(
+			"dark chocolate and stewed blueberries, a perfect balance of refreshing and sweet"
+		);
+		expect(
+			extractRoasterNotes(
+				"We taste cocoa, cherry and toffee in a syrupy body. 🧊 Brew it cold.",
+				[]
+			)
+		).toBe("cocoa, cherry and toffee in a syrupy body");
+	});
+
+	test("keeps the Ruby dash list intact past punctuation", () => {
+		expect(
+			extractRoasterNotes(
+				"We Taste: Cherry Cola - Dried Fig - Brown Sugar - Cocoa Nib\nMedium-light Roast",
+				[]
+			)
+		).toBe("Cherry Cola - Dried Fig - Brown Sugar - Cocoa Nib");
+	});
+
+	// #29 C: Merit opens with the notes as a bullet line.
+	test("reads a leading bullet line before any lead-in", () => {
+		expect(
+			extractRoasterNotes(
+				"Prunes • Fig Danish • Nutmeg\nKiamugumo Factory sits in the Ngariama community with notes of history everywhere.",
+				[]
+			)
+		).toBe("Prunes • Fig Danish • Nutmeg");
+		expect(
+			extractRoasterNotes(
+				stripHtml(
+					'<p style="text-align: center;">Strawberry • Vanilla Bean • Clove</p>\n<p>Even with our decaf offering, we take flavor seriously.</p>'
+				),
+				[]
+			)
+		).toBe("Strawberry • Vanilla Bean • Clove");
+		expect(
+			extractRoasterNotes(
+				"Raspberry • Lassi • Rose • Blood Orange\nLa Senda.",
+				[]
+			)
+		).toBe("Raspberry • Lassi • Rose • Blood Orange");
+	});
+
+	test("a bullet line of long items or only two is not a notes list", () => {
+		expect(
+			extractRoasterNotes(
+				"Free shipping on orders over $40 • Roasted to order every Monday • Ships fast\nA blend.",
+				[]
+			)
+		).toBeNull();
+		// Two items is as likely an origin line ("Ethiopia • Guji") as notes.
+		expect(
+			extractRoasterNotes("Ethiopia • Guji\nA lovely coffee.", [])
+		).toBeNull();
 	});
 
 	test("caps the matched clause at a word boundary", () => {
