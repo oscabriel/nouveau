@@ -853,11 +853,17 @@ const WHOLESALE_TAG_VALUE =
 export const isWholesale = (
 	productType: string | null | undefined,
 	tags: string[] | string | null | undefined,
-	title?: string | null
+	title?: string | null,
+	vendor?: string | null
 ): boolean => {
+	// Merit publishes each coffee once per sales channel and names the
+	// channel in `vendor` ("Ecommerce", "Merit", "Wholesale"). Only the
+	// wholesale word counts: La Colombe puts cafes there, Regalia the
+	// origin, Sightglass the producer.
 	if (
 		WHOLESALE_TEXT.test(productType ?? "") ||
-		WHOLESALE_TEXT.test(title ?? "")
+		WHOLESALE_TEXT.test(title ?? "") ||
+		WHOLESALE_TEXT.test(vendor ?? "")
 	) {
 		return true;
 	}
@@ -960,15 +966,16 @@ const NON_LOT_WEAK_TAG_VALUE =
  * alone.
  */
 const NON_LOT_TYPE =
-	/\b(?:equipment|gear|brew(?:ing|ers?)|scales?|grinders?|kettles?|filters?|accessor(?:y|ies)|merch(?:andise)?|apparel|drinkware|wares?|warehouse|mugs?|tees?|t-?shirts?|gifts?|cards?|subscriptions?|clubs?|bundles?|sets?|box(?:es)?|teas?|chocolate|food|rtd|cold\s+brew|lattes?|alt\s+beverage|supplies|events?|tickets?|gratuity|goods|other|series)\b/iu;
+	/\b(?:equipment|gear|brew(?:ing|ers?)|scales?|grinders?|kettles?|filters?|accessor(?:y|ies)|merch(?:andise)?|apparel|drinkware|wares?|warehouse|mugs?|tees?|t-?shirts?|gifts?|cards?|subscriptions?|clubs?|bundles?|sets?|box(?:es)?|teas?|chocolate|food|rtd|cold\s+brew|lattes?|alt\s+beverage|supplies|collateral|packaging|signage|events?|tickets?|gratuity|goods|other|series)\b/iu;
 
 /**
  * A product_type segment that is roasted coffee. Includes the roaster-specific
  * names seen on the seed feeds: Sweet Bloom "Coffee Offerings", PT's "Past
- * Offerings Collection", Heart "Beans", Proud Mary "coffee-archive".
+ * Offerings Collection", Heart "Beans", Proud Mary "coffee-archive",
+ * Passenger "Archival Release" (frozen back-catalog lots, #31).
  */
 const LOT_TYPE =
-	/\b(?:coffees?|beans?|blends?|single[\s-]origin|espresso|decaf|gei?sha|offerings|instant|roasts?|whole[\s-]bean)\b/iu;
+	/\b(?:coffees?|beans?|blends?|single[\s-]origin|espresso|decaf|gei?sha|offerings|instant|roasts?|whole[\s-]bean|archival)\b/iu;
 
 /**
  * Bare tags only coffee carries (Onyx `coffee`, Coava `Instant Craft Coffee`,
@@ -991,7 +998,7 @@ const LOT_TYPE_TAG_VALUE = /^(?:single[\s-]origin|blends?)$/iu;
  * Bees Honey") as the process.
  */
 const LOT_TITLE_WORD =
-	/\b(?:coffees?|blends?|espresso|decaf\w*|single[\s-]origin|instant|roasts?|roasted|gei?sha|bourbon|typica|caturra|catuai|pacamara|maragogype|heirloom|sl-?28|sl-?34|washed|natural|anaerobic|carbonic|omni)\b/iu;
+	/\b(?:coffees?|blends?|espresso|decaf\w*|single[\s-]origin|instant|roasts?|roasted|gei?sha|bourbon|typica|caturra|catuai|pacamara|maragogype|heirloom|sl-?28|sl-?34|washed|natural|anaerobic|carbonic|omni|wet[\s-]process|dry[\s-]process|wet[\s-]hulled|cup\s+of\s+excellence|coe)\b/iu;
 
 /**
  * The subset of LOT_TITLE_WORD that names the coffee itself (a variety, a
@@ -999,7 +1006,7 @@ const LOT_TITLE_WORD =
  * which a mug or a book carries just as well. Resolves NON_LOT_AMBIGUOUS_TITLE.
  */
 const LOT_TITLE_CRAFT =
-	/\b(?:blends?|espresso|decaf\w*|single[\s-]origin|gei?sha|bourbon|typica|caturra|catuai|pacamara|maragogype|heirloom|sl-?28|sl-?34|washed|natural|anaerobic|carbonic|omni)\b/iu;
+	/\b(?:blends?|espresso|decaf\w*|single[\s-]origin|gei?sha|bourbon|typica|caturra|catuai|pacamara|maragogype|heirloom|sl-?28|sl-?34|washed|natural|anaerobic|carbonic|omni|wet[\s-]process|dry[\s-]process|wet[\s-]hulled|cup\s+of\s+excellence|coe)\b/iu;
 
 /** Producing countries and the regions that stand alone in coffee names. */
 const LOT_TITLE_PLACE =
@@ -1017,7 +1024,19 @@ export interface LotClassifierInput {
 	productType: string | null | undefined;
 	tags: string[] | string | null | undefined;
 	title: string | null | undefined;
+	vendor?: string | null | undefined;
 }
+
+/**
+ * A bare `wholesale` tag usually means "also sold wholesale" (Sweet Bloom,
+ * Heart, Blossom tag every retail coffee with it), so it is not a marker on
+ * its own. Ruby's wholesale-only blends are the exception: untyped, and that
+ * tag is the only one (#31). Both conditions, or the tag says nothing.
+ */
+const LONE_WHOLESALE_TAG = /^wholesale$/iu;
+
+const isLoneTag = (tags: string[], pattern: RegExp): boolean =>
+	tags.length === 1 && pattern.test(tags[0]);
 
 type Verdict = "lot" | "non_lot" | "unknown";
 
@@ -1105,7 +1124,12 @@ const classifyUntyped = (tags: string[], title: string): LotClassification => {
  */
 export const classifyLot = (input: LotClassifierInput): LotClassification => {
 	const title = input.title ?? "";
-	if (isWholesale(input.productType, input.tags, title)) {
+	const tags = parseTags(input.tags);
+	if (
+		isWholesale(input.productType, input.tags, title, input.vendor) ||
+		((input.productType ?? "").trim() === "" &&
+			isLoneTag(tags, LONE_WHOLESALE_TAG))
+	) {
 		return { isLot: false, rule: "wholesale" };
 	}
 	if (
@@ -1115,7 +1139,6 @@ export const classifyLot = (input: LotClassifierInput): LotClassification => {
 	) {
 		return { isLot: false, rule: "title" };
 	}
-	const tags = parseTags(input.tags);
 	if (
 		tagMatches(tags, NON_LOT_TAG_VALUE) ||
 		keyedTagMatches(tags, NON_LOT_KEYED_SUBSCRIPTION)
@@ -1301,6 +1324,7 @@ export const parseProductsJson = (text: string): ProductsJsonPage => {
 			productType: raw.product_type,
 			tags: raw.tags,
 			title: raw.title,
+			vendor: raw.vendor,
 		});
 		if (!verdict.isLot) {
 			// An item with neither id nor handle has nothing to purge by; an

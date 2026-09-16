@@ -655,6 +655,66 @@ describe("classifyLot (§16)", () => {
 		).toBe(false);
 	});
 
+	test("Passenger's Archival Release lots are lots (#31)", () => {
+		expect(
+			lot(
+				"Archival Release",
+				["Freezer Friday"],
+				"Archival Release #62 - Valdeir Cezati - 2023"
+			)
+		).toBe(true);
+		expect(
+			lot(
+				"Archival Release",
+				["Freezer Friday"],
+				"Archival Release #45 - Miguel Mears - Cup of Excellence - 2021"
+			)
+		).toBe(true);
+		// Cup of Excellence rescues the ambiguous `cup` on its own too.
+		expect(lot("", [], "Miguel Mears - Cup of Excellence")).toBe(true);
+		expect(lot("", [], "Finca La Bella COE #7")).toBe(true);
+		expect(lot("", [], "Gaharo Experiments Wet Process")).toBe(true);
+	});
+
+	test("Merit's Wholesale channel rows are wholesale (#31)", () => {
+		expect(
+			classifyLot({
+				productType: "Coffee",
+				tags: ["Normal Wholesale"],
+				title: "Sugarcane Decaf",
+				vendor: "Wholesale",
+			})
+		).toEqual({ isLot: false, rule: "wholesale" });
+		expect(
+			isWholesale("Coffee", ["Airport"], "Sugarcane Decaf", "Wholesale")
+		).toBe(true);
+		// Any other vendor says nothing: La Colombe cafes, Regalia origins,
+		// Sightglass producers, Merit's own Ecommerce/Merit pair.
+		expect(isWholesale("Coffee", [], "Sugarcane Decaf", "Ecommerce")).toBe(
+			false
+		);
+		expect(isWholesale("Coffee", [], "Sugarcane Decaf", "Merit")).toBe(false);
+		expect(isWholesale("Coffee", [], "Chiroso Lot 7", "Huila, Colombia")).toBe(
+			false
+		);
+	});
+
+	test("the four small leaks (#31)", () => {
+		// Passenger collateral typed as such.
+		expect(lot("Collateral", [], "Necessary Coffee Pot Tags")).toBe(false);
+		// Ruby: untyped, a bare wholesale tag and nothing else.
+		expect(lot("", ["Wholesale"], "Quick Release Seasonal Blend")).toBe(false);
+		expect(lot("", ["Wholesale"], "Bradbury's Seasonal Blend")).toBe(false);
+		// ...but with another tag, or a type, the bare tag still means "also sold wholesale".
+		expect(lot("", ["Washed", "Wholesale"], "Ethiopia Reko")).toBe(true);
+		expect(lot("Beans", ["wholesale"], "Ethiopia Halo")).toBe(true);
+		// A lone hidden tag is NOT a marker: 165 Intelligentsia and 7 Counter
+		// Culture coffees on the live feeds carry `Hidden` and nothing else.
+		// Counter Culture's "12oz Year-Round Blends" landing product stays.
+		expect(lot("Coffee", ["Hidden"], "Kenya Gatomboya")).toBe(true);
+		expect(lot("Coffee", ["hidden"], "Pedro Patana")).toBe(true);
+	});
+
 	test("reports which rule decided", () => {
 		expect(
 			classifyLot({
