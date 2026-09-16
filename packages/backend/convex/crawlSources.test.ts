@@ -734,13 +734,21 @@ describe("commit: failures and captures", () => {
 		});
 	});
 
-	test("a success after failures resets health to watching", async () => {
-		const fx = await setup({ consecutiveFailures: 4, health: "crawl_failed" });
+	test("a success after failures resets health and clears the error message", async () => {
+		const fx = await setup({
+			consecutiveFailures: 4,
+			health: "crawl_failed",
+			lastErrorAt: T0 - CADENCE_MS,
+			lastErrorMessage: "Firecrawl 429",
+		});
 		await crawl(fx, T0, [product("a")]);
-		expect(await readSource(fx)).toMatchObject({
+		const source = await readSource(fx);
+		expect(source).toMatchObject({
 			consecutiveFailures: 0,
 			health: "watching",
+			lastErrorAt: T0 - CADENCE_MS,
 		});
+		expect(source?.lastErrorMessage).toBeUndefined();
 	});
 
 	test("a raw capture row is written on success and on failure", async () => {

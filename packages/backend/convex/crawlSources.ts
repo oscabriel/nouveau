@@ -561,6 +561,8 @@ export const finalizeCrawl = internalMutation({
 			consecutiveFailures: 0,
 			health: "watching",
 			lastCheckedAt: now,
+			// A success ends the error story; the timestamp stays as history.
+			lastErrorMessage: undefined,
 			lastSuccessAt: now,
 			market: args.market,
 			nextCrawlDueAt: now + cadenceMs,

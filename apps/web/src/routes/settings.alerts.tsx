@@ -68,7 +68,7 @@ const AlertSettingsComponent = () => {
 				)}
 			</section>
 			<section>
-				<h2 className="mb-2 text-lg font-medium">Muted roasters</h2>
+				<h2 className="mb-2 text-lg font-medium">Watches</h2>
 				{watches.length === 0 ? (
 					<p className="text-muted-foreground max-w-prose text-sm">
 						You&apos;re not watching any roasters yet.{" "}
