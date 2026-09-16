@@ -175,13 +175,216 @@ const ORIGIN_VALUE = /^[\p{L}][\p{L}\s,.'’()-]*$/u;
 const MAX_ORIGIN_WORDS = 4;
 const PROCESS_TAG = /^process$/iu;
 const ROAST_TAG = /^(?:roast|roast level)$/iu;
-/** Anchored: "Light", "Medium-Light", "Light Roast"; not "Lightly sweet". */
-const ROAST_VALUE = /^(?:light|medium|dark)\b/iu;
-const BARE_PROCESS_TAG = /^(?:washed|natural|honey|anaerobic)$/iu;
 const FLAVOR_PROFILE_TAG = /^flavor profile$/iu;
 
 const looksLikeOrigin = (value: string): boolean =>
 	ORIGIN_VALUE.test(value) && value.split(/\s+/u).length <= MAX_ORIGIN_WORDS;
+
+/**
+ * Producing countries, canonical spelling. Free text (a title, a bare tag, a
+ * body line, the vendor) yields an origin only when it names one of these;
+ * a keyed `From:` tag is the roaster's own value and skips the list. Regions
+ * (Huila, Yirgacheffe) are not origins: 694 of the 696 origins stored before
+ * #30 were a country, and the lot page labels the field "Origin".
+ */
+const COUNTRIES = [
+	"Bolivia",
+	"Brazil",
+	"Burundi",
+	"Cameroon",
+	"China",
+	"Colombia",
+	"Congo",
+	"Costa Rica",
+	"Cuba",
+	"Dominican Republic",
+	"Ecuador",
+	"El Salvador",
+	"Ethiopia",
+	"Guatemala",
+	"Haiti",
+	"Hawaii",
+	"Honduras",
+	"India",
+	"Indonesia",
+	"Jamaica",
+	"Kenya",
+	"Laos",
+	"Malawi",
+	"Mexico",
+	"Myanmar",
+	"Nepal",
+	"Nicaragua",
+	"Panama",
+	"Papua New Guinea",
+	"Peru",
+	"Philippines",
+	"Puerto Rico",
+	"Rwanda",
+	"Tanzania",
+	"Thailand",
+	"Timor",
+	"Uganda",
+	"Venezuela",
+	"Vietnam",
+	"Yemen",
+	"Zambia",
+	"Zimbabwe",
+] as const;
+
+/** Other spellings and the Indonesian islands sold under their own name. */
+const COUNTRY_ALIASES: Record<string, (typeof COUNTRIES)[number]> = {
+	"democratic republic of congo": "Congo",
+	"democratic republic of the congo": "Congo",
+	dominican: "Dominican Republic",
+	"dr congo": "Congo",
+	"east timor": "Timor",
+	png: "Papua New Guinea",
+	sulawesi: "Indonesia",
+	sumatra: "Indonesia",
+	"timor leste": "Timor",
+};
+
+const CANONICAL_COUNTRY = new Map<string, string>([
+	...COUNTRIES.map((name): [string, string] => [name.toLowerCase(), name]),
+	...Object.entries(COUNTRY_ALIASES),
+]);
+
+const escapeRegExp = (text: string): string =>
+	text.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+
+// Multi-word names first so "Dominican Republic" wins over "Dominican".
+const COUNTRY_KEYS = [...CANONICAL_COUNTRY.keys()];
+const COUNTRY_NAME = new RegExp(
+	`\\b(?:${[
+		...COUNTRY_KEYS.filter((name) => name.includes(" ")),
+		...COUNTRY_KEYS.filter((name) => !name.includes(" ")),
+	]
+		.map((name) => escapeRegExp(name).replaceAll(" ", "\\s+"))
+		.join("|")})\\b`,
+	"giu"
+);
+
+/** Hyphens and underscores read as spaces: `El-Salvador`, `origin__costa-rica`. */
+const unslug = (text: string): string =>
+	text.replaceAll(/[_-]+/gu, " ").replaceAll(/\s+/gu, " ").trim();
+
+interface CountryMatch {
+	name: string;
+	start: number;
+	end: number;
+}
+
+const matchCountries = (text: string): CountryMatch[] => {
+	const found: CountryMatch[] = [];
+	for (const match of text.matchAll(COUNTRY_NAME)) {
+		const name = CANONICAL_COUNTRY.get(
+			match[0].toLowerCase().replaceAll(/\s+/gu, " ")
+		);
+		if (name !== undefined && !found.some((seen) => seen.name === name)) {
+			found.push({
+				end: match.index + match[0].length,
+				name,
+				start: match.index,
+			});
+		}
+	}
+	return found;
+};
+
+/** Every country the text names, canonical spelling, in order, distinct. */
+const findCountries = (text: string): string[] =>
+	matchCountries(unslug(text)).map((match) => match.name);
+
+/**
+ * The one country a title names. Farms borrow country names (Intelligentsia
+ * "Costa Rica El Congo Geisha", Sey "Finca Costa Rica - Colombia") and a
+ * variety can carry one ("Guatemala Ethiopia Landrace"), so when a title
+ * names two the coffee's own country is the one that opens the title, else
+ * the one that closes it.
+ */
+const titleCountry = (title: string): string[] => {
+	const text = unslug(title);
+	const matches = matchCountries(text);
+	if (matches.length <= 1) {
+		return matches.map((match) => match.name);
+	}
+	const opens = matches.find((match) => match.start === 0);
+	const closes = matches.find((match) => match.end === text.length);
+	return [(opens ?? closes ?? matches[0]).name];
+};
+
+/**
+ * The closed process vocabulary, with the qualifiers roasters attach to it
+ * ("Anaerobic Washed", "Fully washed", "Black Honey", "Wet-Hulled"). An
+ * optional lead qualifier is greedy, so "Anaerobic Natural" is one term.
+ */
+const PROCESS_TERM =
+	/\b(?:(?:fully|semi|double|extended|anaerobic|carbonic|natural|lactic|thermal)[\s-]+)?(?:washed|natural|honey|anaerobic|carbonic\s+maceration|thermal[\s-]shock|wet[\s-]hulled|pulped\s+natural|(?:white|red|black|yellow|gold(?:en)?)\s+honey|co-?ferment(?:ed|ation)?|swiss\s+water(?:\s+(?:process|decaf))?|sugar\s?cane(?:\s+(?:process|decaf))?|mountain\s+water(?:\s+(?:process|decaf))?|ea\s+decaf|giling\s+basah|wet[\s-]process(?:ed)?|dry[\s-]process(?:ed)?)\b/giu;
+
+/** A bare tag that is a process term, with or without the word process. */
+const BARE_PROCESS_TAG = new RegExp(
+	`^${PROCESS_TERM.source.slice(2)}(?:[\\s-]process(?:ed|ing)?)?$`,
+	"iu"
+);
+
+/** Every process term the text names, roaster's casing, distinct. */
+const findProcesses = (text: string): string[] => {
+	const found: string[] = [];
+	for (const match of text.matchAll(PROCESS_TERM)) {
+		const term = match[0].replaceAll(/\s+/gu, " ");
+		if (!found.some((seen) => seen.toLowerCase() === term.toLowerCase())) {
+			found.push(term);
+		}
+	}
+	return found;
+};
+
+/**
+ * Anchored: "Light", "Medium-Light", "Light Roast", "Medium-light Roast";
+ * not "Lightly sweet", "Comforting", "Bright". Nothing else is a roast level.
+ */
+const ROAST_VALUE =
+	/^(?<level>light|medium|dark)(?:[\s-](?<shade>light|medium|dark))?(?<roast>[\s-]roast)?$/iu;
+/** In a title the word roast is required: "Dark Chocolate Blend" is a note. */
+const ROAST_IN_TITLE =
+	/\b(?:light|medium|dark)(?:[\s-](?:light|medium|dark))?[\s-]roast\b/iu;
+
+const capitalize = (word: string): string =>
+	word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+
+/** A roast slug (`medium-light-roast`) in display form: "Medium-Light Roast". */
+const roastFromSlug = (slug: string): string | undefined => {
+	const groups = ROAST_VALUE.exec(unslug(slug))?.groups;
+	if (groups?.level === undefined) {
+		return undefined;
+	}
+	const shade =
+		groups.shade === undefined ? "" : `-${capitalize(groups.shade)}`;
+	const roast = groups.roast === undefined ? "" : " Roast";
+	return `${capitalize(groups.level)}${shade}${roast}`;
+};
+
+const roastFromValue = (value: string): string[] =>
+	ROAST_VALUE.test(value.trim()) ? [value.trim()] : [];
+
+/** Counter Culture's `key__value` tags: `origin__colombia`, `roastlevel__dark-roast`. */
+const SLUG_TAG = /^(?<key>[a-z]+)__(?<value>.+)$/iu;
+const SLUG_ORIGIN_KEY = /^(?:origin|country)$/iu;
+const SLUG_PROCESS_KEY = /^process$/iu;
+const SLUG_ROAST_KEY = /^roast(?:level)?$/iu;
+
+/** `Key: Value` body lines. `From:` is left out: in prose it opens a sentence. */
+const BODY_LINE = /^(?<key>[\p{L}][\p{L} /]{0,24}?)\s*:\s*(?<value>.+)$/u;
+const BODY_ORIGIN_KEY = /^(?:origins?|countr(?:y|ies))$/iu;
+const BODY_PROCESS_KEY = /^process(?:ing)?(?:\s+method)?$/iu;
+const BODY_ROAST_KEY = /^roast(?:\s+level)?$/iu;
+/** East Pole's table: an all-caps header line, the value on the next line. */
+const TABLE_ORIGIN_HEADER = /^(?:ORIGIN|COUNTRY)$/u;
+const TABLE_PROCESS_HEADER = /^PROCESS$/u;
+const TABLE_ROAST_HEADER = /^ROAST(?: LEVEL)?$/u;
+/** Body lines past this are prose; the sheet sits at the top. */
+const MAX_BODY_LINES = 80;
 
 export interface LotAttributes {
 	origin?: string;
@@ -189,27 +392,182 @@ export interface LotAttributes {
 	roastLevel?: string;
 }
 
+export interface LotAttributeSource {
+	tags: string[];
+	title?: string | null;
+	/** The roaster's copy as block text (stripHtml), one block per line. */
+	blockText?: string | null;
+	/** Shopify vendor; some roasters put the farm's region and country here. */
+	vendor?: string | null;
+}
+
 /**
- * Parsed tag conventions over the roaster's own tag vocabulary (observed
- * 2026-09-04: Proud Mary `From: Ethiopia`/`Process: Natural`, Intelligentsia
- * `Country: Guatemala`/`Roast Level: ...`, Verve `Roast: Light`, Onyx
- * `origin:Ethiopia`, Ruby bare `Washed`). `roastLevel` only lands when the
- * value names an actual roast — Intelligentsia uses "Roast Level: Bright"
- * for taste, not roast.
+ * Candidates for one field by tier, in precedence order. The first tier
+ * with a value wins; origin and process keep every distinct value in it.
  */
-export const parseLotAttributes = (tags: string[]): LotAttributes => {
-	const attributes: LotAttributes = {};
-	for (const tag of tags) {
-		const { key, value } = splitTag(tag);
-		if (ORIGIN_TAG.test(key) && looksLikeOrigin(value)) {
-			attributes.origin ??= value;
-		} else if (PROCESS_TAG.test(key) && value !== "") {
-			attributes.process ??= value;
-		} else if (ROAST_TAG.test(key) && ROAST_VALUE.test(value)) {
-			attributes.roastLevel ??= value;
-		} else if (BARE_PROCESS_TAG.test(key)) {
-			attributes.process ??= key;
+interface Tiers {
+	keyed: string[];
+	slug: string[];
+	bare: string[];
+	title: string[];
+	body: string[];
+	vendor: string[];
+}
+
+const emptyTiers = (): Tiers => ({
+	bare: [],
+	body: [],
+	keyed: [],
+	slug: [],
+	title: [],
+	vendor: [],
+});
+
+const push = (into: string[], values: string[]): void => {
+	for (const value of values) {
+		if (!into.some((seen) => seen.toLowerCase() === value.toLowerCase())) {
+			into.push(value);
 		}
+	}
+};
+
+const resolve = (tiers: Tiers, multi: boolean): string | undefined => {
+	for (const tier of [
+		tiers.keyed,
+		tiers.slug,
+		tiers.bare,
+		tiers.title,
+		tiers.body,
+		tiers.vendor,
+	]) {
+		if (tier.length > 0) {
+			// One roast level; a value with the word roast ("dark roast") is
+			// surer than a bare level ("dark") next to it.
+			return multi
+				? tier.join(", ")
+				: (tier.find((value) => /\broast\b/iu.test(value)) ?? tier[0]);
+		}
+	}
+	return undefined;
+};
+
+const readTags = (
+	tags: string[],
+	origin: Tiers,
+	process: Tiers,
+	roast: Tiers
+): void => {
+	for (const tag of tags) {
+		const slug = SLUG_TAG.exec(tag)?.groups;
+		if (slug?.key !== undefined && slug.value !== undefined) {
+			if (SLUG_ORIGIN_KEY.test(slug.key)) {
+				push(origin.slug, findCountries(slug.value));
+			} else if (SLUG_PROCESS_KEY.test(slug.key)) {
+				push(process.slug, findProcesses(unslug(slug.value)));
+			} else if (SLUG_ROAST_KEY.test(slug.key)) {
+				const level = roastFromSlug(slug.value);
+				push(roast.slug, level === undefined ? [] : [level]);
+			}
+			continue;
+		}
+		const { key, value } = splitTag(tag);
+		if (value === "") {
+			push(origin.bare, findCountries(key));
+			if (BARE_PROCESS_TAG.test(key)) {
+				push(process.bare, findProcesses(key));
+			}
+			push(roast.bare, roastFromValue(key));
+		} else if (ORIGIN_TAG.test(key) && looksLikeOrigin(value)) {
+			push(origin.keyed, [value]);
+		} else if (PROCESS_TAG.test(key)) {
+			// The roaster's own vocabulary ("Culture-Innoculated Washed") stands.
+			push(process.keyed, [value]);
+		} else if (ROAST_TAG.test(key)) {
+			push(roast.keyed, roastFromValue(value));
+		}
+	}
+};
+
+const readBody = (
+	blockText: string,
+	origin: Tiers,
+	process: Tiers,
+	roast: Tiers
+): void => {
+	const lines = blockText
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line !== "")
+		.slice(0, MAX_BODY_LINES);
+	for (const [index, line] of lines.entries()) {
+		const next = lines[index + 1] ?? "";
+		const labelled = BODY_LINE.exec(line)?.groups;
+		if (labelled?.key !== undefined && labelled.value !== undefined) {
+			const { key, value } = labelled;
+			if (BODY_ORIGIN_KEY.test(key)) {
+				push(origin.body, findCountries(value));
+			} else if (BODY_PROCESS_KEY.test(key)) {
+				push(process.body, findProcesses(value));
+			} else if (BODY_ROAST_KEY.test(key)) {
+				push(roast.body, roastFromValue(value));
+			}
+		} else if (TABLE_ORIGIN_HEADER.test(line)) {
+			push(origin.body, findCountries(next));
+		} else if (TABLE_PROCESS_HEADER.test(line)) {
+			push(process.body, findProcesses(next));
+		} else if (TABLE_ROAST_HEADER.test(line)) {
+			push(roast.body, roastFromValue(next));
+		} else {
+			// Ruby: "Light Roast" stands alone on its own line.
+			push(roast.body, roastFromValue(line));
+		}
+	}
+};
+
+/**
+ * Origin, process and roast level from everything the feed says about a lot
+ * (#30). Per field, the first tier with a value wins: a `Key: Value` tag
+ * (Proud Mary `From: Ethiopia`, Intelligentsia `Country: Guatemala`, Verve
+ * `Roast: Light`, Onyx `origin:Ethiopia`), a `key__value` tag (Counter
+ * Culture `origin__colombia`), a bare tag (Ruby `Washed`, Blossom `Mexico`),
+ * the title ("Kenya Karumandi", "Kerehaklu - Washed Process"), a body label
+ * line or all-caps table (Heart `Process: Fully washed`, East Pole `PROCESS`
+ * / `Washed`), then the vendor for origin only (Regalia "Huila, Colombia").
+ *
+ * Keyed tags carry the roaster's own value. Free text passes a shape check
+ * first: a country from COUNTRIES, a term from PROCESS_TERM, or the anchored
+ * ROAST_VALUE, so Intelligentsia's "Roast Level: Bright" (taste, not roast)
+ * and Merit's "recommended use: Espresso" land nowhere. Origin and process
+ * keep every distinct value in the winning tier, joined with a comma
+ * (Proud Mary "Humbler Blend": `Brazil, Honduras`).
+ */
+export const parseLotAttributes = (
+	source: LotAttributeSource
+): LotAttributes => {
+	const origin = emptyTiers();
+	const process = emptyTiers();
+	const roast = emptyTiers();
+	readTags(source.tags, origin, process, roast);
+	const title = source.title ?? "";
+	push(origin.title, titleCountry(title));
+	push(process.title, findProcesses(title));
+	const titleRoast = ROAST_IN_TITLE.exec(title)?.[0];
+	push(roast.title, titleRoast === undefined ? [] : [titleRoast]);
+	readBody(source.blockText ?? "", origin, process, roast);
+	push(origin.vendor, findCountries(source.vendor ?? ""));
+
+	const attributes: LotAttributes = {};
+	const originValue = resolve(origin, true);
+	const processValue = resolve(process, true);
+	const roastValue = resolve(roast, false);
+	if (originValue !== undefined) {
+		attributes.origin = originValue;
+	}
+	if (processValue !== undefined) {
+		attributes.process = processValue;
+	}
+	if (roastValue !== undefined) {
+		attributes.roastLevel = roastValue;
 	}
 	return attributes;
 };
@@ -864,6 +1222,7 @@ interface ShopifyProduct {
 	tags?: string[] | string | null;
 	title?: string | null;
 	variants?: ShopifyVariant[] | null;
+	vendor?: string | null;
 }
 
 export interface ProductsJsonPage {
@@ -900,7 +1259,12 @@ const parseLotCopy = (raw: ShopifyProduct): LotCopy => {
 		raw.image?.src ??
 		raw.images?.find((image) => typeof image.src === "string")?.src;
 	const roasterNotes = extractRoasterNotes(blockText, tags);
-	const copy: LotCopy = parseLotAttributes(tags);
+	const copy: LotCopy = parseLotAttributes({
+		blockText,
+		tags,
+		title: raw.title,
+		vendor: raw.vendor,
+	});
 	if (description !== null) {
 		copy.description = description;
 	}

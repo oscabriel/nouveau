@@ -26,6 +26,7 @@ interface FeedProduct {
 	product_type?: string;
 	tags?: string[] | string;
 	title?: string;
+	vendor?: string;
 	variants?: {
 		available?: boolean | null;
 		grams?: number | null;
@@ -702,58 +703,260 @@ describe("stripHtml", () => {
 	});
 });
 
+const fromTags = (tags: string[]) => parseLotAttributes({ tags });
+
 describe("parseLotAttributes", () => {
 	test("reads the Proud Mary convention", () => {
 		expect(
-			parseLotAttributes([
-				"Coffee",
-				"For: Filter",
-				"From: Ethiopia",
-				"Process: Natural",
-			])
+			fromTags(["Coffee", "For: Filter", "From: Ethiopia", "Process: Natural"])
 		).toEqual({ origin: "Ethiopia", process: "Natural" });
 	});
 
 	test("reads the Intelligentsia convention", () => {
-		expect(
-			parseLotAttributes(["Country: Guatemala", "Roast Level: Bright"])
-		).toEqual({ origin: "Guatemala" });
+		expect(fromTags(["Country: Guatemala", "Roast Level: Bright"])).toEqual({
+			origin: "Guatemala",
+		});
 	});
 
 	test("keeps a Roast Level value only when it names an actual roast", () => {
-		expect(parseLotAttributes(["Roast Level: Comforting"])).toEqual({});
-		expect(parseLotAttributes(["Roast: Light"])).toEqual({
-			roastLevel: "Light",
-		});
-		expect(parseLotAttributes(["Roast: Medium-Light"])).toEqual({
+		expect(fromTags(["Roast Level: Comforting"])).toEqual({});
+		expect(fromTags(["Roast Profile: Bright"])).toEqual({});
+		expect(fromTags(["profile:modern"])).toEqual({});
+		expect(fromTags(["Roast: Light"])).toEqual({ roastLevel: "Light" });
+		expect(fromTags(["Roast: Medium-Light"])).toEqual({
 			roastLevel: "Medium-Light",
 		});
 		// Anchored: a roast word inside a taste phrase is not a roast level.
-		expect(parseLotAttributes(["Roast: Lightly sweet & delightful"])).toEqual(
-			{}
-		);
+		expect(fromTags(["Roast: Lightly sweet & delightful"])).toEqual({});
 	});
 
 	test("takes a From: value only when it looks like a place", () => {
-		expect(parseLotAttributes(["From: Colombia, Huila"])).toEqual({
+		expect(fromTags(["From: Colombia, Huila"])).toEqual({
 			origin: "Colombia, Huila",
 		});
-		expect(parseLotAttributes(["From: our friends at the co-op"])).toEqual({});
-		expect(parseLotAttributes(["From: 2024 harvest"])).toEqual({});
+		expect(fromTags(["From: our friends at the co-op"])).toEqual({});
+		expect(fromTags(["From: 2024 harvest"])).toEqual({});
 	});
 
 	test("reads the Onyx convention and a bare process tag", () => {
-		expect(parseLotAttributes(["origin:Ethiopia"])).toEqual({
-			origin: "Ethiopia",
-		});
-		expect(parseLotAttributes(["amazing", "Washed", "Wholesale"])).toEqual({
+		expect(fromTags(["origin:Ethiopia"])).toEqual({ origin: "Ethiopia" });
+		expect(fromTags(["amazing", "Washed", "Wholesale"])).toEqual({
 			process: "Washed",
 		});
 	});
 
 	test("tolerates string tags and noise", () => {
-		expect(parseLotAttributes([])).toEqual({});
-		expect(parseLotAttributes(["nope", ":", "From:"])).toEqual({});
+		expect(fromTags([])).toEqual({});
+		expect(fromTags(["nope", ":", "From:"])).toEqual({});
+		expect(parseLotAttributes({ blockText: "", tags: [], title: "" })).toEqual(
+			{}
+		);
+	});
+
+	test("keeps every origin and process a keyed tag names", () => {
+		// Proud Mary "Humbler Blend"; Intelligentsia "26.2 Blend 10 oz".
+		expect(fromTags(["From: Brazil", "From: Honduras"])).toEqual({
+			origin: "Brazil, Honduras",
+		});
+		expect(fromTags(["Country: Ethiopia", "Country: Guatemala"])).toEqual({
+			origin: "Ethiopia, Guatemala",
+		});
+		expect(fromTags(["Process: Anaerobic", "Process: Washed"])).toEqual({
+			process: "Anaerobic, Washed",
+		});
+		// The roaster's own process term stands even off the closed vocabulary.
+		expect(fromTags(["Process: Culture-Innoculated Washed"])).toEqual({
+			process: "Culture-Innoculated Washed",
+		});
+	});
+
+	test("reads Counter Culture's key__value tags", () => {
+		expect(
+			fromTags([
+				"coffee",
+				"color__CF80A8",
+				"origin__colombia",
+				"origin__year-round-blend",
+				"roastlevel__dark-roast",
+			])
+		).toEqual({ origin: "Colombia", roastLevel: "Dark Roast" });
+		expect(fromTags(["roastlevel__medium-light-roast"])).toEqual({
+			roastLevel: "Medium-Light Roast",
+		});
+	});
+
+	test("reads a country, process or roast from a bare tag", () => {
+		// Blossom "Mexico - Altura Veracruz - Natural".
+		expect(
+			parseLotAttributes({
+				tags: [
+					"Bottomless",
+					"Coffee",
+					"delicious coffee",
+					"Light roast",
+					"Mexico",
+					"Natural",
+					"specialty coffee",
+				],
+				title: "Mexico - Altura Veracruz - Natural",
+			})
+		).toEqual({
+			origin: "Mexico",
+			process: "Natural",
+			roastLevel: "Light roast",
+		});
+		expect(fromTags(["El-Salvador"])).toEqual({ origin: "El Salvador" });
+		expect(fromTags(["Natural Processed"])).toEqual({ process: "Natural" });
+		expect(fromTags(["Medium Dark"])).toEqual({ roastLevel: "Medium Dark" });
+		expect(fromTags(["Light Roast"])).toEqual({ roastLevel: "Light Roast" });
+		expect(fromTags(["medium roast"])).toEqual({ roastLevel: "medium roast" });
+		expect(fromTags(["lighter roast coffee", "roasted"])).toEqual({});
+	});
+
+	test("reads the title when no tag names the field", () => {
+		expect(
+			parseLotAttributes({
+				tags: ["Blend Color: #ea7f7a", "Coffee Type: Single Origin"],
+				title: "Kenya Karumandi",
+			})
+		).toEqual({ origin: "Kenya" });
+		expect(
+			parseLotAttributes({ tags: [], title: "2026 Demeka Becha - Ethiopia" })
+		).toEqual({ origin: "Ethiopia" });
+		expect(
+			parseLotAttributes({
+				tags: ["passenger-coffee", "Reserve Lot"],
+				title: "Kerehaklu - Washed Process - 2026",
+			})
+		).toEqual({ process: "Washed" });
+		expect(
+			parseLotAttributes({
+				tags: [],
+				title: "LIMITED | HONDURAS | Benjamin Paz | Geisha | Anaerobic Washed",
+			})
+		).toEqual({ origin: "Honduras", process: "Anaerobic Washed" });
+		expect(
+			parseLotAttributes({ tags: [], title: "Las Lajas Black Honey" })
+		).toEqual({ process: "Black Honey" });
+		// A roast in the title needs the word roast: "Dark Chocolate Blend" is a note.
+		expect(
+			parseLotAttributes({ tags: [], title: "Big Trouble Medium Roast" })
+		).toEqual({ roastLevel: "Medium Roast" });
+		expect(
+			parseLotAttributes({ tags: [], title: "Dark Chocolate Blend" })
+		).toEqual({});
+		// Adjectives and the coffee word alone name no country.
+		expect(
+			parseLotAttributes({ tags: [], title: "Brazilian Espresso" })
+		).toEqual({});
+	});
+
+	test("a title names one origin: the country that opens or closes it", () => {
+		// Intelligentsia: El Congo is the farm. Sey: Finca Costa Rica is the farm.
+		expect(
+			parseLotAttributes({ tags: [], title: "Costa Rica El Congo Geisha" })
+		).toEqual({ origin: "Costa Rica" });
+		expect(
+			parseLotAttributes({
+				tags: [],
+				title: "2022 Faver Ninco; Finca Costa Rica - Colombia",
+			})
+		).toEqual({ origin: "Colombia" });
+		expect(
+			parseLotAttributes({ tags: [], title: "Guatemala Ethiopia Landrace" })
+		).toEqual({ origin: "Guatemala" });
+		// Bare tags on a blend are its components; all of them stay.
+		expect(fromTags(["colombia", "Ethiopia", "Guatemala"])).toEqual({
+			origin: "Colombia, Ethiopia, Guatemala",
+		});
+	});
+
+	test("a roast tag with the word roast outranks a bare level", () => {
+		// Blossom "Cold Brew Blend" carries both `dark` and `medium roast`.
+		expect(fromTags(["dark", "medium roast"])).toEqual({
+			roastLevel: "medium roast",
+		});
+		expect(fromTags(["dark", "dark roast", "medium roast"])).toEqual({
+			roastLevel: "dark roast",
+		});
+	});
+
+	test("a keyed tag outranks the title", () => {
+		expect(
+			parseLotAttributes({
+				tags: ["From: Colombia"],
+				title: "Ethiopia Halo",
+			})
+		).toEqual({ origin: "Colombia" });
+	});
+
+	test("reads Key: Value lines in the body", () => {
+		// Heart "Ethiopia Halo".
+		expect(
+			parseLotAttributes({
+				blockText:
+					"Location: Gedeb\nElevation: 1900-2200m\nVarietals: Heirloom\nProcess: Fully washed\nFOB cost: $6.00lb",
+				tags: ["culture", "Single Origin"],
+				title: "Ethiopia Halo",
+			})
+		).toEqual({ origin: "Ethiopia", process: "Fully washed" });
+		// La Colombe: a spaced colon, Sumatra read as Indonesia, every origin kept.
+		expect(
+			parseLotAttributes({
+				blockText:
+					"Origins : A seasonal blend of beans from Sumatra and Brazil\nRoast Level: Medium\nIngredient Detail\nOrigin : Brazil\nRegion : Cerrado Minas\nOrigin : Colombia",
+				tags: [],
+				title: "Fall Blend",
+			})
+		).toEqual({
+			origin: "Indonesia, Brazil, Colombia",
+			roastLevel: "Medium",
+		});
+		expect(
+			parseLotAttributes({
+				blockText: "Roast Level: Comforting\nrecommended use: Espresso",
+				tags: [],
+			})
+		).toEqual({});
+		// Ruby: the roast stands on its own line.
+		expect(
+			parseLotAttributes({
+				blockText:
+					"We Taste: lemon meringue - lavender\nMedium-light Roast\nDOWNLOAD info sheets",
+				tags: ["amazing", "Washed"],
+			})
+		).toEqual({ process: "Washed", roastLevel: "Medium-light Roast" });
+	});
+
+	test("reads East Pole's all-caps table", () => {
+		expect(
+			parseLotAttributes({
+				blockText:
+					"PRODUCER\nAMOUNT\nIyenga FCS\n12 oz. bag\nORIGIN\nMbozi, Tanzania\nALTITUDE\n1,900 masl\nVARIETY\nBourbon\nPROCESS\nWashed\nNOTES\nBright acidity, brown sugar, papaya\nFounded in the wake of the Tanzanian Cooperative Act",
+				tags: [],
+				title: "Iyenga",
+			})
+		).toEqual({ origin: "Tanzania", process: "Washed" });
+	});
+
+	test("reads the vendor for origin last", () => {
+		expect(
+			parseLotAttributes({
+				tags: [],
+				title: "El Jardin Chiroso Lot 7",
+				vendor: "Huila, Colombia",
+			})
+		).toEqual({ origin: "Colombia" });
+		expect(
+			parseLotAttributes({
+				tags: [],
+				title: "Ethiopia Halo",
+				vendor: "Huila, Colombia",
+			})
+		).toEqual({ origin: "Ethiopia" });
+		expect(
+			parseLotAttributes({ tags: [], vendor: "Heart Coffee Roasters" })
+		).toEqual({});
 	});
 });
 
@@ -1069,6 +1272,29 @@ describe("parseProductsJson lot copy (§14.4)", () => {
 			process: "Washed",
 			tags: ["gift", "From: Kenya", "Washed"],
 		});
+	});
+
+	test("reads attributes from the title, body and vendor (#30)", () => {
+		const page = parseProductsJson(
+			feedBody([
+				feedProduct(6, {
+					body_html: "<p>Location: Gedeb</p><p>Process: Fully washed</p>",
+					tags: ["Single Origin"],
+					title: "Ethiopia Halo",
+				}),
+				feedProduct(7, {
+					body_html: "",
+					tags: ["Coffee"],
+					title: "El Jardin Chiroso Lot 7",
+					vendor: "Huila, Colombia",
+				}),
+			])
+		);
+		expect(page.products[0]?.lotCopy).toMatchObject({
+			origin: "Ethiopia",
+			process: "Fully washed",
+		});
+		expect(page.products[1]?.lotCopy).toMatchObject({ origin: "Colombia" });
 	});
 
 	test("caps the description", () => {
