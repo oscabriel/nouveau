@@ -138,10 +138,9 @@ export default defineSchema({
 		region: v.optional(v.string()),
 		roastLevel: v.optional(v.string()),
 		// Descriptors from the roaster's own copy, verbatim (§14.4), one per
-		// item. The string form is pre-ADR-0005 data; migrations.roasterNotesToList
-		// converts it and the union goes once that has run on prod.
+		// item.
 		roasterId: v.id("roasters"),
-		roasterNotes: v.optional(v.union(v.array(v.string()), v.string())),
+		roasterNotes: v.optional(v.array(v.string())),
 		// Absent from 3 consecutive successful crawls -> archived.
 		status: v.union(v.literal("current"), v.literal("archived")),
 		tags: v.optional(v.array(v.string())),

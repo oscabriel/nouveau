@@ -24,7 +24,6 @@ import type * as identity from "../identity.js";
 import type * as logs from "../logs.js";
 import type * as lotFacts from "../lotFacts.js";
 import type * as lots from "../lots.js";
-import type * as migrations from "../migrations.js";
 import type * as notifications from "../notifications.js";
 import type * as pageFacts from "../pageFacts.js";
 import type * as recommendationCatalog from "../recommendationCatalog.js";
@@ -61,7 +60,6 @@ declare const fullApi: ApiFromModules<{
   logs: typeof logs;
   lotFacts: typeof lotFacts;
   lots: typeof lots;
-  migrations: typeof migrations;
   notifications: typeof notifications;
   pageFacts: typeof pageFacts;
   recommendationCatalog: typeof recommendationCatalog;
@@ -106,7 +104,6 @@ export declare const components: {
   staticHosting: import("@convex-dev/static-hosting/_generated/component.js").ComponentApi<"staticHosting">;
   agentmail: import("@agentmail/convex/_generated/component.js").ComponentApi<"agentmail">;
   aggregate: import("@convex-dev/aggregate/_generated/component.js").ComponentApi<"aggregate">;
-  migrations: import("@convex-dev/migrations/_generated/component.js").ComponentApi<"migrations">;
   rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
   recommendationPool: import("@convex-dev/workpool/_generated/component.js").ComponentApi<"recommendationPool">;
   firecrawl: import("@firecrawl/firecrawl-convex/_generated/component.js").ComponentApi<"firecrawl">;

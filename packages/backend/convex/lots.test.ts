@@ -78,7 +78,7 @@ describe("lots.get", () => {
 			description: "A washed lot from Urrao.",
 			origin: "Colombia",
 			process: "Washed",
-			roasterNotes: "peach, melon, and red tea",
+			roasterNotes: ["peach", "melon", "red tea"],
 		});
 		await addLog(fx, 2000, { notes: "peach for days", rating: 4 });
 		await addLog(fx, 1000);

@@ -71,9 +71,8 @@ describe("notes", () => {
 		expect(splitNotes("a, b, c, d, e, f, g, h, i, j").length).toBe(8);
 	});
 
-	test("reads accept the pre-migration string and the list alike", () => {
+	test("reads treat an unset list as empty", () => {
 		expect(notesList()).toEqual([]);
-		expect(notesList("peach, melon")).toEqual(["peach", "melon"]);
 		expect(notesList(["peach"])).toEqual(["peach"]);
 		expect(joinNotes(["peach", "melon"])).toBe("peach, melon");
 		expect(joinNotes()).toBeNull();

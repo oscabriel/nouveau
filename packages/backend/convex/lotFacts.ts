@@ -123,20 +123,11 @@ export const verifyNotes = (values: readonly string[]): string[] => {
 	return notes;
 };
 
-/**
- * `roasterNotes` on a stored product: a list once written by this code, a
- * clause string on rows from before the ADR-0005 migration. Reads never
- * care which.
- */
-export const notesList = (value?: string | string[]): string[] => {
-	if (value === undefined) {
-		return [];
-	}
-	return Array.isArray(value) ? value : splitNotes(value);
-};
+/** `roasterNotes` on a stored product, empty when unset. */
+export const notesList = (value?: string[]): string[] => value ?? [];
 
 /** The notes as one display string, or null when there are none. */
-export const joinNotes = (value?: string | string[]): string | null => {
+export const joinNotes = (value?: string[]): string | null => {
 	const notes = notesList(value);
 	return notes.length === 0 ? null : notes.join(", ");
 };
@@ -210,7 +201,7 @@ export interface FactSource {
 	producer?: string;
 	region?: string;
 	roastLevel?: string;
-	roasterNotes?: string | string[];
+	roasterNotes?: string[];
 	variety?: string;
 }
 
