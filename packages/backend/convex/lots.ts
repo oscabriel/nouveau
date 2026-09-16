@@ -7,20 +7,39 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { LOT_PAGE_LOGS_LIMIT } from "./constants";
 import { hydrateAll, logCardValidator } from "./logs";
+import { isThin, mergedFacts } from "./lotFacts";
+
+const factsValidator = v.object({
+	elevation: v.union(v.string(), v.null()),
+	notes: v.array(v.string()),
+	origin: v.union(v.string(), v.null()),
+	process: v.union(v.string(), v.null()),
+	producer: v.union(v.string(), v.null()),
+	region: v.union(v.string(), v.null()),
+	roastLevel: v.union(v.string(), v.null()),
+	variety: v.union(v.string(), v.null()),
+});
 
 const lotValidator = v.object({
 	description: v.union(v.string(), v.null()),
+	// The roaster's facts, feed first with page facts filling gaps
+	// (ADR-0005, lotFacts.mergedFacts).
+	facts: factsValidator,
 	// url is the roaster's own product page — the lot page links out to the
 	// shop, the shop never replaces the page.
 	handle: v.string(),
 	id: v.id("products"),
 	imageUrl: v.union(v.string(), v.null()),
 	name: v.string(),
-	origin: v.union(v.string(), v.null()),
-	process: v.union(v.string(), v.null()),
-	roastLevel: v.union(v.string(), v.null()),
-	roasterNotes: v.union(v.string(), v.null()),
+	// Page-read state for the client: when the page was last asked for and
+	// whether it answered. The client decides "ask" and "reading" from these
+	// with its own clock, since a query cannot read the wall clock.
+	pageFactsAt: v.union(v.number(), v.null()),
+	pageFactsKnown: v.boolean(),
 	status: v.union(v.literal("current"), v.literal("archived")),
+	// Whether the merged facts still miss what a card leans on; with
+	// pageFactsKnown false this is the lot page's cue to ask.
+	thin: v.boolean(),
 	url: v.string(),
 });
 
@@ -55,15 +74,15 @@ export const get = query({
 			logsTruncated: logs.length > LOT_PAGE_LOGS_LIMIT,
 			lot: {
 				description: lot.description ?? null,
+				facts: mergedFacts(lot),
 				handle: lot.handle,
 				id: lot._id,
 				imageUrl: lot.imageUrl ?? null,
 				name: lot.name,
-				origin: lot.origin ?? null,
-				process: lot.process ?? null,
-				roastLevel: lot.roastLevel ?? null,
-				roasterNotes: lot.roasterNotes ?? null,
+				pageFactsAt: lot.copyFetchedAt ?? null,
+				pageFactsKnown: lot.pageFacts !== undefined,
 				status: lot.status,
+				thin: isThin(lot),
 				url: `${roaster.websiteUrl}/products/${lot.handle}`,
 			},
 			roaster: { name: roaster.name, slug: roaster.slug },

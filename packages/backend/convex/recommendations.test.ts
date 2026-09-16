@@ -701,9 +701,11 @@ test.each([{ badModel: true }, { modelFails: true }])(
 	}
 );
 
-test("purging the evidence cache makes the next request scrape again", async () => {
+test("a read settles the lot: purging the evidence cache alone does not scrape again", async () => {
 	const f = await setup();
 	const fetchMock = installProviders();
+	const firecrawlCalls = () =>
+		fetchMock.mock.calls.filter(([url]) => url.includes("firecrawl"));
 	const first = await request(f);
 	await f.t.action(internal.recommendationWorker.run, {
 		attempt: 1,
@@ -712,6 +714,8 @@ test("purging the evidence cache makes the next request scrape again", async () 
 	expect(await f.t.mutation(internal.recommendations.purgeEvidence, {})).toBe(
 		1
 	);
+	// The page was read once; copyFetchedAt records it on the product
+	// (ADR-0005), so the lot's facts count as known for the next run.
 	const second = await f.other.mutation(api.recommendations.request, {
 		...input,
 		requestKey: "after-purge",
@@ -720,9 +724,23 @@ test("purging the evidence cache makes the next request scrape again", async () 
 		attempt: 1,
 		runId: second,
 	});
-	expect(
-		fetchMock.mock.calls.filter(([url]) => url.includes("firecrawl"))
-	).toHaveLength(2);
+	expect(firecrawlCalls()).toHaveLength(1);
+	// Forgetting the read on the product is what makes a run read again.
+	await f.t.run((ctx) =>
+		ctx.db.patch(f.productId, {
+			copyFetchedAt: undefined,
+			pageFacts: undefined,
+		})
+	);
+	const third = await f.other.mutation(api.recommendations.request, {
+		...input,
+		requestKey: "after-forget",
+	});
+	await f.t.action(internal.recommendationWorker.run, {
+		attempt: 1,
+		runId: third,
+	});
+	expect(firecrawlCalls()).toHaveLength(2);
 });
 
 test("a failed scrape is retried after an hour, not a day", async () => {
@@ -995,11 +1013,17 @@ test("the scrape asks Firecrawl for structured extraction and verified values be
 	const cache = await f.t.run((ctx) =>
 		ctx.db.query("recommendationEvidence").collect()
 	);
-	// Washed and jasmine repeat the feed; Bergamot, Heirloom and the invented
-	// sentence are not on the page. What remains was on the page and new.
+	// The invented sentence is not on the page, so the structured path yields
+	// nothing and the regex fallback keeps the page's own sentence.
 	expect(cache[0]?.passages).toEqual([
-		"Elevation: 2100 metres. Producer: a small producer.",
+		"This coffee was grown at an elevation of 2100 metres by a small producer.",
 	]);
+	// The facts land on the product through the shared verifier (ADR-0005):
+	// elevation is on the page and shaped; Washed, jasmine, Bergamot and
+	// Heirloom are not on the page; "a small producer" is prose, not a name.
+	const product = await f.t.run((ctx) => ctx.db.get(f.productId));
+	expect(product?.pageFacts).toEqual({ elevation: "2100 metres" });
+	expect(product?.copyFetchedAt).toEqual(expect.any(Number));
 });
 
 test("the workpool drives a queued request through the actual scheduled action", async () => {
@@ -1349,10 +1373,11 @@ test("page passages label verified facts, keep verbatim sentences and skip every
 		tastingNotes: ["Jasmine", "Toffee", "Lemon Custard", "Blueberry"],
 		variety: "Heirloom",
 	};
+	// Facts no longer ride in the passages (they go through verifyPageFacts
+	// into pageFacts, ADR-0005); the verified sentence does.
 	expect(
 		pagePassages({ json, markdown }, "A washed Ethiopian coffee.")
 	).toEqual([
-		"Variety: Heirloom. Roast level: Ultra Light. Tasting notes: Jasmine, Toffee, Lemon Custard.",
 		"Grown by smallholders around Chelchele and dried on raised beds, this lot leans floral with a custard-like finish.",
 	]);
 	// Without extraction the regex path runs. Image captions are no longer

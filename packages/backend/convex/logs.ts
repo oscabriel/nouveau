@@ -14,6 +14,7 @@ import {
 	MAX_WATCHES_PER_USER,
 } from "./constants";
 import { requireUserId } from "./identity";
+import { joinNotes } from "./lotFacts";
 import { roasterCardValidator } from "./roasters";
 
 /** Ratings are 1–5 in half steps (spec §14.1); anything else is rejected. */
@@ -83,7 +84,7 @@ const hydrateLog = async (
 		lot: {
 			id: product._id,
 			name: product.name,
-			roasterNotes: product.roasterNotes ?? null,
+			roasterNotes: joinNotes(product.roasterNotes),
 			url: `${roaster.websiteUrl}/products/${product.handle}`,
 		},
 		notes: log.notes ?? null,

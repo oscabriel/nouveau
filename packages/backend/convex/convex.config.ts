@@ -2,6 +2,7 @@ import agentmail from "@agentmail/convex/convex.config";
 import aggregate from "@convex-dev/aggregate/convex.config";
 import auth from "@convex-dev/auth/core/convex.config";
 import oauth from "@convex-dev/auth/providers/oauth/convex.config";
+import migrations from "@convex-dev/migrations/convex.config";
 import rateLimiter from "@convex-dev/rate-limiter/convex.config";
 import staticHosting from "@convex-dev/static-hosting/convex.config";
 import workpool from "@convex-dev/workpool/convex.config";
@@ -45,6 +46,8 @@ app.use(agentmail, {
 	},
 });
 app.use(aggregate);
+// Online data migrations (ADR-0005 roasterNotes list); run from migrations.ts.
+app.use(migrations);
 app.use(rateLimiter);
 app.use(workpool, { name: "recommendationPool" });
 // Mounts the crawl webhook route at <site>/firecrawl/webhook.

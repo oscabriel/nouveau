@@ -389,7 +389,7 @@ describe("commit: lot copy (§14.4)", () => {
 					imageUrl: "https://cdn.example.com/lot.png",
 					origin: "Colombia",
 					process: "Washed",
-					roasterNotes: "peach, melon, and red tea",
+					roasterNotes: ["peach", "melon", "red tea"],
 					tags: ["Coffee", "From: Colombia"],
 				},
 			},
@@ -400,7 +400,7 @@ describe("commit: lot copy (§14.4)", () => {
 			imageUrl: "https://cdn.example.com/lot.png",
 			origin: "Colombia",
 			process: "Washed",
-			roasterNotes: "peach, melon, and red tea",
+			roasterNotes: ["peach", "melon", "red tea"],
 			tags: ["Coffee", "From: Colombia"],
 		});
 	});
@@ -414,7 +414,7 @@ describe("commit: lot copy (§14.4)", () => {
 				...product("a"),
 				lotCopy: {
 					description: "Old copy.",
-					roasterNotes: "old notes",
+					roasterNotes: ["old notes"],
 					tags: ["Coffee"],
 				},
 			},
@@ -433,14 +433,14 @@ describe("commit: lot copy (§14.4)", () => {
 		await crawl(fx, T0, [
 			{
 				...product("a"),
-				lotCopy: { description: "Kept copy.", roasterNotes: "kept notes" },
+				lotCopy: { description: "Kept copy.", roasterNotes: ["kept notes"] },
 			},
 		]);
 		await crawl(fx, T0 + CADENCE_MS, [product("a")]);
 		const state = await readAll(fx);
 		expect(state.products[0]).toMatchObject({
 			description: "Kept copy.",
-			roasterNotes: "kept notes",
+			roasterNotes: ["kept notes"],
 		});
 	});
 
@@ -449,14 +449,17 @@ describe("commit: lot copy (§14.4)", () => {
 		const first = await crawl(fx, T0, [
 			{
 				...product("a"),
-				lotCopy: { description: "First copy.", roasterNotes: "first notes" },
+				lotCopy: { description: "First copy.", roasterNotes: ["first notes"] },
 			},
 		]);
 		const eventsOne = await readAll(fx);
 		const second = await crawl(fx, T0 + CADENCE_MS, [
 			{
 				...product("a"),
-				lotCopy: { description: "Second copy.", roasterNotes: "second notes" },
+				lotCopy: {
+					description: "Second copy.",
+					roasterNotes: ["second notes"],
+				},
 			},
 		]);
 		expect(first).toBeNull();

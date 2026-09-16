@@ -10,6 +10,7 @@ import { query } from "./_generated/server";
 import { LOT_SEARCH_LIMIT } from "./constants";
 import { followerCounts } from "./followerCounts";
 import { crawlStatusValidator, getCrawlStatus } from "./health";
+import { joinNotes } from "./lotFacts";
 
 /** Roaster fields every roaster surface renders (directory, watches, page). */
 export const roasterCardValidator = v.object({
@@ -92,7 +93,7 @@ const toLotRow = (lot: Doc<"products">): Infer<typeof lotRowValidator> => ({
 	handle: lot.handle,
 	id: lot._id,
 	name: lot.name,
-	roasterNotes: lot.roasterNotes ?? null,
+	roasterNotes: joinNotes(lot.roasterNotes),
 	status: lot.status,
 });
 

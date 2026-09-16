@@ -11,6 +11,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { requireUserId } from "./identity";
+import { joinNotes } from "./lotFacts";
 import {
 	candidateStillAvailable,
 	catalogText,
@@ -74,9 +75,9 @@ const preferencesFor = async (
 				log.rating === undefined
 					? "No rating recorded."
 					: `Your rating: ${log.rating}/5.`,
-				product.roasterNotes
-					? `Roaster descriptors: ${product.roasterNotes}.`
-					: "",
+				joinNotes(product.roasterNotes) === null
+					? ""
+					: `Roaster descriptors: ${joinNotes(product.roasterNotes)}.`,
 				input.includeNotes && log.notes ? `Your note: ${log.notes}` : "",
 			]
 				.filter(Boolean)

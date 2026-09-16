@@ -285,23 +285,35 @@ const lotCopyFields = (product: ExtractedProduct): Partial<Doc<"products">> => {
 	if (product.lotCopy === undefined) {
 		return {};
 	}
+	// pageFacts and copyFetchedAt are not here on purpose: the page scrape
+	// owns them (ADR-0005), so a feed write can never clear a page fact.
 	const {
 		description,
+		elevation,
 		imageUrl,
 		origin,
 		process,
+		producer,
+		productType,
+		region,
 		roastLevel,
 		roasterNotes,
 		tags,
+		variety,
 	} = product.lotCopy;
 	return {
 		description,
+		elevation,
 		imageUrl,
 		origin,
 		process,
+		producer,
+		productType,
+		region,
 		roastLevel,
 		roasterNotes,
 		tags,
+		variety,
 	};
 };
 

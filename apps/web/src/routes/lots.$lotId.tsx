@@ -2,10 +2,10 @@ import { useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
 import { Button } from "@nouveau/ui/components/button";
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { ArrowUpRight } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import Loader from "@/components/loader";
 import { LogCard } from "@/components/log-card";
@@ -16,6 +16,22 @@ import { SignInCta } from "@/components/sign-in-cta";
 export type LotPageData = FunctionReturnType<typeof api.lots.get>;
 type LotData = NonNullable<LotPageData>["lot"];
 
+// A page read the client is still waiting on (ADR-0005). Past this the chip
+// goes quiet: the read failed or found nothing, and the lot is asked again
+// after the server's retry window.
+const READING_WINDOW_MS = 90_000;
+const RETRY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+const FACT_CHIPS = [
+	["origin", "Origin"],
+	["region", "Region"],
+	["process", "Process"],
+	["variety", "Variety"],
+	["elevation", "Elevation"],
+	["producer", "Producer"],
+	["roastLevel", "Roast"],
+] as const;
+
 const LotAttribute = ({ label, value }: { label: string; value: string }) => (
 	<span className="rounded-full border px-3 py-1 text-sm">
 		<span className="text-muted-foreground mr-1.5 text-xs">{label}</span>
@@ -23,11 +39,26 @@ const LotAttribute = ({ label, value }: { label: string; value: string }) => (
 	</span>
 );
 
+/** Whether this look should ask the roaster's page for the lot's facts. */
+const wantsPageFacts = (lot: LotData, now: number): boolean =>
+	lot.status === "current" &&
+	lot.thin &&
+	!lot.pageFactsKnown &&
+	(lot.pageFactsAt === null || now - lot.pageFactsAt > RETRY_WINDOW_MS);
+
+const isReading = (lot: LotData, now: number): boolean =>
+	lot.thin &&
+	!lot.pageFactsKnown &&
+	lot.pageFactsAt !== null &&
+	now - lot.pageFactsAt < READING_WINDOW_MS;
+
 const LotDetail = ({
 	lot,
+	reading,
 	roaster,
 }: {
 	lot: LotData;
+	reading: boolean;
 	roaster: { name: string; slug: string };
 }) => (
 	<>
@@ -67,25 +98,25 @@ const LotDetail = ({
 				/>
 			)}
 			<div className="min-w-0 flex-1">
-				{(lot.origin !== null ||
-					lot.process !== null ||
-					lot.roastLevel !== null) && (
+				{FACT_CHIPS.some(([key]) => lot.facts[key] !== null) && (
 					<div className="mb-3 flex flex-wrap gap-2">
-						{lot.origin !== null && (
-							<LotAttribute label="Origin" value={lot.origin} />
-						)}
-						{lot.process !== null && (
-							<LotAttribute label="Process" value={lot.process} />
-						)}
-						{lot.roastLevel !== null && (
-							<LotAttribute label="Roast" value={lot.roastLevel} />
-						)}
+						{FACT_CHIPS.map(([key, label]) => {
+							const value = lot.facts[key];
+							return value === null ? null : (
+								<LotAttribute key={key} label={label} value={value} />
+							);
+						})}
 					</div>
 				)}
-				{lot.roasterNotes !== null && (
-					<p className="text-muted-foreground mb-3 text-sm italic">
-						<span className="font-medium not-italic">Roaster notes:</span>{" "}
-						{lot.roasterNotes}
+				{lot.facts.notes.length > 0 && (
+					<p className="text-muted-foreground mb-3 text-sm">
+						<span className="text-foreground font-medium">Roaster notes:</span>{" "}
+						{lot.facts.notes.join(" · ")}
+					</p>
+				)}
+				{reading && (
+					<p className="text-muted-foreground mb-3 text-xs">
+						Reading the roaster&apos;s page for more…
 					</p>
 				)}
 				{lot.description !== null && (
@@ -103,6 +134,35 @@ const LotComponent = () => {
 	const me = useQuery(api.users.getCurrentUser);
 	const { isAuthenticated } = useConvexAuth();
 	const [logging, setLogging] = useState(false);
+	const requestPageFacts = useMutation(api.pageFacts.request);
+	// The clock the page-read state is judged against; ticks only while a
+	// read is pending so the "reading" line can go quiet on its own.
+	const [now, setNow] = useState(Date.now);
+	const reading = page ? isReading(page.lot, now) : false;
+	useEffect(() => {
+		if (!reading) {
+			return;
+		}
+		const timer = window.setInterval(() => setNow(Date.now()), 5000);
+		return () => window.clearInterval(timer);
+	}, [reading]);
+	// One ask per lot per visit; the server dedupes across viewers anyway.
+	const asked = useRef<string | null>(null);
+	const lotToAsk = page && wantsPageFacts(page.lot, now) ? page.lot.id : null;
+	useEffect(() => {
+		if (lotToAsk === null || asked.current === lotToAsk) {
+			return;
+		}
+		asked.current = lotToAsk;
+		const ask = async () => {
+			try {
+				await requestPageFacts({ lotId: lotToAsk });
+			} catch {
+				// The page shows what the feed has; nothing else to do here.
+			}
+		};
+		void ask();
+	}, [lotToAsk, requestPageFacts]);
 
 	if (page === undefined || me === undefined) {
 		return <Loader />;
@@ -127,7 +187,7 @@ const LotComponent = () => {
 
 	return (
 		<div className="container mx-auto max-w-3xl px-4 py-8">
-			<LotDetail lot={lot} roaster={roaster} />
+			<LotDetail lot={lot} reading={reading} roaster={roaster} />
 			<section className="mt-8">
 				<div className="mb-2 flex items-center justify-between gap-3">
 					<h2 className="font-semibold">
@@ -156,7 +216,9 @@ const LotComponent = () => {
 						onDone={() => {
 							setLogging(false);
 						}}
-						roasterNotes={lot.roasterNotes}
+						roasterNotes={
+							lot.facts.notes.length === 0 ? null : lot.facts.notes.join(", ")
+						}
 					/>
 				)}
 				{page.logs.length === 0 ? (

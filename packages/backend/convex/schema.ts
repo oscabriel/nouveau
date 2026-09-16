@@ -2,6 +2,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 import { healthValidator } from "./health";
+import { pageFactsValidator } from "./lotFacts";
 import {
 	candidateValidator,
 	preferenceValidator,
@@ -108,10 +109,15 @@ export default defineSchema({
 	}).index("by_product_id", ["productId"]),
 
 	products: defineTable({
+		// When the roaster's product page was last read for pageFacts (ADR-0005).
+		// Set at the request so concurrent viewers share one scrape; a read that
+		// found nothing keeps the stamp and is retried after PAGE_FACTS_RETRY_MS.
+		copyFetchedAt: v.optional(v.number()),
 		// §14.4 lot copy: what the roaster publishes about the lot. Filled at
 		// upsert time (products upsert every crawl, no migration); absent
 		// fields are simply absent — thin feeds carry none of it.
 		description: v.optional(v.string()),
+		elevation: v.optional(v.string()),
 		externalId: v.string(),
 		firstSeenAt: v.number(),
 		handle: v.string(),
@@ -121,15 +127,25 @@ export default defineSchema({
 		missedCrawls: v.optional(v.number()),
 		name: v.string(),
 		origin: v.optional(v.string()),
+		// Facts read off the rendered product page (ADR-0005). Owned by the
+		// page scrape (pageFacts.ts); lotCopyFields never writes it. Reads merge
+		// with the feed winning (lotFacts.mergedFacts).
+		pageFacts: v.optional(pageFactsValidator),
 		process: v.optional(v.string()),
+		producer: v.optional(v.string()),
+		// Raw Shopify product_type, for audits and per-roaster rules.
+		productType: v.optional(v.string()),
+		region: v.optional(v.string()),
 		roastLevel: v.optional(v.string()),
-		// Descriptors from the roaster's own copy, verbatim (§14.4): regex
-		// over description prose or the Flavor Profile tag, null when absent.
+		// Descriptors from the roaster's own copy, verbatim (§14.4), one per
+		// item. The string form is pre-ADR-0005 data; migrations.roasterNotesToList
+		// converts it and the union goes once that has run on prod.
 		roasterId: v.id("roasters"),
-		roasterNotes: v.optional(v.string()),
+		roasterNotes: v.optional(v.union(v.array(v.string()), v.string())),
 		// Absent from 3 consecutive successful crawls -> archived.
 		status: v.union(v.literal("current"), v.literal("archived")),
 		tags: v.optional(v.array(v.string())),
+		variety: v.optional(v.string()),
 	})
 		.index("by_roaster_and_external_id", ["roasterId", "externalId"])
 		// Recommendation candidates: one roaster's current lots from its latest

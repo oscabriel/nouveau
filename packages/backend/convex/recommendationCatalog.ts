@@ -1,5 +1,6 @@
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
+import { factPassage, mergedFacts, needsPageFacts } from "./lotFacts";
 import {
 	CANDIDATE_LIMIT,
 	CATALOG_SCAN_LIMIT,
@@ -86,10 +87,7 @@ export const catalogText = (product: Doc<"products">): string =>
 	[
 		product.name,
 		product.description,
-		product.roasterNotes,
-		product.origin,
-		product.process,
-		product.roastLevel,
+		factPassage(mergedFacts(product)),
 		...(product.tags ?? []),
 	]
 		.filter(Boolean)
@@ -128,25 +126,20 @@ const makeCandidate = async (
 	if (!variant || variant.grams === undefined) {
 		return null;
 	}
-	const passage = [
-		product.description,
-		product.roasterNotes,
-		product.origin,
-		product.process,
-		product.roastLevel,
-	]
-		.filter(Boolean)
-		.join("\n")
-		.slice(0, 2500);
-	const evidence: Candidate["evidence"] = catalogPassages(passage).map(
-		(text, index) => ({
-			id: `${product._id}:catalog:${index}`,
-			observedAt: product.lastSeenAt,
-			passage: text,
-			source: "catalog",
-			url,
-		})
-	);
+	// The lot's facts (feed columns, page facts filling gaps) lead as one
+	// labelled passage; description sentences follow.
+	const facts = factPassage(mergedFacts(product));
+	const passage = (product.description ?? "").slice(0, 2500);
+	const evidence: Candidate["evidence"] = [
+		...(facts === null ? [] : [facts]),
+		...catalogPassages(passage),
+	].map((text, index) => ({
+		id: `${product._id}:catalog:${index}`,
+		observedAt: product.lastSeenAt,
+		passage: text,
+		source: "catalog",
+		url,
+	}));
 	if (
 		cached &&
 		cached.url === url &&
@@ -167,6 +160,7 @@ const makeCandidate = async (
 		confirmedAt: product.lastSeenAt,
 		currency: "USD",
 		evidence,
+		factsKnown: !needsPageFacts(product, now),
 		grams: variant.grams,
 		market: "US",
 		name: product.name,
@@ -188,10 +182,7 @@ interface RoasterQueue {
 const productHaystack = (product: Doc<"products">): string =>
 	[
 		product.name,
-		product.origin,
-		product.process,
-		product.roastLevel,
-		product.roasterNotes,
+		factPassage(mergedFacts(product)),
 		product.description,
 		...(product.tags ?? []),
 	]

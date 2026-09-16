@@ -48,6 +48,9 @@ export const candidateValidator = v.object({
 	confirmedAt: v.number(),
 	currency: v.literal("USD"),
 	evidence: v.array(evidenceValidator),
+	// The lot's facts are settled (feed or pageFacts, ADR-0005), so the run
+	// does not spend a page read on it. Absent on runs from before the field.
+	factsKnown: v.optional(v.boolean()),
 	grams: v.number(),
 	market: v.literal("US"),
 	name: v.string(),
@@ -645,9 +648,6 @@ export const enrichmentSchema = {
 	type: "object",
 } as const;
 
-const MAX_FACT_LENGTH = 120;
-const MAX_NOTE_LENGTH = 60;
-const MAX_NOTES = 8;
 const MAX_SENTENCES = 10;
 
 // Tolerant readers: a field of the wrong shape is ignored, not fatal.
@@ -661,6 +661,13 @@ const listField = (value: unknown, maxLength: number, max: number): string[] =>
 				.slice(0, max)
 		: [];
 
+/**
+ * Description sentences the page extraction selected, each verbatim on the
+ * page, new relative to the feed, and free of shop noise. The page's facts
+ * (process, variety, notes...) do not pass through here any more: they go
+ * through extraction.verifyPageFacts into `products.pageFacts` (ADR-0005)
+ * and reach the candidate as its fact passage.
+ */
 const extractedPassages = (
 	json: unknown,
 	markdown: string,
@@ -672,7 +679,6 @@ const extractedPassages = (
 	const fields = json as Record<string, unknown>;
 	const onPage = normalizeProse(markdown);
 	const inCatalog = normalizeProse(known);
-	// Verbatim on the page, new relative to the feed, and free of shop noise.
 	const verified = (value: string): string | null => {
 		const text = stripMarkdown(value);
 		const normalized = normalizeProse(text);
@@ -687,29 +693,7 @@ const extractedPassages = (
 		}
 		return text;
 	};
-	const facts: string[] = [];
-	for (const [key, label] of FACT_LABELS) {
-		const value = textField(fields[key], MAX_FACT_LENGTH);
-		const text = value === null ? null : verified(value);
-		if (text) {
-			facts.push(`${label}: ${text}.`);
-		}
-	}
-	const notes = listField(fields.tastingNotes, MAX_NOTE_LENGTH, MAX_NOTES)
-		.map((note) => verified(note))
-		.filter((note) => note !== null);
-	if (notes.length > 0) {
-		facts.push(`Tasting notes: ${notes.join(", ")}.`);
-	}
 	const passages: string[] = [];
-	// One roast label alone says little; require notes or two facts.
-	const factLine = facts.join(" ");
-	if (
-		(notes.length > 0 || facts.length >= 2) &&
-		factLine.length <= MAX_PASSAGE_LENGTH
-	) {
-		passages.push(factLine);
-	}
 	for (const sentence of listField(fields.sentences, 1000, MAX_SENTENCES)) {
 		const text = verified(sentence);
 		if (text && readablePassage(text, 30) && !isFirstPerson(text)) {
@@ -720,9 +704,8 @@ const extractedPassages = (
 };
 
 /**
- * Structured page evidence. Facts are verified on the page and absent from the
- * catalog text, then joined under fixed labels into one passage; description
- * sentences follow. Falls back to the regex path when extraction yields nothing.
+ * Structured page evidence: the description sentences the extraction picked,
+ * verified. Falls back to the regex path when extraction yields nothing.
  */
 export const pagePassages = (
 	page: { json?: unknown; markdown?: string },

@@ -14,6 +14,7 @@ import {
 	SHOPIFY_FETCH_HEADERS,
 	shopifyProductsUrl,
 	stripHtml,
+	verifyPageFacts,
 	walkFeedPages,
 } from "./extraction";
 
@@ -144,7 +145,7 @@ describe("parseProductsJson", () => {
 			{
 				externalId: "1",
 				handle: "lot-1",
-				lotCopy: {},
+				lotCopy: { productType: "Coffee" },
 				name: "Lot 1",
 				variants: [
 					{ available: true, grams: 340, name: "12oz", priceCents: 1950 },
@@ -959,7 +960,13 @@ describe("parseLotAttributes", () => {
 				tags: ["culture", "Single Origin"],
 				title: "Ethiopia Halo",
 			})
-		).toEqual({ origin: "Ethiopia", process: "Fully washed" });
+		).toEqual({
+			elevation: "1900-2200m",
+			origin: "Ethiopia",
+			process: "Fully washed",
+			region: "Gedeb",
+			variety: "Heirloom",
+		});
 		// La Colombe: a spaced colon, Sumatra read as Indonesia, every origin kept.
 		expect(
 			parseLotAttributes({
@@ -970,6 +977,7 @@ describe("parseLotAttributes", () => {
 			})
 		).toEqual({
 			origin: "Indonesia, Brazil, Colombia",
+			region: "Cerrado Minas",
 			roastLevel: "Medium",
 		});
 		expect(
@@ -996,7 +1004,12 @@ describe("parseLotAttributes", () => {
 				tags: [],
 				title: "Iyenga",
 			})
-		).toEqual({ origin: "Tanzania", process: "Washed" });
+		).toEqual({
+			elevation: "1,900 masl",
+			origin: "Tanzania",
+			process: "Washed",
+			variety: "Bourbon",
+		});
 	});
 
 	test("reads the vendor for origin last", () => {
@@ -1286,7 +1299,8 @@ describe("parseProductsJson lot copy (§14.4)", () => {
 				imageUrl: "https://cdn.example.com/lot.png?v=1",
 				origin: "Colombia",
 				process: "Washed",
-				roasterNotes: "peach, melon, and red tea",
+				productType: "Coffee",
+				roasterNotes: ["peach", "melon", "red tea"],
 				tags: ["Coffee", "From: Colombia", "Process: Washed"],
 			},
 			name: "La Casita",
@@ -1305,11 +1319,11 @@ describe("parseProductsJson lot copy (§14.4)", () => {
 		expect(page.products[0]).toStrictEqual({
 			externalId: "2",
 			handle: "lot-2",
-			lotCopy: {},
+			lotCopy: { productType: "Coffee" },
 			name: "Lot 2",
 			variants: expect.anything(),
 		});
-		expect(page.products[1]?.lotCopy).toStrictEqual({});
+		expect(page.products[1]?.lotCopy).toStrictEqual({ productType: "Coffee" });
 	});
 
 	test("reads the first image and comma-string tags", () => {
@@ -1683,5 +1697,90 @@ describe("parseHtmlPage", () => {
 			name: "Default",
 			priceCents: 0,
 		});
+	});
+});
+
+describe("verifyPageFacts (ADR-0005)", () => {
+	// Merit "Ojo de Agua" and Sey "Huila Decaffeinated" as the determinism
+	// runs returned them (audit §4), on a page that says what they say.
+	const markdown = [
+		"# Ojo de Agua",
+		"Process: Washed",
+		"Cultivar: Caturra, Colombia",
+		"Altitude: 1500-1730masl",
+		"Region: Huila",
+		"Producer: Finca Ojo de Agua",
+		"Recommended use: Espresso",
+		"Roast: Ultra Light",
+		"Prunes • Fig Danish • Nutmeg",
+		"Hand-picked at peak ripeness. Floated to remove defects, then fully washed and dried on raised beds over three weeks.",
+	].join("\n\n");
+
+	test("a value must be on the page letter for letter and pass its field's shape", () => {
+		expect(
+			verifyPageFacts(
+				{
+					elevation: "1500-1730masl",
+					process: "Washed",
+					producer: "Finca Ojo de Agua",
+					region: "Huila",
+					roastLevel: "Espresso",
+					tastingNotes: ["Prunes", "Fig Danish", "Nutmeg", "Bergamot"],
+					variety: "Caturra, Colombia",
+				},
+				markdown
+			)
+		).toEqual({
+			elevation: "1500-1730masl",
+			process: "Washed",
+			producer: "Finca Ojo de Agua",
+			region: "Huila",
+			tastingNotes: ["Prunes", "Fig Danish", "Nutmeg"],
+			variety: "Caturra, Colombia",
+		});
+	});
+
+	test("wrong-field values on the page still fail: Espresso is not a roast, Ultra Light is not a level", () => {
+		expect(verifyPageFacts({ roastLevel: "Espresso" }, markdown)).toEqual({});
+		expect(verifyPageFacts({ roastLevel: "Ultra Light" }, markdown)).toEqual(
+			{}
+		);
+		expect(verifyPageFacts({ roastLevel: "Light" }, "Roast: Light")).toEqual({
+			roastLevel: "Light",
+		});
+	});
+
+	test("a paragraph under process yields only the process terms it names", () => {
+		expect(
+			verifyPageFacts(
+				{
+					process:
+						"Hand-picked at peak ripeness. Floated to remove defects, then fully washed and dried on raised beds over three weeks.",
+				},
+				markdown
+			)
+		).toEqual({ process: "fully washed" });
+	});
+
+	test("placeholders, paraphrases and a country under region are dropped", () => {
+		expect(
+			verifyPageFacts(
+				{
+					elevation: "Not specified",
+					producer: "the Ojo de Agua farm",
+					region: "Colombia",
+					variety: "Caturra",
+				},
+				markdown
+			)
+		).toEqual({ variety: "Caturra" });
+		expect(verifyPageFacts(null, markdown)).toEqual({});
+		expect(verifyPageFacts("Washed", markdown)).toEqual({});
+	});
+
+	test("a note's lead-in is stripped before the page check", () => {
+		expect(
+			verifyPageFacts({ tastingNotes: ["Notes of Cherry"] }, "Notes of Cherry")
+		).toEqual({ tastingNotes: ["Cherry"] });
 	});
 });

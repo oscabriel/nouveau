@@ -1,15 +1,13 @@
-import { FirecrawlClient } from "@firecrawl/firecrawl-convex";
 import { v } from "convex/values";
 import { z } from "zod";
 
-import { components, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { env, internalAction } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
+import { readPageFacts } from "./pageFacts";
 import type { Candidate } from "./recommendationRules";
 import {
-	ENRICHMENT_PROMPT,
-	enrichmentSchema,
 	MAX_ENRICHMENTS,
 	OPENAI_MAX_OUTPUT_TOKENS,
 	OPENAI_MODEL,
@@ -21,7 +19,6 @@ import {
 	validateSelections,
 } from "./recommendationRules";
 
-const firecrawl = new FirecrawlClient(components.firecrawl);
 const responseSchema = z.object({
 	model: z.string().min(1).max(100),
 	output: z.array(
@@ -67,9 +64,12 @@ const enrich = async (
 	// Enrich the coffees the request is most likely to land on, so a page
 	// fetch can change what the user sees; among equals, the thinnest first.
 	const tokens = preferenceTokens(run.input.preferences);
+	// A lot whose facts are settled (feed or pageFacts, ADR-0005) does not
+	// spend a page read; the fact passage already sits in its evidence.
 	const scored = run.candidates
 		.filter(
 			(candidate) =>
+				candidate.factsKnown !== true &&
 				!candidate.evidence.some((item) => item.source === "firecrawl")
 		)
 		.map((candidate) => ({
@@ -105,29 +105,16 @@ const enrich = async (
 		try {
 			// Only a server-resolved catalog URL is fetched. User notes never reach
 			// Firecrawl. Its extraction picks values off this page; every value is
-			// verified against the page text before it can become evidence.
+			// verified against the page text before it can become evidence, and
+			// the verified facts land on the product too (ADR-0005), so the lot
+			// page shows them and the next run skips the read.
 			// oxlint-disable-next-line no-await-in-loop -- bound concurrent scrapes
-			const page = await firecrawl.scrape(ctx, candidate.url, {
-				formats: [
-					"markdown",
-					{
-						prompt: ENRICHMENT_PROMPT,
-						schema: enrichmentSchema,
-						type: "json",
-					},
-				],
-				headers: { cookie: "localization=US" },
-				maxAge: 0,
-				onlyMainContent: true,
-				timeout: 30_000,
+			const page = await readPageFacts(ctx, candidate.url);
+			// oxlint-disable-next-line no-await-in-loop -- one settled fact set per lot
+			await ctx.runMutation(internal.pageFacts.store, {
+				facts: page.facts,
+				productId: candidate.productId,
 			});
-			const { metadata } = page;
-			if (
-				metadata?.statusCode !== 200 ||
-				metadata.sourceURL !== candidate.url
-			) {
-				throw new Error("Source page unavailable");
-			}
 			const passages = pagePassages(page, reserved.known);
 			// oxlint-disable-next-line no-await-in-loop -- commit each bounded public source result
 			await ctx.runMutation(internal.recommendations.storeEnrichment, {

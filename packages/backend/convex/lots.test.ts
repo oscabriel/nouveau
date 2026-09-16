@@ -87,12 +87,19 @@ describe("lots.get", () => {
 			logsTruncated: false,
 			lot: {
 				description: "A washed lot from Urrao.",
+				facts: {
+					notes: ["peach", "melon", "red tea"],
+					origin: "Colombia",
+					process: "Washed",
+					variety: null,
+				},
 				handle: "mullugeta",
 				name: "Ethiopia Mullugeta Muntasha",
-				origin: "Colombia",
-				process: "Washed",
-				roasterNotes: "peach, melon, and red tea",
+				pageFactsAt: null,
+				pageFactsKnown: false,
 				status: "current",
+				// Variety is still missing, so the lot page will ask the page.
+				thin: true,
 				url: "https://sey.example.com/products/mullugeta",
 			},
 			roaster: { name: "Sey", slug: "sey" },

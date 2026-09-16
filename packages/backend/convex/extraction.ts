@@ -4,6 +4,17 @@
 
 import { v } from "convex/values";
 
+import type { PageFacts } from "./lotFacts";
+import {
+	normalizeText,
+	splitNotes,
+	verifyElevation,
+	verifyNotes,
+	verifyProducer,
+	verifyRegion,
+	verifyVariety,
+} from "./lotFacts";
+
 export const extractedVariant = v.object({
 	available: v.boolean(),
 	grams: v.optional(v.number()),
@@ -18,12 +29,17 @@ export const extractedVariant = v.object({
 // ExtractedProduct.lotCopy).
 export const lotCopyValidator = v.object({
 	description: v.optional(v.string()),
+	elevation: v.optional(v.string()),
 	imageUrl: v.optional(v.string()),
 	origin: v.optional(v.string()),
 	process: v.optional(v.string()),
+	producer: v.optional(v.string()),
+	productType: v.optional(v.string()),
+	region: v.optional(v.string()),
 	roastLevel: v.optional(v.string()),
-	roasterNotes: v.optional(v.string()),
+	roasterNotes: v.optional(v.array(v.string())),
 	tags: v.optional(v.array(v.string())),
+	variety: v.optional(v.string()),
 });
 
 export const extractedProduct = v.object({
@@ -43,12 +59,17 @@ export interface ExtractedVariant {
 
 export interface LotCopy {
 	description?: string;
+	elevation?: string;
 	imageUrl?: string;
 	origin?: string;
 	process?: string;
+	producer?: string;
+	productType?: string;
+	region?: string;
 	roastLevel?: string;
-	roasterNotes?: string;
+	roasterNotes?: string[];
 	tags?: string[];
+	variety?: string;
 }
 
 export interface ExtractedProduct {
@@ -73,6 +94,8 @@ export const DESCRIPTION_MAX_LENGTH = 2000;
 export const ROASTER_NOTES_MAX_LENGTH = 200;
 /** Store cap for the tag list (tags are marketing noise as often as not). */
 export const MAX_TAGS = 32;
+/** Store cap for the raw Shopify product_type. */
+const PRODUCT_TYPE_MAX_LENGTH = 60;
 
 const NAMED_ENTITIES: Record<string, string> = {
 	"&amp;": "&",
@@ -166,6 +189,10 @@ const splitTag = (tag: string): TagParts => {
 };
 
 const ORIGIN_TAG = /^(?:origin|from|country)$/iu;
+const VARIETY_TAG = /^(?:variet(?:y|al|ies|als)|cultivar)$/iu;
+const REGION_TAG = /^region$/iu;
+const ELEVATION_TAG = /^(?:elevation|altitude)$/iu;
+const PRODUCER_TAG = /^(?:producer|farm|farmer)$/iu;
 /**
  * A place name: letters and light punctuation, a few words at most.
  * `From:` is the loosest origin key (Proud Mary), so the value has to look
@@ -379,17 +406,30 @@ const BODY_LINE = /^(?<key>[\p{L}][\p{L} /]{0,24}?)\s*:\s*(?<value>.+)$/u;
 const BODY_ORIGIN_KEY = /^(?:origins?|countr(?:y|ies))$/iu;
 const BODY_PROCESS_KEY = /^process(?:ing)?(?:\s+method)?$/iu;
 const BODY_ROAST_KEY = /^roast(?:\s+level)?$/iu;
+const BODY_VARIETY_KEY = /^(?:variet(?:y|al|ies|als)|cultivar)$/iu;
+/** Heart writes `Location: Gedeb`; the value is the region. */
+const BODY_REGION_KEY = /^(?:region|location)$/iu;
+const BODY_ELEVATION_KEY = /^(?:elevation|altitude)$/iu;
+const BODY_PRODUCER_KEY = /^(?:producer|farm|farmer)$/iu;
 /** East Pole's table: an all-caps header line, the value on the next line. */
 const TABLE_ORIGIN_HEADER = /^(?:ORIGIN|COUNTRY)$/u;
 const TABLE_PROCESS_HEADER = /^PROCESS$/u;
 const TABLE_ROAST_HEADER = /^ROAST(?: LEVEL)?$/u;
+const TABLE_VARIETY_HEADER = /^(?:VARIETY|VARIETAL|CULTIVAR)$/u;
+const TABLE_REGION_HEADER = /^(?:REGION|LOCATION)$/u;
+const TABLE_ELEVATION_HEADER = /^(?:ELEVATION|ALTITUDE)$/u;
+const TABLE_PRODUCER_HEADER = /^(?:PRODUCER|FARM)$/u;
 /** Body lines past this are prose; the sheet sits at the top. */
 const MAX_BODY_LINES = 80;
 
 export interface LotAttributes {
+	elevation?: string;
 	origin?: string;
 	process?: string;
+	producer?: string;
+	region?: string;
 	roastLevel?: string;
+	variety?: string;
 }
 
 export interface LotAttributeSource {
@@ -451,49 +491,141 @@ const resolve = (tiers: Tiers, multi: boolean): string | undefined => {
 	return undefined;
 };
 
-const readTags = (
-	tags: string[],
-	origin: Tiers,
-	process: Tiers,
-	roast: Tiers
+/** Every fact field the feed path reads, each with its own tiers. */
+type FactField =
+	| "elevation"
+	| "origin"
+	| "process"
+	| "producer"
+	| "region"
+	| "roast"
+	| "variety";
+type Fields = Record<FactField, Tiers>;
+
+const emptyFields = (): Fields => ({
+	elevation: emptyTiers(),
+	origin: emptyTiers(),
+	process: emptyTiers(),
+	producer: emptyTiers(),
+	region: emptyTiers(),
+	roast: emptyTiers(),
+	variety: emptyTiers(),
+});
+
+const single = (verified: string | null): string[] =>
+	verified === null ? [] : [verified];
+
+/** A keyed value (`Key: Value` tag or body line) into the tier it belongs to. */
+const readKeyed = (
+	fields: Fields,
+	tier: "keyed" | "body",
+	key: string,
+	value: string
 ): void => {
+	if (tier === "keyed" ? ORIGIN_TAG.test(key) : BODY_ORIGIN_KEY.test(key)) {
+		// A keyed tag carries the roaster's own value; a body line is prose
+		// and passes the country list.
+		if (tier === "body") {
+			push(fields.origin.body, findCountries(value));
+		} else if (looksLikeOrigin(value)) {
+			push(fields.origin.keyed, [value]);
+		}
+	} else if (
+		tier === "keyed" ? PROCESS_TAG.test(key) : BODY_PROCESS_KEY.test(key)
+	) {
+		// The roaster's own vocabulary ("Culture-Innoculated Washed") stands in
+		// a tag; body prose passes the term list.
+		push(
+			fields.process[tier],
+			tier === "keyed" ? [value] : findProcesses(value)
+		);
+	} else if (
+		tier === "keyed" ? ROAST_TAG.test(key) : BODY_ROAST_KEY.test(key)
+	) {
+		push(fields.roast[tier], roastFromValue(value));
+	} else if (
+		tier === "keyed" ? VARIETY_TAG.test(key) : BODY_VARIETY_KEY.test(key)
+	) {
+		push(fields.variety[tier], single(verifyVariety(value)));
+	} else if (
+		tier === "keyed" ? REGION_TAG.test(key) : BODY_REGION_KEY.test(key)
+	) {
+		push(fields.region[tier], single(verifyRegion(value)));
+	} else if (
+		tier === "keyed" ? ELEVATION_TAG.test(key) : BODY_ELEVATION_KEY.test(key)
+	) {
+		push(fields.elevation[tier], single(verifyElevation(value)));
+	} else if (
+		tier === "keyed" ? PRODUCER_TAG.test(key) : BODY_PRODUCER_KEY.test(key)
+	) {
+		push(fields.producer[tier], single(verifyProducer(value)));
+	}
+};
+
+const readTags = (tags: string[], fields: Fields): void => {
 	for (const tag of tags) {
 		const slug = SLUG_TAG.exec(tag)?.groups;
 		if (slug?.key !== undefined && slug.value !== undefined) {
 			if (SLUG_ORIGIN_KEY.test(slug.key)) {
-				push(origin.slug, findCountries(slug.value));
+				push(fields.origin.slug, findCountries(slug.value));
 			} else if (SLUG_PROCESS_KEY.test(slug.key)) {
-				push(process.slug, findProcesses(unslug(slug.value)));
+				push(fields.process.slug, findProcesses(unslug(slug.value)));
 			} else if (SLUG_ROAST_KEY.test(slug.key)) {
 				const level = roastFromSlug(slug.value);
-				push(roast.slug, level === undefined ? [] : [level]);
+				push(fields.roast.slug, level === undefined ? [] : [level]);
 			}
 			continue;
 		}
 		const { key, value } = splitTag(tag);
 		if (value === "") {
-			push(origin.bare, findCountries(key));
+			push(fields.origin.bare, findCountries(key));
 			if (BARE_PROCESS_TAG.test(key)) {
-				push(process.bare, findProcesses(key));
+				push(fields.process.bare, findProcesses(key));
 			}
-			push(roast.bare, roastFromValue(key));
-		} else if (ORIGIN_TAG.test(key) && looksLikeOrigin(value)) {
-			push(origin.keyed, [value]);
-		} else if (PROCESS_TAG.test(key)) {
-			// The roaster's own vocabulary ("Culture-Innoculated Washed") stands.
-			push(process.keyed, [value]);
-		} else if (ROAST_TAG.test(key)) {
-			push(roast.keyed, roastFromValue(value));
+			push(fields.roast.bare, roastFromValue(key));
+		} else {
+			readKeyed(fields, "keyed", key, value);
 		}
 	}
 };
 
-const readBody = (
-	blockText: string,
-	origin: Tiers,
-	process: Tiers,
-	roast: Tiers
-): void => {
+/** A line that is itself a table header, never a value: `AMOUNT`, `ROAST LEVEL`. */
+const TABLE_HEADER_LINE = /^[A-Z][A-Z ]{1,24}$/u;
+
+/**
+ * An all-caps table header line (East Pole) into its field, value on the
+ * next line. Two headers in a row (`PRODUCER` / `AMOUNT`, a two-column
+ * layout) yield nothing: the next line is not this header's value.
+ */
+const readTableRow = (
+	fields: Fields,
+	header: string,
+	next: string
+): boolean => {
+	if (TABLE_HEADER_LINE.test(next)) {
+		return TABLE_HEADER_LINE.test(header);
+	}
+	if (TABLE_ORIGIN_HEADER.test(header)) {
+		push(fields.origin.body, findCountries(next));
+	} else if (TABLE_PROCESS_HEADER.test(header)) {
+		push(fields.process.body, findProcesses(next));
+	} else if (TABLE_ROAST_HEADER.test(header)) {
+		push(fields.roast.body, roastFromValue(next));
+	} else if (TABLE_VARIETY_HEADER.test(header)) {
+		push(fields.variety.body, single(verifyVariety(next)));
+	} else if (TABLE_REGION_HEADER.test(header)) {
+		push(fields.region.body, single(verifyRegion(next)));
+	} else if (TABLE_ELEVATION_HEADER.test(header)) {
+		push(fields.elevation.body, single(verifyElevation(next)));
+	} else if (TABLE_PRODUCER_HEADER.test(header)) {
+		push(fields.producer.body, single(verifyProducer(next)));
+	} else {
+		return false;
+	}
+	return true;
+};
+
+const readBody = (blockText: string, fields: Fields): void => {
 	const lines = blockText
 		.split("\n")
 		.map((line) => line.trim())
@@ -503,71 +635,62 @@ const readBody = (
 		const next = lines[index + 1] ?? "";
 		const labelled = BODY_LINE.exec(line)?.groups;
 		if (labelled?.key !== undefined && labelled.value !== undefined) {
-			const { key, value } = labelled;
-			if (BODY_ORIGIN_KEY.test(key)) {
-				push(origin.body, findCountries(value));
-			} else if (BODY_PROCESS_KEY.test(key)) {
-				push(process.body, findProcesses(value));
-			} else if (BODY_ROAST_KEY.test(key)) {
-				push(roast.body, roastFromValue(value));
-			}
-		} else if (TABLE_ORIGIN_HEADER.test(line)) {
-			push(origin.body, findCountries(next));
-		} else if (TABLE_PROCESS_HEADER.test(line)) {
-			push(process.body, findProcesses(next));
-		} else if (TABLE_ROAST_HEADER.test(line)) {
-			push(roast.body, roastFromValue(next));
-		} else {
+			readKeyed(fields, "body", labelled.key, labelled.value);
+		} else if (!readTableRow(fields, line, next)) {
 			// Ruby: "Light Roast" stands alone on its own line.
-			push(roast.body, roastFromValue(line));
+			push(fields.roast.body, roastFromValue(line));
 		}
 	}
 };
 
 /**
  * Origin, process and roast level from everything the feed says about a lot
- * (#30). Per field, the first tier with a value wins: a `Key: Value` tag
- * (Proud Mary `From: Ethiopia`, Intelligentsia `Country: Guatemala`, Verve
- * `Roast: Light`, Onyx `origin:Ethiopia`), a `key__value` tag (Counter
- * Culture `origin__colombia`), a bare tag (Ruby `Washed`, Blossom `Mexico`),
- * the title ("Kenya Karumandi", "Kerehaklu - Washed Process"), a body label
- * line or all-caps table (Heart `Process: Fully washed`, East Pole `PROCESS`
- * / `Washed`), then the vendor for origin only (Regalia "Huila, Colombia").
+ * (#30), plus variety, region, elevation and producer where the roaster
+ * labels them (ADR-0005). Per field, the first tier with a value wins: a
+ * `Key: Value` tag (Proud Mary `From: Ethiopia`, Intelligentsia `Country:
+ * Guatemala`, Verve `Roast: Light`, Onyx `origin:Ethiopia`), a `key__value`
+ * tag (Counter Culture `origin__colombia`), a bare tag (Ruby `Washed`,
+ * Blossom `Mexico`), the title ("Kenya Karumandi", "Kerehaklu - Washed
+ * Process"), a body label line or all-caps table (Heart `Process: Fully
+ * washed`, `Location: Gedeb`, `Varietals: Heirloom`; East Pole `PROCESS` /
+ * `Washed`, `ALTITUDE` / `1900m`), then the vendor for origin only (Regalia
+ * "Huila, Colombia").
  *
- * Keyed tags carry the roaster's own value. Free text passes a shape check
- * first: a country from COUNTRIES, a term from PROCESS_TERM, or the anchored
- * ROAST_VALUE, so Intelligentsia's "Roast Level: Bright" (taste, not roast)
- * and Merit's "recommended use: Espresso" land nowhere. Origin and process
- * keep every distinct value in the winning tier, joined with a comma
- * (Proud Mary "Humbler Blend": `Brazil, Honduras`).
+ * Keyed origin and process tags carry the roaster's own value. Everything
+ * else passes a shape check first: a country from COUNTRIES, a term from
+ * PROCESS_TERM, the anchored ROAST_VALUE, or the lotFacts shapes for the
+ * rest, so Intelligentsia's "Roast Level: Bright" (taste, not roast) and
+ * Merit's "recommended use: Espresso" land nowhere. Origin and process keep
+ * every distinct value in the winning tier, joined with a comma (Proud Mary
+ * "Humbler Blend": `Brazil, Honduras`).
  */
 export const parseLotAttributes = (
 	source: LotAttributeSource
 ): LotAttributes => {
-	const origin = emptyTiers();
-	const process = emptyTiers();
-	const roast = emptyTiers();
-	readTags(source.tags, origin, process, roast);
+	const fields = emptyFields();
+	readTags(source.tags, fields);
 	const title = source.title ?? "";
-	push(origin.title, titleCountry(title));
-	push(process.title, findProcesses(title));
+	push(fields.origin.title, titleCountry(title));
+	push(fields.process.title, findProcesses(title));
 	const titleRoast = ROAST_IN_TITLE.exec(title)?.[0];
-	push(roast.title, titleRoast === undefined ? [] : [titleRoast]);
-	readBody(source.blockText ?? "", origin, process, roast);
-	push(origin.vendor, findCountries(source.vendor ?? ""));
+	push(fields.roast.title, titleRoast === undefined ? [] : [titleRoast]);
+	readBody(source.blockText ?? "", fields);
+	push(fields.origin.vendor, findCountries(source.vendor ?? ""));
 
 	const attributes: LotAttributes = {};
-	const originValue = resolve(origin, true);
-	const processValue = resolve(process, true);
-	const roastValue = resolve(roast, false);
-	if (originValue !== undefined) {
-		attributes.origin = originValue;
-	}
-	if (processValue !== undefined) {
-		attributes.process = processValue;
-	}
-	if (roastValue !== undefined) {
-		attributes.roastLevel = roastValue;
+	const resolved: [keyof LotAttributes, string | undefined][] = [
+		["origin", resolve(fields.origin, true)],
+		["process", resolve(fields.process, true)],
+		["roastLevel", resolve(fields.roast, false)],
+		["variety", resolve(fields.variety, false)],
+		["region", resolve(fields.region, false)],
+		["elevation", resolve(fields.elevation, false)],
+		["producer", resolve(fields.producer, false)],
+	];
+	for (const [key, value] of resolved) {
+		if (value !== undefined) {
+			attributes[key] = value;
+		}
 	}
 	return attributes;
 };
@@ -1298,9 +1421,102 @@ const parseLotCopy = (raw: ShopifyProduct): LotCopy => {
 		copy.tags = tags.slice(0, MAX_TAGS);
 	}
 	if (roasterNotes !== null) {
-		copy.roasterNotes = roasterNotes;
+		const notes = splitNotes(roasterNotes);
+		if (notes.length > 0) {
+			copy.roasterNotes = notes;
+		}
+	}
+	const productType =
+		typeof raw.product_type === "string" ? raw.product_type.trim() : "";
+	if (productType !== "") {
+		copy.productType = productType.slice(0, PRODUCT_TYPE_MAX_LENGTH);
 	}
 	return copy;
+};
+
+/** Page extraction values longer than this are prose, not a fact. */
+const MAX_PAGE_FACT_LENGTH = 120;
+/** Only this much of the page markdown backs the verbatim check. */
+const PAGE_TEXT_LIMIT = 30_000;
+
+/**
+ * Facts Firecrawl's json extraction returned for one product page, verified
+ * two ways before any can be stored (ADR-0005): letter for letter on the
+ * page (the extractor selects values, it does not get to write them), and
+ * through the same per-field shape the feed path applies. So "Not specified"
+ * fails the first check, Merit's `roastLevel: "Espresso"` (the page's
+ * recommended use) and "Ultra Light" fail the second, and Sey's paragraph
+ * under `process` yields only the process terms it names. An empty object
+ * means the page said nothing usable.
+ */
+export const verifyPageFacts = (json: unknown, markdown: string): PageFacts => {
+	if (typeof json !== "object" || json === null) {
+		return {};
+	}
+	const fields = json as Record<string, unknown>;
+	const onPage = normalizeText(markdown.slice(0, PAGE_TEXT_LIMIT));
+	const verbatim = (value: unknown): string | null => {
+		if (typeof value !== "string") {
+			return null;
+		}
+		const text = value.trim();
+		const normalized = normalizeText(text);
+		if (
+			text.length > MAX_PAGE_FACT_LENGTH ||
+			normalized === "" ||
+			!onPage.includes(normalized)
+		) {
+			return null;
+		}
+		return text;
+	};
+	const facts: PageFacts = {};
+	const process = verbatim(fields.process);
+	const processTerms = process === null ? [] : findProcesses(process);
+	if (processTerms.length > 0) {
+		facts.process = processTerms.join(", ");
+	}
+	const roast = verbatim(fields.roastLevel);
+	const [roastLevel] = roast === null ? [] : roastFromValue(roast);
+	if (roastLevel !== undefined) {
+		facts.roastLevel = roastLevel;
+	}
+	const variety = verbatim(fields.variety);
+	const verifiedVariety = variety === null ? null : verifyVariety(variety);
+	if (verifiedVariety !== null) {
+		facts.variety = verifiedVariety;
+	}
+	const region = verbatim(fields.region);
+	const verifiedRegion = region === null ? null : verifyRegion(region);
+	// A country is an origin, not a region (Onyx returns "Kenya" here).
+	if (
+		verifiedRegion !== null &&
+		!CANONICAL_COUNTRY.has(verifiedRegion.toLowerCase())
+	) {
+		facts.region = verifiedRegion;
+	}
+	const elevation = verbatim(fields.elevation);
+	const verifiedElevation =
+		elevation === null ? null : verifyElevation(elevation);
+	if (verifiedElevation !== null) {
+		facts.elevation = verifiedElevation;
+	}
+	const producer = verbatim(fields.producer);
+	const verifiedProducer = producer === null ? null : verifyProducer(producer);
+	if (verifiedProducer !== null) {
+		facts.producer = verifiedProducer;
+	}
+	const notes = Array.isArray(fields.tastingNotes)
+		? verifyNotes(
+				fields.tastingNotes.filter(
+					(note): note is string => typeof note === "string"
+				)
+			).filter((note) => onPage.includes(normalizeText(note)))
+		: [];
+	if (notes.length > 0) {
+		facts.tastingNotes = notes;
+	}
+	return facts;
 };
 
 /**
