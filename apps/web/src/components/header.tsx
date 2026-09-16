@@ -23,13 +23,14 @@ const SignInButton = () => {
 	return (
 		<div className="flex items-center gap-2">
 			<button
-				className="bg-primary text-primary-foreground rounded-md px-3 py-1.5 text-sm"
+				className="bg-primary text-primary-foreground inline-flex min-h-10 items-center rounded-md px-3 text-sm font-medium transition-opacity hover:opacity-90 sm:px-3.5"
 				onClick={() => {
 					startSignIn();
 				}}
 				type="button"
 			>
-				Sign in with Google
+				<span className="sm:hidden">Sign in</span>
+				<span className="hidden sm:inline">Sign in with Google</span>
 			</button>
 			{flowError !== null && (
 				<span className="text-destructive text-sm" role="alert">
@@ -97,7 +98,6 @@ const Header = () => {
 	const { isAuthenticated } = useConvexAuth();
 	const links = isAuthenticated
 		? [
-				{ label: "Home", to: "/" },
 				{ label: "Live feed", to: "/feed" },
 				{ label: "Activity", to: "/activity" },
 				{ label: "Roasters", to: "/roasters" },
@@ -105,17 +105,23 @@ const Header = () => {
 				{ label: "Saved", to: "/saved" },
 			]
 		: [
-				{ label: "Home", to: "/" },
 				{ label: "Roasters", to: "/roasters" },
 				{ label: "Activity", to: "/activity" },
 			];
 
 	return (
 		<div>
-			<div className="flex flex-row items-center justify-between px-2 py-1">
-				<nav className="flex gap-4 text-lg">
+			<div className="mx-auto flex w-full max-w-6xl flex-row items-center justify-between px-4 py-2.5 md:px-6">
+				<nav className="flex items-center gap-4 text-base md:gap-5">
+					<Link className="font-semibold tracking-tight" to="/">
+						Nouveau
+					</Link>
 					{links.map(({ to, label }) => (
-						<Link key={to} to={to}>
+						<Link
+							className="text-muted-foreground hover:text-foreground text-sm hover:underline"
+							key={to}
+							to={to}
+						>
 							{label}
 						</Link>
 					))}

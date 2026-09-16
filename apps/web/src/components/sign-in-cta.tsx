@@ -16,9 +16,9 @@ export const SignInCta = () => {
 		}
 	};
 	return (
-		<div className="flex items-center gap-3">
+		<div className="flex flex-wrap items-center gap-3">
 			<button
-				className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90"
+				className="bg-primary text-primary-foreground inline-flex min-h-11 items-center rounded-md px-5 text-sm font-medium transition-opacity hover:opacity-90"
 				onClick={startSignIn}
 				type="button"
 			>
