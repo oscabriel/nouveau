@@ -7,7 +7,9 @@ import type { Doc, Id } from "./_generated/dataModel";
 import {
 	COMMIT_BATCH_PRODUCTS,
 	PRUNE_BATCH,
+	RAW_CAPTURE_SUCCESS_INTERVAL_MS,
 	rawCaptureRetentionMs,
+	shouldStoreRawCapture,
 	stalenessThresholdMs,
 } from "./constants";
 import type { ExtractedProduct } from "./extraction";
@@ -1177,6 +1179,91 @@ describe("tick", () => {
 			args: [{ crawlSourceId: fx.crawlSourceId }],
 			name: "crawler:crawlSource",
 		});
+	});
+
+	test("claims a 15-minute source four times an hour on the 5-minute tick (#33)", async () => {
+		const start = Date.now();
+		const fx = await setup({ cadenceMinutes: 15, nextCrawlDueAt: start });
+		// Twelve ticks, one per 5 minutes, over the hour [start, start + 55m].
+		for (let minute = 0; minute < 60; minute += 5) {
+			vi.setSystemTime(start + minute * 60_000);
+			// eslint-disable-next-line no-await-in-loop
+			await fx.t.mutation(internal.crawlSources.tick, {});
+		}
+		const scheduled = await fx.t.run((ctx) =>
+			ctx.db.system.query("_scheduled_functions").collect()
+		);
+		expect(scheduled).toHaveLength(4);
+	});
+});
+
+describe("raw capture retention (#33)", () => {
+	test("getSource reports the roaster's last successful capture", async () => {
+		const fx = await setup();
+		await fx.t.run(async (ctx) => {
+			const storageId = await ctx.storage.store(new Blob(["{}"]));
+			await ctx.db.insert("rawCaptures", {
+				capturedAt: T0,
+				extractionOk: true,
+				roasterId: fx.roasterId,
+				storageId,
+			});
+			await ctx.db.insert("rawCaptures", {
+				capturedAt: T0 + 2 * CADENCE_MS,
+				extractionOk: true,
+				roasterId: fx.roasterId,
+				storageId,
+			});
+			// A later failed capture does not count as the last success.
+			await ctx.db.insert("rawCaptures", {
+				capturedAt: T0 + 3 * CADENCE_MS,
+				extractionOk: false,
+				roasterId: fx.roasterId,
+				storageId,
+			});
+		});
+		const loaded = await fx.t.query(internal.crawlSources.getSource, {
+			crawlSourceId: fx.crawlSourceId,
+		});
+		expect(loaded?.lastOkCaptureAt).toBe(T0 + 2 * CADENCE_MS);
+	});
+
+	test("getSource reports no capture for a fresh roaster", async () => {
+		const fx = await setup();
+		const loaded = await fx.t.query(internal.crawlSources.getSource, {
+			crawlSourceId: fx.crawlSourceId,
+		});
+		expect(loaded?.lastOkCaptureAt).toBeUndefined();
+	});
+
+	test("a failed extraction is always captured; a success at most once a day", () => {
+		const now = T0 + 10 * RAW_CAPTURE_SUCCESS_INTERVAL_MS;
+		const recent = now - RAW_CAPTURE_SUCCESS_INTERVAL_MS + 60_000;
+		const old = now - RAW_CAPTURE_SUCCESS_INTERVAL_MS;
+		expect(
+			shouldStoreRawCapture({
+				extractionOk: false,
+				lastOkCaptureAt: recent,
+				now,
+			})
+		).toBe(true);
+		expect(
+			shouldStoreRawCapture({
+				extractionOk: true,
+				lastOkCaptureAt: recent,
+				now,
+			})
+		).toBe(false);
+		expect(
+			shouldStoreRawCapture({ extractionOk: true, lastOkCaptureAt: old, now })
+		).toBe(true);
+		expect(
+			shouldStoreRawCapture({
+				extractionOk: true,
+				lastOkCaptureAt: undefined,
+				now,
+			})
+		).toBe(true);
 	});
 });
 

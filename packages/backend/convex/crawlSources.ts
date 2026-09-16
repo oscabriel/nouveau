@@ -20,7 +20,11 @@ import { notifyWatchersOfEvent } from "./notifications";
 import schema from "./schema";
 import { shopMarketValidator } from "./shopMarket";
 
-/** Source + roaster fields the crawler action needs. */
+/**
+ * Source + roaster fields the crawler action needs, plus when the roaster's
+ * last successful raw capture was taken (the crawler stores a new success
+ * capture at most once a day, #33).
+ */
 export const getSource = internalQuery({
 	args: { crawlSourceId: v.id("crawlSources") },
 	handler: async (ctx, args) => {
@@ -32,11 +36,25 @@ export const getSource = internalQuery({
 		if (roaster === null) {
 			return null;
 		}
-		return { roaster, source };
+		const lastOkCapture = await ctx.db
+			.query("rawCaptures")
+			.withIndex("by_roaster_id_and_extraction_ok_and_captured_at", (q) =>
+				q.eq("roasterId", roaster._id).eq("extractionOk", true)
+			)
+			.order("desc")
+			.first();
+		return {
+			roaster,
+			source,
+			...(lastOkCapture === null
+				? {}
+				: { lastOkCaptureAt: lastOkCapture.capturedAt }),
+		};
 	},
 	returns: v.union(
 		v.null(),
 		v.object({
+			lastOkCaptureAt: v.optional(v.number()),
 			roaster: schema.doc("roasters"),
 			source: schema.doc("crawlSources"),
 		})

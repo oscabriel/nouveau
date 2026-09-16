@@ -1,6 +1,8 @@
 // Build-time constants (from the locked build spec).
 
-// Default per-roaster crawl cadence until per-roaster cadence policy lands.
+// Crawl cadence for a roaster the seed table does not name (#33). The seed
+// table (seed.ts) sets 15 for drop roasters that release in one-hour windows
+// on a fixed weekday, 30 for roasters with a few detections a week, 60 here.
 export const DEFAULT_CADENCE_MINUTES = 60;
 
 // Staleness threshold: no successful crawl within 2x the roaster's cadence,
@@ -20,6 +22,21 @@ export const TICK_BATCH = 20;
 export const RAW_CAPTURE_RETENTION_DAYS = 3;
 export const rawCaptureRetentionMs = (): number =>
 	RAW_CAPTURE_RETENTION_DAYS * 24 * 60 * 60_000;
+
+// A successful capture is a reference body, not a diagnostic, so one per
+// roaster per day is enough; a failed extraction is always captured (#33).
+// At the 15-minute cadence this cuts capture storage from ~277 MB/day to a
+// few MB.
+export const RAW_CAPTURE_SUCCESS_INTERVAL_MS = 24 * 60 * 60_000;
+
+export const shouldStoreRawCapture = (input: {
+	extractionOk: boolean;
+	lastOkCaptureAt: number | undefined;
+	now: number;
+}): boolean =>
+	!input.extractionOk ||
+	input.lastOkCaptureAt === undefined ||
+	input.now - input.lastOkCaptureAt >= RAW_CAPTURE_SUCCESS_INTERVAL_MS;
 
 // Raw captures deleted per prune transaction; a full batch reschedules.
 export const PRUNE_BATCH = 200;

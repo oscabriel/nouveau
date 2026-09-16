@@ -10,7 +10,7 @@ import { internal, components } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { env, internalAction, internalMutation } from "./_generated/server";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
-import { COMMIT_BATCH_PRODUCTS } from "./constants";
+import { COMMIT_BATCH_PRODUCTS, shouldStoreRawCapture } from "./constants";
 import {
 	extractedProduct,
 	fetchFirstFeedPage,
@@ -120,6 +120,8 @@ const commitCatalog = async (
 interface ProductsJsonInput {
 	crawlSourceId: Id<"crawlSources">;
 	isBaseline: boolean;
+	/** When the roaster's last successful raw capture was taken, if ever (#33). */
+	lastOkCaptureAt?: number;
 	roasterId: Id<"roasters">;
 	websiteUrl: string;
 }
@@ -224,11 +226,20 @@ const crawlProductsJson = async (
 
 	// The page-1 body is stored because only actions can write file storage;
 	// finalizeCrawl records the capture row. Later pages are not captured.
+	// A failed extraction is always captured (the diagnostic captures exist
+	// for); a successful one at most once a day per roaster (#33).
 	const captureText = bodyText ?? fallbackText;
+	const extractionOk = products !== null;
 	const rawCapture =
-		captureText !== null && captureText.length <= MAX_RAW_BODY_BYTES
+		captureText !== null &&
+		captureText.length <= MAX_RAW_BODY_BYTES &&
+		shouldStoreRawCapture({
+			extractionOk,
+			lastOkCaptureAt: input.lastOkCaptureAt,
+			now: fetchedAt,
+		})
 			? {
-					extractionOk: products !== null,
+					extractionOk,
 					storageId: await ctx.storage.store(
 						new Blob([captureText], { type: "application/json" })
 					),
@@ -359,6 +370,9 @@ export const crawlSource = internalAction({
 			isBaseline: source.lastSuccessAt === undefined,
 			roasterId: roaster._id,
 			websiteUrl: roaster.websiteUrl,
+			...(loaded.lastOkCaptureAt === undefined
+				? {}
+				: { lastOkCaptureAt: loaded.lastOkCaptureAt }),
 		});
 		return null;
 	},

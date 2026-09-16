@@ -151,6 +151,12 @@ export default defineSchema({
 		storageId: v.id("_storage"),
 	})
 		.index("by_roaster_id", ["roasterId"])
+		// The crawler's "last successful capture" lookup (#33).
+		.index("by_roaster_id_and_extraction_ok_and_captured_at", [
+			"roasterId",
+			"extractionOk",
+			"capturedAt",
+		])
 		.index("by_captured_at", ["capturedAt"]),
 
 	// Only public source prose belongs here. Never cache user history or prompts.
