@@ -22,6 +22,8 @@ A drop-alert service with a social layer for home coffee brewers: watches US spe
 
 **Crawl source**: The per-roaster pipeline state that a watch's health derives from. One roaster has one source. _Avoid_: Crawler, job
 
+**Source mode**: How a crawl source reads its shop, decided once by the platform ladder (ADR-0006): the Shopify feed, the WooCommerce Store API, or product pages read one at a time. Every mode produces the same lots and variants; nothing downstream knows which one ran. _Avoid_: Platform (that's the shop's software; the mode is Nouveau's choice of how to read it), html mode (retired)
+
 **Baseline crawl**: A roaster's first successful crawl, which populates its lot catalog and fires no drop events. Alerts start from the second crawl. A source with no baseline is not yet alert-worthy. _Avoid_: Seeding, initial crawl
 
 **Archived lot**: A lot that has been absent from three consecutive successful crawls. Archived lots can't fire back-in-stock events; they remain in history. _Avoid_: Sold out (sold-out is a stock state, not an archive state)

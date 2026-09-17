@@ -47,6 +47,23 @@ export const PRUNE_BATCH = 200;
 // well under the per-transaction read and write limits.
 export const COMMIT_BATCH_PRODUCTS = 50;
 
+// product_pages mode (ADR-0006). Each product page is one Firecrawl credit,
+// so a full pass is capped: the collection page's links first, then lots
+// already in the catalog, then the sitemap if the page listed nothing.
+export const MAX_PRODUCT_PAGES = 120;
+// Product scrapes in flight at once; the plan's concurrency limit throttles
+// above a handful and a throttled scrape is a slow one.
+export const PRODUCT_SCRAPE_CONCURRENCY = 3;
+// The collection page's change tracking gates the product scrapes: an
+// unchanged page skips them. A size selling out can leave the grid
+// unchanged, so a full read is forced at least this often.
+export const PRODUCT_PAGES_FULL_INTERVAL_MS = 6 * 60 * 60_000;
+// Child sitemaps read when discovery falls back to the sitemap.
+export const MAX_SITEMAPS = 4;
+// Variable WooCommerce products whose sizes are fetched per crawl; each is
+// one plain HTTP request to the shop.
+export const MAX_WOO_VARIATION_FETCHES = 60;
+
 // Check now (#34). A runningSince stamp older than this is a crawl whose
 // action died before finalizeCrawl; the source is treated as idle again.
 export const CRAWL_RUNNING_STALE_MS = 10 * 60_000;

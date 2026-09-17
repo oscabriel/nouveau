@@ -8,6 +8,7 @@ import { query } from "./_generated/server";
 import { LOT_PAGE_LOGS_LIMIT } from "./constants";
 import { hydrateAll, logCardValidator } from "./logs";
 import { isThin, mergedFacts } from "./lotFacts";
+import { lotShopUrl } from "./lotUrl";
 
 const factsValidator = v.object({
 	elevation: v.union(v.string(), v.null()),
@@ -83,7 +84,7 @@ export const get = query({
 				pageFactsKnown: lot.pageFacts !== undefined,
 				status: lot.status,
 				thin: isThin(lot),
-				url: `${roaster.websiteUrl}/products/${lot.handle}`,
+				url: lotShopUrl(roaster, lot) ?? roaster.websiteUrl,
 			},
 			roaster: { name: roaster.name, slug: roaster.slug },
 		};

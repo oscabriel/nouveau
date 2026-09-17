@@ -1,6 +1,7 @@
-// Pure extraction helpers (ADR-0001): Shopify /products.json is the primary
-// source, HTML grid parsing is the fallback. Nothing here touches ctx — it all
-// runs identically in actions and tests.
+// Pure extraction helpers (ADR-0001, ADR-0006): the Shopify /products.json
+// parser, the lot classifier, the lot-copy builder and the fact shapes the
+// other platform parsers (woocommerce.ts, productPages.ts) share. Nothing
+// here touches ctx — it all runs identically in actions and tests.
 
 import { v } from "convex/values";
 
@@ -47,6 +48,7 @@ export const extractedProduct = v.object({
 	handle: v.string(),
 	lotCopy: v.optional(lotCopyValidator),
 	name: v.string(),
+	url: v.optional(v.string()),
 	variants: v.array(extractedVariant),
 });
 
@@ -85,6 +87,12 @@ export interface ExtractedProduct {
 	 */
 	lotCopy?: LotCopy;
 	name: string;
+	/**
+	 * The lot's shop page when the source knows it (a WooCommerce permalink,
+	 * the product page a scrape read). Shopify feeds leave it out; their page
+	 * is `/products/{handle}` (lotUrl.ts).
+	 */
+	url?: string;
 	variants: ExtractedVariant[];
 }
 
@@ -157,7 +165,7 @@ const MIN_WORD_CUT = 20;
  * at the cap counts as truncated: the clause regexes cap their capture at the
  * same length and cut mid-word.
  */
-const capAtWord = (text: string, maxLength: number): string | null => {
+export const capAtWord = (text: string, maxLength: number): string | null => {
 	const trimmed = text.trim();
 	if (trimmed === "") {
 		return null;
@@ -1275,7 +1283,7 @@ export const classifyLot = (input: LotClassifierInput): LotClassification => {
 	return classifyUntyped(tags, title);
 };
 
-const toCents = (price: unknown): number => {
+export const toCents = (price: unknown): number => {
 	const n = typeof price === "number" ? price : Number(String(price));
 	if (!Number.isFinite(n)) {
 		return 0;
@@ -1341,7 +1349,7 @@ const gramsFromText = (text: string): number | undefined => {
 export const parseVariantGrams = (
 	name: string,
 	optionValues: string[],
-	shopifyGrams: number | null | undefined
+	shopifyGrams?: number | null
 ): number | undefined => {
 	for (const text of [name, ...optionValues]) {
 		const grams = gramsFromText(text);
@@ -1385,37 +1393,48 @@ export interface ProductsJsonPage {
 	rejectedExternalIds: string[];
 }
 
+export interface LotCopyInput {
+	/** The roaster's description, HTML or plain text. */
+	bodyHtml?: string | null;
+	imageUrl?: string | null;
+	/** The shop's own type or category for the item, raw. */
+	productType?: string | null;
+	tags?: string[] | string | null;
+	title?: string | null;
+	vendor?: string | null;
+}
+
 /**
- * The roaster's published copy for one products.json product (§14.4). Always
- * returned, even empty: products.json is authoritative for this copy, so an
- * empty object means "the roaster publishes none" and clears stale values.
+ * The roaster's published copy for one shop item (§14.4), from whatever the
+ * platform exposes: Shopify's body_html, tags and product_type; a WooCommerce
+ * description and categories; the description and category Firecrawl's
+ * product format reads off a page. Always returned, even empty: every source
+ * that calls this is authoritative for the copy, so an empty object means
+ * "the roaster publishes none" and clears stale values.
  */
-const parseLotCopy = (raw: ShopifyProduct): LotCopy => {
-	const tags = parseTags(raw.tags);
+export const buildLotCopy = (input: LotCopyInput): LotCopy => {
+	const tags = parseTags(input.tags);
 	// The block-structured text drives the notes regex (blocks end clause
 	// captures); the stored description is the same copy flattened to one
 	// line.
 	const blockText =
-		typeof raw.body_html === "string" ? stripHtml(raw.body_html) : "";
+		typeof input.bodyHtml === "string" ? stripHtml(input.bodyHtml) : "";
 	const description = capAtWord(
 		blockText.replaceAll("\n", " "),
 		DESCRIPTION_MAX_LENGTH
 	);
-	const imageUrl =
-		raw.image?.src ??
-		raw.images?.find((image) => typeof image.src === "string")?.src;
 	const roasterNotes = extractRoasterNotes(blockText, tags);
 	const copy: LotCopy = parseLotAttributes({
 		blockText,
 		tags,
-		title: raw.title,
-		vendor: raw.vendor,
+		title: input.title,
+		vendor: input.vendor,
 	});
 	if (description !== null) {
 		copy.description = description;
 	}
-	if (typeof imageUrl === "string") {
-		copy.imageUrl = imageUrl;
+	if (typeof input.imageUrl === "string" && input.imageUrl !== "") {
+		copy.imageUrl = input.imageUrl;
 	}
 	if (tags.length > 0) {
 		copy.tags = tags.slice(0, MAX_TAGS);
@@ -1427,12 +1446,24 @@ const parseLotCopy = (raw: ShopifyProduct): LotCopy => {
 		}
 	}
 	const productType =
-		typeof raw.product_type === "string" ? raw.product_type.trim() : "";
+		typeof input.productType === "string" ? input.productType.trim() : "";
 	if (productType !== "") {
 		copy.productType = productType.slice(0, PRODUCT_TYPE_MAX_LENGTH);
 	}
 	return copy;
 };
+
+const parseLotCopy = (raw: ShopifyProduct): LotCopy =>
+	buildLotCopy({
+		bodyHtml: raw.body_html,
+		imageUrl:
+			raw.image?.src ??
+			raw.images?.find((image) => typeof image.src === "string")?.src,
+		productType: raw.product_type,
+		tags: raw.tags,
+		title: raw.title,
+		vendor: raw.vendor,
+	});
 
 /** Page extraction values longer than this are prose, not a fact. */
 const MAX_PAGE_FACT_LENGTH = 120;
@@ -1657,115 +1688,4 @@ export const walkFeedPages = async (
 		products: [...collected.values()],
 		rejectedExternalIds: [...rejected],
 	};
-};
-
-/**
- * Structured-extraction prompt for HTML-mode sources (non-Shopify,
- * user-submitted). Firecrawl returns { json } per page against this shape.
- */
-export const HTML_EXTRACTION_PROMPT = `Extract every coffee product visible in this product grid. For each product return its display name, its price (a decimal number in the shop's currency), whether it is available for purchase (true unless it is visibly sold out, out of stock, or marked unavailable), its size in grams if shown (from the size option or the product title), and its product page URL.`;
-
-export const htmlExtractionSchema = {
-	properties: {
-		products: {
-			items: {
-				properties: {
-					available: { type: "boolean" },
-					grams: { type: "number" },
-					name: { type: "string" },
-					price: { type: "number" },
-					url: { type: "string" },
-				},
-				required: ["name", "price", "available"],
-				type: "object",
-			},
-			type: "array",
-		},
-	},
-	required: ["products"],
-	type: "object",
-};
-
-interface HtmlExtraction {
-	products?: {
-		available?: boolean;
-		grams?: number;
-		name?: string;
-		price?: number;
-		url?: string;
-	}[];
-}
-
-/** A product URL without its query string or hash (`?Size=250%20g`). */
-const bareProductUrl = (url: string): string => {
-	try {
-		const parsed = new URL(url);
-		return `${parsed.origin}${parsed.pathname}`;
-	} catch {
-		return url.split(/[?#]/u)[0] ?? url;
-	}
-};
-
-export interface HtmlPageParse {
-	products: ExtractedProduct[];
-	/** Items the lot classifier rejected; finalizeCrawl purges old rows. */
-	rejectedExternalIds: string[];
-}
-
-/**
- * Map one crawled page's structured extraction to products (#35). The URL
- * is keyed bare: a variant picker's `?Size=` would otherwise mint a new lot
- * per flap and archive the old one. The classifier runs on the title alone
- * (html mode has no product_type or tags) and only a positive title or
- * wholesale verdict rejects; an untyped, untagged coffee name is kept, since
- * that is every real lot on such a shop. Bag size comes from the title when
- * the extraction found none.
- */
-export const parseHtmlPage = (
-	json: unknown,
-	pageUrl: string
-): HtmlPageParse => {
-	const extraction = (json as HtmlExtraction | null | undefined)?.products;
-	const rejectedExternalIds: string[] = [];
-	if (!Array.isArray(extraction)) {
-		return { products: [], rejectedExternalIds };
-	}
-	const base = pageUrl.replace(/\/$/u, "");
-	const products = extraction.flatMap((item) => {
-		if (typeof item.name !== "string" || item.name.length === 0) {
-			return [];
-		}
-		const url =
-			typeof item.url === "string" && item.url.length > 0
-				? bareProductUrl(item.url)
-				: null;
-		// URL-less items key on page + name so products extracted from the same
-		// listing page don't collapse into one externalId.
-		const externalId = url ?? `${base}#${item.name}`;
-		const verdict = classifyLot({
-			productType: null,
-			tags: null,
-			title: item.name,
-		});
-		if (!verdict.isLot && verdict.rule !== "default") {
-			rejectedExternalIds.push(externalId);
-			return [];
-		}
-		const grams = parseVariantGrams(item.name, [], item.grams);
-		const product: ExtractedProduct = {
-			externalId,
-			handle: (url ?? base).split("/").pop() ?? externalId,
-			name: item.name,
-			variants: [
-				{
-					available: item.available !== false,
-					...(grams === undefined ? {} : { grams }),
-					name: "Default",
-					priceCents: Math.round((item.price ?? 0) * 100),
-				},
-			],
-		};
-		return [product];
-	});
-	return { products, rejectedExternalIds };
 };

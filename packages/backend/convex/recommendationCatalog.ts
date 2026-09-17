@@ -1,6 +1,7 @@
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { factPassage, mergedFacts, needsPageFacts } from "./lotFacts";
+import { lotShopUrl } from "./lotUrl";
 import {
 	CANDIDATE_LIMIT,
 	CATALOG_SCAN_LIMIT,
@@ -15,26 +16,6 @@ import {
 } from "./recommendationRules";
 import type { Candidate, RecommendationInput } from "./recommendationRules";
 
-export const productUrl = (
-	websiteUrl: string,
-	handle: string
-): string | null => {
-	try {
-		const base = new URL(websiteUrl);
-		if (
-			base.protocol !== "https:" ||
-			base.username ||
-			base.password ||
-			!/^[a-zA-Z0-9-]+$/u.test(handle)
-		) {
-			return null;
-		}
-		return new URL(`/products/${handle}`, base.origin).href;
-	} catch {
-		return null;
-	}
-};
-
 const meetsConstraints = (
 	variant: Doc<"productVariants">,
 	input: RecommendationInput
@@ -48,12 +29,15 @@ const meetsConstraints = (
 		variant.priceCents <= input.maxPriceCents) &&
 	(input.minGrams === undefined || variant.grams >= input.minGrams);
 
-/** A completed feed crawl within the hour that confirmed the US/USD storefront. */
+/**
+ * A completed crawl within the hour whose shop was confirmed US/USD. Any
+ * source mode qualifies: the Shopify path confirms the market from the
+ * storefront globals, the others from the currency every price reported.
+ */
 export const eligibleSource = (
 	source: Doc<"crawlSources">,
 	now: number
 ): source is Doc<"crawlSources"> & { lastSuccessAt: number } =>
-	source.mode === "products_json" &&
 	source.health === "watching" &&
 	source.lastSuccessAt !== undefined &&
 	source.lastSuccessAt <= now &&
@@ -102,7 +86,7 @@ const makeCandidate = async (
 	input: RecommendationInput,
 	now: number
 ): Promise<Candidate | null> => {
-	const url = productUrl(roaster.websiteUrl, product.handle);
+	const url = lotShopUrl(roaster, product);
 	if (!url) {
 		return null;
 	}
@@ -302,7 +286,7 @@ export const candidateStillAvailable = async (
 		!!source &&
 		!!roaster &&
 		roaster.status === "active" &&
-		productUrl(roaster.websiteUrl, product.handle) === candidate.url &&
+		lotShopUrl(roaster, product) === candidate.url &&
 		eligibleVariant(product, variant, source, input, now) &&
 		variant.priceCents === candidate.priceCents &&
 		variant.grams === candidate.grams

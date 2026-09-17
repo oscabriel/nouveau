@@ -9,6 +9,7 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import {
 	ARCHIVE_STRIKES,
+	MAX_PRODUCT_PAGES,
 	PRUNE_BATCH,
 	rawCaptureRetentionMs,
 	stalenessThresholdMs,
@@ -20,6 +21,7 @@ import { isCrawlRunning } from "./health";
 import { notifyWatchersOfEvent } from "./notifications";
 import schema from "./schema";
 import { shopMarketValidator } from "./shopMarket";
+import { sourceModeValidator } from "./sourceMode";
 
 /**
  * Source + roaster fields the crawler action needs, plus when the roaster's
@@ -341,6 +343,7 @@ const upsertProduct = async (
 			roasterId,
 			status: "current",
 			...lotCopyFields(product),
+			...(product.url === undefined ? {} : { url: product.url }),
 		});
 	} else {
 		productId = current._id;
@@ -350,6 +353,7 @@ const upsertProduct = async (
 			name: product.name,
 			status: "current",
 			...lotCopyFields(product),
+			...(product.url === undefined ? {} : { url: product.url }),
 		});
 	}
 	await applyVariants(ctx, {
@@ -460,6 +464,11 @@ const purgeNonLot = async (
  */
 export const finalizeCrawl = internalMutation({
 	args: {
+		// product_pages: the collection page was unchanged since the last
+		// crawl, so no product was read. The crawl still counts as a success
+		// (the shop answered) but the catalog is left exactly as it was: no
+		// archive strikes, no purge, no lastFullCrawlAt.
+		catalogUnchanged: v.optional(v.boolean()),
 		crawlSourceId: v.id("crawlSources"),
 		errorMessage: v.optional(v.string()),
 		fetchedAt: v.number(),
@@ -503,6 +512,19 @@ export const finalizeCrawl = internalMutation({
 				lastCheckedAt: now,
 				lastErrorAt: now,
 				lastErrorMessage: args.errorMessage ?? "Unknown crawl error",
+				nextCrawlDueAt: now + cadenceMs,
+				runningSince: undefined,
+			});
+			return null;
+		}
+
+		if (args.catalogUnchanged === true) {
+			await ctx.db.patch(source._id, {
+				consecutiveFailures: 0,
+				health: "watching",
+				lastCheckedAt: now,
+				lastErrorMessage: undefined,
+				lastSuccessAt: now,
 				nextCrawlDueAt: now + cadenceMs,
 				runningSince: undefined,
 			});
@@ -563,6 +585,7 @@ export const finalizeCrawl = internalMutation({
 			lastCheckedAt: now,
 			// A success ends the error story; the timestamp stays as history.
 			lastErrorMessage: undefined,
+			lastFullCrawlAt: now,
 			lastSuccessAt: now,
 			market: args.market,
 			nextCrawlDueAt: now + cadenceMs,
@@ -571,6 +594,27 @@ export const finalizeCrawl = internalMutation({
 		return null;
 	},
 	returns: v.null(),
+});
+
+/**
+ * The shop pages of a source's current lots, for the product_pages crawl:
+ * a lot that left the collection grid is still read (and archived by the
+ * 3-strike rule once its page is gone) instead of vanishing silently.
+ * Bounded to the scrape cap; the crawler orders grid links first anyway.
+ */
+export const listCurrentLotUrls = internalQuery({
+	args: { roasterId: v.id("roasters") },
+	handler: async (ctx, args) => {
+		const lots = await ctx.db
+			.query("products")
+			.withIndex("by_roaster_and_status_and_last_seen_at", (q) =>
+				q.eq("roasterId", args.roasterId).eq("status", "current")
+			)
+			.order("desc")
+			.take(MAX_PRODUCT_PAGES);
+		return lots.flatMap((lot) => (lot.url === undefined ? [] : [lot.url]));
+	},
+	returns: v.array(v.string()),
 });
 
 /**
@@ -589,13 +633,14 @@ export const rebaselineSource = internalMutation({
 });
 
 /**
- * Operator tool: switch a source between products_json and html. Clears the
- * failure streak so the next crawl judges the new mode on its own. #25.
+ * Operator tool: switch a source's mode (ADR-0006). Clears the failure
+ * streak so the next crawl judges the new mode on its own (#25). The
+ * crawler's detectSourceMode runs the probe and lands here.
  */
 export const setSourceMode = internalMutation({
 	args: {
 		crawlSourceId: v.id("crawlSources"),
-		mode: v.union(v.literal("products_json"), v.literal("html")),
+		mode: sourceModeValidator,
 	},
 	handler: async (ctx, args) => {
 		await ctx.db.patch(args.crawlSourceId, {

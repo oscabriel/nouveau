@@ -61,9 +61,9 @@ Ten tables. High-churn crawl ops are split from the roaster profile per the chur
 
 ## 6. Extraction pipeline
 
-**ADR-0001: Shopify `/products.json` is the primary extraction target** (`.agents/docs/adr/0001-shopify-products-json-as-primary-extraction.md`). All 20 seed roasters expose it with name, price, grams, per-variant availability. HTML grid parsing (Firecrawl structured extraction) is the fallback for non-Shopify submissions and badge/copy detail.
+**ADR-0001: Shopify `/products.json` is the primary extraction target** (`.agents/docs/adr/0001-shopify-products-json-as-primary-extraction.md`). All 20 seed roasters expose it with name, price, grams, per-variant availability. **ADR-0006 (2026-09-16)** replaced the HTML grid fallback with a platform ladder: Shopify feed, then the WooCommerce Store API, then Firecrawl's deterministic `product` format over each product page, gated by change tracking on the collection page. The LLM grid crawl is gone.
 
-- Firecrawl runs in **webhook mode in prod** (`httpPrefix: "/firecrawl/"`, `FIRECRAWL_WEBHOOK_SECRET`); `mode: "poll"` or the bundled mock server for local dev. `onComplete` is where orchestration belongs — carry ids via `context`, guard `status`, check `unstored` for oversized pages.
+- Firecrawl is called per page through `firecrawl.scrape` (the component's `/v2/scrape` action). The durable crawl and its `onComplete` callback are no longer used; the webhook mount stays for the component.
 - Stock-status semantics vary by roaster (variant-level `available`, grid badges, preorders) — normalize at extraction, cite the Variant on events.
 - Product titles embed vintage years, so sold-out archive Lots linger in listings — the 3-strike archive rule is the cut-off.
 - Some feeds mix wholesale-only SKUs — filter at extraction.
@@ -73,9 +73,9 @@ Ten tables. High-churn crawl ops are split from the roaster profile per the chur
 ### 7.1 Paste a roastery URL (Submission)
 
 1. **Normalize**: extract the registrable domain. Roaster with that domain exists → short-circuit: create the Watch, tell the user "we already watch this one." No duplicate rows, no merge logic.
-2. **Probe**: fetch `/products.json`. Coffee products returned → Shopify, proceed. Otherwise → one attempt in HTML mode with Firecrawl structured extraction.
+2. **Probe**: the platform ladder (`platform.ts` `probeShop`, ADR-0006). `/products.json` with lots → `products_json`; the WooCommerce Store API with lots → `woocommerce`; otherwise `product_pages`, whose baseline crawl decides whether the pages carry structured product data.
 3. **Baseline**: first successful crawl populates the catalog, fires no events; `pending → active` flips automatically. **No review queue.** Human action exists only as `rejected`, applied reactively to junk.
-4. **Failure**: both probe modes fail → visible failed state — "we couldn't read this shop yet" + retry button. Failed Submissions stay out of the directory.
+4. **Failure**: the baseline crawl fails → visible failed state — "we couldn't read this shop yet" + retry button. Failed Submissions stay out of the directory.
 5. **Quota**: **5 active submitted roasters per user, 3 submissions per day**, enforced with the rate-limiter component. Keys: `user:{id}:submissions:day` + a lifetime-ish active count query.
 6. The submitter's Watch is created as soon as baseline lands — watchable in under a minute.
 
@@ -241,4 +241,4 @@ Observed on prod the day lot pages shipped: the feed and the Lots lists carried 
   7. Otherwise **not a lot**. An untyped, untagged "Dog Days" from a shop that types nothing is lost; the seed roasters all type their coffees, and a shop whose every item is untyped is a submission-flow problem (§7.1), not a classifier one.
 - **Sold-out archives stay.** Proud Mary's 596 `coffee-archive` items and PT's `Past Offerings Collection` are real coffees at zero stock. They remain lots; a restock there is exactly the drop we want.
 - **Cleanup is part of the crawl.** A products.json crawl reports the ids it rejected alongside the ids it saw. `finalizeCrawl` deletes a rejected product that is still in the catalog (with its variants, its drop events and their notification ledger rows) instead of waiting three strikes to archive it, because it never was a lot. Exception: a rejected product someone has logged is archived, not deleted (§14.1: logs never lose their lot). This also means a tightened rule set cleans prod on the next crawl, no operator step. The purge is capped at `PRUNE_BATCH` (200) products per crawl so one rule change on a Sey-sized catalog cannot blow the transaction; the feed names the same rejects next crawl, which takes the rest. Rejects are only reported for items still in the feed, so a non-lot that already dropped out and was archived by the 3-strike rule stays as an archived row; `purgeRoasterEvents`/`rebaselineSource` remain the operator tools for that.
-- **Deferred.** Storing `product_type` on the lot for retroactive reclassification; a per-roaster allow/deny override; HTML-mode sources (no `product_type`, prompt already asks for coffee products).
+- **Deferred.** A per-roaster allow/deny override. (`product_type` is stored since ADR-0005; non-Shopify sources feed the shop's category and brand to the same classifier since ADR-0006.)

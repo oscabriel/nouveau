@@ -23,9 +23,12 @@ import type * as http from "../http.js";
 import type * as identity from "../identity.js";
 import type * as logs from "../logs.js";
 import type * as lotFacts from "../lotFacts.js";
+import type * as lotUrl from "../lotUrl.js";
 import type * as lots from "../lots.js";
 import type * as notifications from "../notifications.js";
 import type * as pageFacts from "../pageFacts.js";
+import type * as platform from "../platform.js";
+import type * as productPages from "../productPages.js";
 import type * as recommendationCatalog from "../recommendationCatalog.js";
 import type * as recommendationRules from "../recommendationRules.js";
 import type * as recommendationWorker from "../recommendationWorker.js";
@@ -34,8 +37,10 @@ import type * as roasters from "../roasters.js";
 import type * as savedCoffees from "../savedCoffees.js";
 import type * as seed from "../seed.js";
 import type * as shopMarket from "../shopMarket.js";
+import type * as sourceMode from "../sourceMode.js";
 import type * as users from "../users.js";
 import type * as watches from "../watches.js";
+import type * as woocommerce from "../woocommerce.js";
 
 import type {
   ApiFromModules,
@@ -59,9 +64,12 @@ declare const fullApi: ApiFromModules<{
   identity: typeof identity;
   logs: typeof logs;
   lotFacts: typeof lotFacts;
+  lotUrl: typeof lotUrl;
   lots: typeof lots;
   notifications: typeof notifications;
   pageFacts: typeof pageFacts;
+  platform: typeof platform;
+  productPages: typeof productPages;
   recommendationCatalog: typeof recommendationCatalog;
   recommendationRules: typeof recommendationRules;
   recommendationWorker: typeof recommendationWorker;
@@ -70,8 +78,10 @@ declare const fullApi: ApiFromModules<{
   savedCoffees: typeof savedCoffees;
   seed: typeof seed;
   shopMarket: typeof shopMarket;
+  sourceMode: typeof sourceMode;
   users: typeof users;
   watches: typeof watches;
+  woocommerce: typeof woocommerce;
 }>;
 
 /**

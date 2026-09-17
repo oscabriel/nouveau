@@ -10,6 +10,7 @@ import {
 	selectionValidator,
 } from "./recommendationRules";
 import { shopMarketValidator } from "./shopMarket";
+import { sourceModeValidator } from "./sourceMode";
 
 export default defineSchema({
 	crawlSources: defineTable({
@@ -19,9 +20,14 @@ export default defineSchema({
 		lastCheckedAt: v.optional(v.number()),
 		lastErrorAt: v.optional(v.number()),
 		lastErrorMessage: v.optional(v.string()),
+		// The last successful crawl that read every product (product_pages
+		// skips the product scrapes while the collection page is unchanged;
+		// a full read is forced once this is older than
+		// PRODUCT_PAGES_FULL_INTERVAL_MS).
+		lastFullCrawlAt: v.optional(v.number()),
 		lastSuccessAt: v.optional(v.number()),
 		market: v.optional(shopMarketValidator),
-		mode: v.union(v.literal("products_json"), v.literal("html")),
+		mode: sourceModeValidator,
 		nextCrawlDueAt: v.number(),
 		roasterId: v.id("roasters"),
 		// Set when a crawl is scheduled, cleared by finalizeCrawl. Refuses a
@@ -144,6 +150,10 @@ export default defineSchema({
 		// Absent from 3 consecutive successful crawls -> archived.
 		status: v.union(v.literal("current"), v.literal("archived")),
 		tags: v.optional(v.array(v.string())),
+		// The lot's shop page when the source knows it (WooCommerce permalink,
+		// the scraped product page). Absent for Shopify feeds, whose page is
+		// `/products/{handle}` (lotUrl.ts).
+		url: v.optional(v.string()),
 		variety: v.optional(v.string()),
 	})
 		.index("by_roaster_and_external_id", ["roasterId", "externalId"])

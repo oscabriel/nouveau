@@ -957,7 +957,7 @@ describe("rebaselineSource", () => {
 
 describe("setSourceMode", () => {
 	test("flips the mode and clears the failure streak", async () => {
-		const fx = await setup({ mode: "html" });
+		const fx = await setup({ mode: "product_pages" });
 		await fail(fx, T0);
 		await fail(fx, T0 + CADENCE_MS);
 		await fail(fx, T0 + 2 * CADENCE_MS);
@@ -965,10 +965,10 @@ describe("setSourceMode", () => {
 
 		await fx.t.mutation(internal.crawlSources.setSourceMode, {
 			crawlSourceId: fx.crawlSourceId,
-			mode: "products_json",
+			mode: "woocommerce",
 		});
 		const source = await readSource(fx);
-		expect(source?.mode).toBe("products_json");
+		expect(source?.mode).toBe("woocommerce");
 		expect(source?.consecutiveFailures).toBe(0);
 		expect(source?.health).toBe("watching");
 	});

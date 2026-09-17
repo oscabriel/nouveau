@@ -19,11 +19,18 @@ import type { ActionCtx } from "./_generated/server";
 import { verifyPageFacts } from "./extraction";
 import { needsPageFacts, pageFactsValidator } from "./lotFacts";
 import type { PageFacts } from "./lotFacts";
-import { productUrl } from "./recommendationCatalog";
+import { lotShopUrl } from "./lotUrl";
 import { ENRICHMENT_PROMPT, enrichmentSchema } from "./recommendationRules";
 
 /** Anyone can open a lot page, so the spend is capped deployment-wide. */
 export const PAGE_FACTS_PER_HOUR = 20;
+/**
+ * Variety, elevation and producer do not change between crawls, so a page
+ * Firecrawl read within a day is good enough (a fresh scrape is slower and
+ * fails more often; a cached one costs the same credit). No custom headers
+ * here: they bypass the cache, and the facts do not depend on the market.
+ */
+export const PAGE_FACTS_MAX_AGE_MS = 24 * 60 * 60_000;
 
 const limiter = new RateLimiter(components.rateLimiter, {
 	pageFacts: { kind: "fixed window", period: HOUR, rate: PAGE_FACTS_PER_HOUR },
@@ -60,8 +67,7 @@ export const request = mutation({
 			return "known";
 		}
 		const roaster = await ctx.db.get("roasters", product.roasterId);
-		const url =
-			roaster === null ? null : productUrl(roaster.websiteUrl, product.handle);
+		const url = roaster === null ? null : lotShopUrl(roaster, product);
 		if (url === null) {
 			return "none";
 		}
@@ -94,8 +100,7 @@ export const readPageFacts = async (
 			"markdown",
 			{ prompt: ENRICHMENT_PROMPT, schema: enrichmentSchema, type: "json" },
 		],
-		headers: { cookie: "localization=US" },
-		maxAge: 0,
+		maxAge: PAGE_FACTS_MAX_AGE_MS,
 		onlyMainContent: true,
 		timeout: 30_000,
 	});
