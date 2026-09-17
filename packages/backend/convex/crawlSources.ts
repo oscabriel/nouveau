@@ -22,6 +22,7 @@ import { notifyWatchersOfEvent } from "./notifications";
 import schema from "./schema";
 import { shopMarketValidator } from "./shopMarket";
 import { sourceModeValidator } from "./sourceMode";
+import { ensureWatch } from "./watches";
 
 /**
  * Source + roaster fields the crawler action needs, plus when the roaster's
@@ -574,9 +575,14 @@ export const finalizeCrawl = internalMutation({
 		);
 
 		// pending -> active is data-driven: a baseline capture is the gate.
+		// A submitted roaster's submitter starts watching it here (§7.1 step
+		// 6): the watch exists the moment the shop is readable.
 		const roaster = await ctx.db.get(source.roasterId);
 		if (roaster !== null && roaster.status === "pending") {
 			await ctx.db.patch(roaster._id, { status: "active" });
+			if (roaster.submittedByUserId !== undefined) {
+				await ensureWatch(ctx, roaster.submittedByUserId, roaster._id);
+			}
 		}
 
 		await ctx.db.patch(source._id, {

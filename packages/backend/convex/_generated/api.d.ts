@@ -38,6 +38,7 @@ import type * as savedCoffees from "../savedCoffees.js";
 import type * as seed from "../seed.js";
 import type * as shopMarket from "../shopMarket.js";
 import type * as sourceMode from "../sourceMode.js";
+import type * as submissions from "../submissions.js";
 import type * as users from "../users.js";
 import type * as watches from "../watches.js";
 import type * as woocommerce from "../woocommerce.js";
@@ -79,6 +80,7 @@ declare const fullApi: ApiFromModules<{
   seed: typeof seed;
   shopMarket: typeof shopMarket;
   sourceMode: typeof sourceMode;
+  submissions: typeof submissions;
   users: typeof users;
   watches: typeof watches;
   woocommerce: typeof woocommerce;

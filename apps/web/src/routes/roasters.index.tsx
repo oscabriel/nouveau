@@ -26,11 +26,16 @@ const RoastersComponent = () => {
 		<div className="container mx-auto max-w-3xl px-4 py-8">
 			<header className="mb-6 flex items-baseline justify-between gap-4">
 				<h1 className="text-2xl font-semibold">Roasters</h1>
-				{isAuthenticated && (
-					<Link className="text-sm hover:underline" to="/watches">
-						Your watches
+				<div className="flex items-baseline gap-4">
+					{isAuthenticated && (
+						<Link className="text-sm hover:underline" to="/watches">
+							Your watches
+						</Link>
+					)}
+					<Link className="text-sm hover:underline" to="/roasters/submit">
+						Add a roaster
 					</Link>
-				)}
+				</div>
 			</header>
 			<Input
 				aria-label="Search roasters by name, city or state"
@@ -44,7 +49,11 @@ const RoastersComponent = () => {
 			/>
 			{visible.length === 0 && (
 				<p className="text-muted-foreground py-6 text-sm">
-					No roaster matches that.
+					No roaster matches that.{" "}
+					<Link className="underline" to="/roasters/submit">
+						Add one
+					</Link>
+					?
 				</p>
 			)}
 			<ul className="divide-y">

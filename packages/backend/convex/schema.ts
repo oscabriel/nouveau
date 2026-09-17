@@ -241,8 +241,12 @@ export default defineSchema({
 		submittedByUserId: v.optional(v.id("users")),
 		websiteUrl: v.string(),
 	})
+		.index("by_domain", ["domain"])
 		.index("by_slug", ["slug"])
-		.index("by_status_and_state", ["status", "state"]),
+		.index("by_status_and_state", ["status", "state"])
+		// A user's submissions (§7.1): the quota counts them, the submissions
+		// page lists them.
+		.index("by_submitted_by_user_id", ["submittedByUserId"]),
 
 	// "Want to try" (product spec §6): a private bookmark on a lot. Saving
 	// does not email, does not watch a roaster, and never shows on a public

@@ -76,10 +76,6 @@ export const CHECK_NOW_USER_PERIOD_MS = 10 * 60_000;
 // Per-source fixed window: one check per 2 minutes across all users.
 export const CHECK_NOW_SOURCE_PERIOD_MS = 2 * 60_000;
 
-// Submission quotas (enforced with the rate-limiter component).
-export const MAX_ACTIVE_SUBMISSIONS_PER_USER = 5;
-export const MAX_SUBMISSIONS_PER_DAY = 3;
-
 // Alert-worthy event types notify; sold_out and price_rise are stored silently
 // for stats.
 export const ALERT_WORTHY_TYPES = [
@@ -120,3 +116,12 @@ export const MAX_SAVED_COFFEES_PER_USER = 500;
 
 // Saved coffees shown in the home "Want to try" section; the full list pages.
 export const HOME_SAVED_COFFEES_LIMIT = 5;
+
+// Submissions (build spec §7.1). Both quotas are also the Firecrawl credit
+// bound: a product_pages baseline costs about one credit per lot.
+export const MAX_SUBMISSIONS_PER_DAY = 3;
+export const SUBMISSION_DAY_MS = 24 * 60 * 60_000;
+export const MAX_ACTIVE_SUBMISSIONS_PER_USER = 5;
+// Retries of a failed baseline: a few in a row, then a wait.
+export const SUBMISSION_RETRY_RATE = 3;
+export const SUBMISSION_RETRY_PERIOD_MS = 10 * 60_000;

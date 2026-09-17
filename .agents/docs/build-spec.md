@@ -72,12 +72,14 @@ Ten tables. High-churn crawl ops are split from the roaster profile per the chur
 
 ### 7.1 Paste a roastery URL (Submission)
 
-1. **Normalize**: extract the registrable domain. Roaster with that domain exists → short-circuit: create the Watch, tell the user "we already watch this one." No duplicate rows, no merge logic.
-2. **Probe**: the platform ladder (`platform.ts` `probeShop`, ADR-0006). `/products.json` with lots → `products_json`; the WooCommerce Store API with lots → `woocommerce`; otherwise `product_pages`, whose baseline crawl decides whether the pages carry structured product data.
-3. **Baseline**: first successful crawl populates the catalog, fires no events; `pending → active` flips automatically. **No review queue.** Human action exists only as `rejected`, applied reactively to junk.
-4. **Failure**: the baseline crawl fails → visible failed state — "we couldn't read this shop yet" + retry button. Failed Submissions stay out of the directory.
-5. **Quota**: **5 active submitted roasters per user, 3 submissions per day**, enforced with the rate-limiter component. Keys: `user:{id}:submissions:day` + a lifetime-ish active count query.
-6. The submitter's Watch is created as soon as baseline lands — watchable in under a minute.
+Built 2026-09-16 (`submissions.ts`, `/roasters/submit`). The form asks for the shop page, the roaster's name, city and two-letter state; the schema needs a city and state for the local scene and no shop publishes them in a readable place.
+
+1. **Normalize** (`normalizeShopUrl`): https forced, query and hash dropped, registrable domain = the last two host labels (`shop.example.com` → `example.com`). Roaster with that domain exists → short-circuit: create the Watch (if the roaster is active), tell the user "we already watch this one." No duplicate rows, no merge logic. The pasted page, path kept, becomes `productPageUrl`: the collection page `product_pages` mode scrapes. The form copy asks for "the page that lists their coffees" for that reason.
+2. **Probe**: the platform ladder (`platform.ts` `probeShop`, ADR-0006), run from a scheduled action after the roaster and its source are inserted (`pending`, placeholder mode, due date one cadence out so the tick does not claim it first). `/products.json` with lots → `products_json`; the WooCommerce Store API with lots → `woocommerce`; otherwise `product_pages`, whose baseline crawl decides whether the pages carry structured product data.
+3. **Baseline**: the same action starts the crawl through `startCrawl`. The first successful crawl populates the catalog, fires no events; `pending → active` flips automatically in `finalizeCrawl`. **No review queue.** Human action exists only as `rejected`, applied reactively to junk.
+4. **Failure**: the baseline crawl fails → the submission stays `pending` with the source's `crawl_failed` health and error, shown on `/roasters/submit` as "we couldn't read this shop yet" + Retry. Retry re-runs the probe too (a shop that was down may have landed on the wrong rung), limited to 3 per 10 minutes per user. Failed Submissions stay out of the directory (`listActive` and `getBySlug` only show `active`).
+5. **Quota**: **5 submitted roasters pending or active per user, 3 submissions per day**, enforced with the rate-limiter component (`submissionsDay` fixed window per user) and a count over `roasters.by_submitted_by_user_id`. Rejected roasters do not count. A `product_pages` baseline costs about one Firecrawl credit per lot, so the quota is also the credit bound.
+6. The submitter's Watch is created in `finalizeCrawl` the moment the baseline flips the roaster active (`ensureWatch`, the same insert path as the Watch button).
 
 ### 7.2 Local scene
 

@@ -42,6 +42,7 @@ import {
 import { confirmShopMarket } from "./shopMarket";
 import type { shopMarketValidator } from "./shopMarket";
 import { sourceModeValidator } from "./sourceMode";
+import type { SourceMode } from "./sourceMode";
 import {
 	MAX_WOO_PAGES,
 	parseWooListing,
@@ -539,10 +540,19 @@ const productUrlsFromSitemap = async (
 	);
 };
 
+/** Firecrawl's change tracking verdict for a URL, per its docs. */
+type ChangeStatus = "changed" | "new" | "removed" | "same";
+
+const isChangeStatus = (value: unknown): value is ChangeStatus =>
+	value === "changed" ||
+	value === "new" ||
+	value === "removed" ||
+	value === "same";
+
 interface CollectionRead {
 	links: string[];
 	/** `changeTracking.changeStatus`, or null when Firecrawl returned none. */
-	changeStatus: string | null;
+	changeStatus: ChangeStatus | null;
 	ok: boolean;
 }
 
@@ -564,12 +574,20 @@ const readCollectionPage = async (
 			timeout: SCRAPE_TIMEOUT_MS,
 		});
 		const status = doc.changeTracking?.changeStatus;
+		const links = (doc.links ?? []).filter(
+			(link): link is string => typeof link === "string"
+		);
+		// A missing status code with a body is a rendered page; only an
+		// explicit non-200 (or an empty result) is the shop saying no.
+		const code = doc.metadata?.statusCode;
+		const ok =
+			code === undefined
+				? links.length > 0 || (doc.markdown ?? "") !== ""
+				: code === 200;
 		return {
-			changeStatus: typeof status === "string" ? status : null,
-			links: (doc.links ?? []).filter(
-				(link): link is string => typeof link === "string"
-			),
-			ok: doc.metadata?.statusCode === 200,
+			changeStatus: isChangeStatus(status) ? status : null,
+			links,
+			ok,
 		};
 	} catch {
 		return { changeStatus: null, links: [], ok: false };
@@ -749,39 +767,46 @@ export const crawlSource = internalAction({
 });
 
 /**
- * Operator tool: run the platform ladder (platform.ts) against a source's
- * shop and store the mode it lands on. Moves the roaster to `www.` when
- * that host answered. The submission flow (§7.1) will call the same probe.
+ * Run the platform ladder (platform.ts) against a source's shop and store
+ * the mode it lands on. Moves the roaster to `www.` when that host
+ * answered. Shared by the operator's detectSourceMode and the submission
+ * flow (submissions.ts, §7.1). Null when the source is gone.
  */
+export const probeAndStoreMode = async (
+	ctx: ActionCtx,
+	crawlSourceId: Id<"crawlSources">
+): Promise<SourceMode | null> => {
+	const loaded = await ctx.runQuery(internal.crawlSources.getSource, {
+		crawlSourceId,
+	});
+	if (loaded === null) {
+		return null;
+	}
+	const probe = await probeShop({
+		fetchPage: (url) =>
+			fetchFeedPage(
+				url,
+				url.includes("/wp-json/") ? WOO_FETCH_HEADERS : SHOPIFY_FETCH_HEADERS
+			),
+		websiteUrl: loaded.roaster.websiteUrl,
+	});
+	if (probe.websiteUrl !== loaded.roaster.websiteUrl) {
+		await ctx.runMutation(internal.crawlSources.recordFeedOrigin, {
+			roasterId: loaded.roaster._id,
+			websiteUrl: probe.websiteUrl,
+		});
+	}
+	await ctx.runMutation(internal.crawlSources.setSourceMode, {
+		crawlSourceId,
+		mode: probe.mode,
+	});
+	return probe.mode;
+};
+
+/** Operator tool: probe a source's shop and store the mode (see above). */
 export const detectSourceMode = internalAction({
 	args: { crawlSourceId: v.id("crawlSources") },
-	handler: async (ctx, args) => {
-		const loaded = await ctx.runQuery(internal.crawlSources.getSource, {
-			crawlSourceId: args.crawlSourceId,
-		});
-		if (loaded === null) {
-			return null;
-		}
-		const probe = await probeShop({
-			fetchPage: (url) =>
-				fetchFeedPage(
-					url,
-					url.includes("/wp-json/") ? WOO_FETCH_HEADERS : SHOPIFY_FETCH_HEADERS
-				),
-			websiteUrl: loaded.roaster.websiteUrl,
-		});
-		if (probe.websiteUrl !== loaded.roaster.websiteUrl) {
-			await ctx.runMutation(internal.crawlSources.recordFeedOrigin, {
-				roasterId: loaded.roaster._id,
-				websiteUrl: probe.websiteUrl,
-			});
-		}
-		await ctx.runMutation(internal.crawlSources.setSourceMode, {
-			crawlSourceId: args.crawlSourceId,
-			mode: probe.mode,
-		});
-		return probe.mode;
-	},
+	handler: (ctx, args) => probeAndStoreMode(ctx, args.crawlSourceId),
 	returns: v.union(v.null(), sourceModeValidator),
 });
 

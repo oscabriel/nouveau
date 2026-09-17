@@ -1,6 +1,8 @@
 import { v } from "convex/values";
 
+import type { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { MAX_WATCHES_PER_USER } from "./constants";
 import { followerCounts } from "./followerCounts";
 import { crawlStatusValidator, getCrawlStatus } from "./health";
@@ -8,6 +10,40 @@ import { optionalUserId, requireUserId } from "./identity";
 import { roasterCardValidator } from "./roasters";
 
 const watchArgs = v.object({ roasterId: v.id("roasters") });
+
+/**
+ * Create the watch if the user does not have one. The one insert path for
+ * watches: the Watch button and the submission flow (§7.1, the submitter's
+ * watch lands with the baseline) both go through it, so the follower count
+ * aggregate always sees the row.
+ */
+export const ensureWatch = async (
+	ctx: MutationCtx,
+	userId: Id<"users">,
+	roasterId: Id<"roasters">
+): Promise<void> => {
+	const existing = await ctx.db
+		.query("watches")
+		.withIndex("by_user_and_roaster_id", (q) =>
+			q.eq("userId", userId).eq("roasterId", roasterId)
+		)
+		.unique();
+	if (existing !== null) {
+		return;
+	}
+	const watchId = await ctx.db.insert("watches", {
+		muted: false,
+		roasterId,
+		userId,
+	});
+	// The aggregate wants the stored doc (it derives namespace + sort key
+	// from it); reading it back keeps the count in the same transaction.
+	const watch = await ctx.db.get(watchId);
+	if (watch === null) {
+		throw new Error("Watch insert did not persist");
+	}
+	await followerCounts.insert(ctx, watch);
+};
 
 export const watchRoaster = mutation({
 	args: watchArgs,
@@ -17,27 +53,7 @@ export const watchRoaster = mutation({
 		if (roaster === null || roaster.status !== "active") {
 			throw new Error("Roaster not available to watch");
 		}
-		const existing = await ctx.db
-			.query("watches")
-			.withIndex("by_user_and_roaster_id", (q) =>
-				q.eq("userId", userId).eq("roasterId", args.roasterId)
-			)
-			.unique();
-		if (existing !== null) {
-			return null;
-		}
-		const watchId = await ctx.db.insert("watches", {
-			muted: false,
-			roasterId: args.roasterId,
-			userId,
-		});
-		// The aggregate wants the stored doc (it derives namespace + sort key
-		// from it); reading it back keeps the count in the same transaction.
-		const watch = await ctx.db.get(watchId);
-		if (watch === null) {
-			throw new Error("Watch insert did not persist");
-		}
-		await followerCounts.insert(ctx, watch);
+		await ensureWatch(ctx, userId, args.roasterId);
 		return null;
 	},
 	returns: v.null(),

@@ -34,4 +34,4 @@ Every mode maps into the same `ExtractedProduct` and passes through the same cla
 - `eligibleSource` no longer requires `products_json`; a WooCommerce or product-page roaster whose prices are all USD can feed Find my next bag.
 - `pageFacts` now reads with a day-long `maxAge` and no custom headers (headers bypass Firecrawl's cache; the facts do not depend on the market). Stock-bearing scrapes keep `maxAge: 0`.
 - Five product scrapes show the format's shape, not its failure rate across themes. Before a non-Shopify roaster goes into the directory, run `detectSourceMode` and a baseline on dev and read the `unreadable` count the crawl logs.
-- The submission flow (§7.1) does not exist yet; when it does, it calls `probeShop` and stores the mode, and a failed baseline is the visible failure the spec asks for.
+- The submission flow (§7.1, `submissions.ts`, built the same day) calls `probeShop` through `crawler.probeAndStoreMode`, stores the mode, and starts the baseline; a failed baseline is the visible failure the spec asks for.
