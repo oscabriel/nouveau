@@ -66,7 +66,7 @@ describe("parseWooListing", () => {
 					tags: ["Ethiopia coffee"],
 				},
 				name: "Daniso Horsa Natural",
-				url: `${SHOP}/product/daniso-horsa-natural/`,
+				url: `${SHOP}/product/daniso-horsa-natural`,
 				variants: [
 					{ available: true, grams: 340, name: "Default", priceCents: 3000 },
 				],
@@ -119,6 +119,15 @@ describe("parseWooListing", () => {
 		expect(page.products[0]?.variants[0]?.priceCents).toBe(300_000);
 		expect(page.currencies).toEqual(["JPY"]);
 		expect(page.feedCount).toBe(3);
+	});
+
+	test("a permalink that is not an http(s) URL is dropped, the lot kept", () => {
+		const [lot] = parseWooListing(
+			JSON.stringify([
+				jbc({ permalink: "ftp://jbc.example.com/product/daniso" }),
+			])
+		).products;
+		expect(lot?.url).toBeUndefined();
 	});
 
 	test("rejects a body that is not a Store API list", () => {

@@ -7,6 +7,24 @@ import type { Doc } from "./_generated/dataModel";
 
 const HANDLE = /^[a-zA-Z0-9-]+$/u;
 
+/**
+ * A shop page URL as the catalog stores it: http(s) only, without query
+ * string, hash or trailing slash (`?variant=` and `?Size=` are the same
+ * lot). Null for anything else, so a shop's own data cannot plant a
+ * `javascript:` link on a lot page.
+ */
+export const bareProductUrl = (url: string): string | null => {
+	try {
+		const parsed = new URL(url);
+		if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+			return null;
+		}
+		return `${parsed.origin}${parsed.pathname.replace(/\/$/u, "")}`;
+	} catch {
+		return null;
+	}
+};
+
 /** A Shopify product page, or null when the inputs cannot form a safe https URL. */
 export const productUrl = (
 	websiteUrl: string,

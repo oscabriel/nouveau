@@ -30,6 +30,15 @@ const meetsConstraints = (
 	(input.minGrams === undefined || variant.grams >= input.minGrams);
 
 /**
+ * When the source last read every product. A product_pages crawl whose
+ * collection page was unchanged succeeds without reading a lot, so its
+ * catalog, market and variants still carry the stamp of the last full read;
+ * that read is what the freshness of `lastSuccessAt` vouches for.
+ */
+export const observedAt = (source: Doc<"crawlSources">): number | undefined =>
+	source.lastFullCrawlAt ?? source.lastSuccessAt;
+
+/**
  * A completed crawl within the hour whose shop was confirmed US/USD. Any
  * source mode qualifies: the Shopify path confirms the market from the
  * storefront globals, the others from the currency every price reported.
@@ -44,9 +53,9 @@ export const eligibleSource = (
 	now - source.lastSuccessAt <= FRESHNESS_MS &&
 	source.market?.country === "US" &&
 	source.market.currency === "USD" &&
-	source.market.confirmedAt === source.lastSuccessAt;
+	source.market.confirmedAt === observedAt(source);
 
-/** That same crawl must have observed this exact variant with its size. */
+/** That same full read must have observed this exact variant with its size. */
 export const eligibleVariant = (
 	product: Doc<"products">,
 	variant: Doc<"productVariants">,
@@ -55,7 +64,7 @@ export const eligibleVariant = (
 	now: number
 ): boolean =>
 	eligibleSource(source, now) &&
-	source.lastSuccessAt === product.lastSeenAt &&
+	observedAt(source) === product.lastSeenAt &&
 	product.status === "current" &&
 	variant.productId === product._id &&
 	variant.observedAt === product.lastSeenAt &&

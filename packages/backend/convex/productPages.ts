@@ -12,6 +12,7 @@ import {
 	toCents,
 } from "./extraction";
 import type { ExtractedProduct, ExtractedVariant } from "./extraction";
+import { bareProductUrl } from "./lotUrl";
 
 /**
  * Firecrawl's `product` object, as documented at
@@ -44,19 +45,6 @@ export interface FirecrawlProductVariant {
 
 /** A product page path: Shopify `/products/x`, WooCommerce `/product/x/`. */
 const PRODUCT_PATH = /^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?products?\/[^/]+\/?$/iu;
-
-/** The URL without query string or hash: `?variant=` and `?Size=` are the same lot. */
-export const bareProductUrl = (url: string): string | null => {
-	try {
-		const parsed = new URL(url);
-		if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-			return null;
-		}
-		return `${parsed.origin}${parsed.pathname.replace(/\/$/u, "")}`;
-	} catch {
-		return null;
-	}
-};
 
 const registrable = (hostname: string): string =>
 	hostname.toLowerCase().split(".").slice(-2).join(".");
@@ -132,7 +120,14 @@ export const sitemapLocations = (xml: string): string[] => {
  * or an attachment sitemap is never worth a fetch.
  */
 export const productSitemaps = (index: string[]): string[] =>
-	index.filter((loc) => /product/iu.test(new URL(loc).pathname));
+	index.filter((loc) => {
+		try {
+			return /product/iu.test(new URL(loc).pathname);
+		} catch {
+			// A malformed <loc> is the sitemap's problem, not the crawl's.
+			return false;
+		}
+	});
 
 /** The variant's display name: its title, else its option values joined. */
 const variantName = (variant: FirecrawlProductVariant): string => {

@@ -8,6 +8,7 @@
 
 import { buildLotCopy, classifyLot, parseVariantGrams } from "./extraction";
 import type { ExtractedProduct, ExtractedVariant } from "./extraction";
+import { bareProductUrl } from "./lotUrl";
 
 export const WOO_PAGE_SIZE = 100;
 /** Stop paging here even if the shop reports more (500 products). */
@@ -233,7 +234,10 @@ const parseWooItem = (raw: WooProduct): WooItem | null => {
 		return null;
 	}
 	const currency = raw.prices?.currency_code?.toUpperCase();
-	const permalink = raw.permalink?.trim();
+	// The permalink is the shop's own data, stored and shown on the lot page,
+	// so it gets the same http(s)-only bare form as a scraped page URL.
+	const permalink =
+		typeof raw.permalink === "string" ? bareProductUrl(raw.permalink) : null;
 	const product: ExtractedProduct = {
 		externalId,
 		handle: raw.slug?.trim() || externalId,

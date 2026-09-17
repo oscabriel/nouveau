@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { PRODUCT_PAGES_FULL_INTERVAL_MS } from "./constants";
+import { eligibleVariant } from "./recommendationCatalog";
 import schema from "./schema";
 import type { SourceMode } from "./sourceMode";
 
@@ -193,7 +194,7 @@ describe("woocommerce mode", () => {
 		expect(roaster?.status).toBe("active");
 
 		expect(new Set(products.map((p) => `${p.externalId} ${p.url}`))).toEqual(
-			new Set([`1 ${SHOP}/product/daniso/`, `2 ${SHOP}/product/karumandi/`])
+			new Set([`1 ${SHOP}/product/daniso`, `2 ${SHOP}/product/karumandi`])
 		);
 		const byProduct = new Map(products.map((p) => [p._id, p.externalId]));
 		const named = variants.map(
@@ -324,7 +325,7 @@ describe("product_pages mode", () => {
 		const { scrapes } = stubFirecrawl(state);
 		vi.setSystemTime(T0 + 60 * 60_000);
 		await crawl(fx);
-		const { products, source } = await readAll(fx);
+		const { products, source, variants } = await readAll(fx);
 
 		expect(scrapes).toEqual([COLLECTION]);
 		expect(source?.lastSuccessAt).toBe(T0 + 60 * 60_000);
@@ -332,6 +333,31 @@ describe("product_pages mode", () => {
 		expect(source?.health).toBe("watching");
 		// No archive strikes for lots that were not read.
 		expect(products.every((p) => (p.missedCrawls ?? 0) === 0)).toBe(true);
+
+		// The skip vouches for the last full read: the lots it observed stay
+		// recommendable even though lastSuccessAt moved on.
+		const lot = products.find((p) => p.externalId === A);
+		const bag = variants.find(
+			(v) => v.productId === lot?._id && v.name === "250g"
+		);
+		expect(lot && bag && source).toBeTruthy();
+		if (lot && bag && source) {
+			expect(
+				eligibleVariant(
+					lot,
+					bag,
+					source,
+					{
+						includeNotes: false,
+						logIds: [],
+						maxPriceCents: 3000,
+						minGrams: 200,
+						preferences: "",
+					},
+					T0 + 60 * 60_000
+				)
+			).toBe(true);
+		}
 	});
 
 	test("a changed grid re-reads every page and fires the drop events", async () => {

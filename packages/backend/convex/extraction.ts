@@ -1038,10 +1038,12 @@ const NON_LOT_RTD_TITLE =
  * coffee. `filters` is plural on purpose: Proud Mary's coffee titles end in
  * "| Filter" (the brew method). Brewer brands (AeroPress, Chemex) are not
  * here: "Aeropress Championship Blend" is a coffee, so they only count on
- * untyped items (NON_LOT_UNTYPED_TITLE).
+ * untyped items (NON_LOT_UNTYPED_TITLE). `water` is brewing water (JBC
+ * sells Third Wave Water under Coffee) unless it is the Swiss Water or
+ * Mountain Water decaf process.
  */
 const NON_LOT_GOODS_TITLE =
-	/\b(?:mugs?|tees?|t-?shirts?|shirts?|hoodies?|sweatshirts?|crewnecks?|beanies?|snapbacks?|caps?|hats?|totes?|stickers?|scales?|grinders?|kettles?|drippers?|tampers?|canisters?|tumblers?|koozies?|socks|aprons?|candles?|posters?|drinkware|apparel|merch(?:andise)?|equipment|gear|filters)\b/iu;
+	/\b(?:(?<!(?:swiss|mountain)\s)water|mugs?|tees?|t-?shirts?|shirts?|hoodies?|sweatshirts?|crewnecks?|beanies?|snapbacks?|caps?|hats?|totes?|stickers?|scales?|grinders?|kettles?|drippers?|tampers?|canisters?|tumblers?|koozies?|socks|aprons?|candles?|posters?|drinkware|apparel|merch(?:andise)?|equipment|gear|filters)\b/iu;
 
 /**
  * Title words that settle an untyped item as a non-lot on their own: other

@@ -229,9 +229,29 @@ const fetchFeedPage = async (
 	}
 };
 
-const fetchPageText = async (url: string): Promise<string | null> => {
-	const response = await fetchFeedPage(url);
+const fetchPageText = async (
+	url: string,
+	headers?: Record<string, string>
+): Promise<string | null> => {
+	const response = await fetchFeedPage(url, headers);
 	return response.text;
+};
+
+/**
+ * Run `task` over `items` at most `size` at a time. Bounds what one crawl
+ * throws at a shop or at Firecrawl: the plan's concurrency limit throttles
+ * beyond a few scrapes at once, and a shop's origin deserves the same care.
+ */
+const inChunks = async <T>(
+	items: readonly T[],
+	size: number,
+	task: (item: T) => Promise<void>
+): Promise<void> => {
+	for (let start = 0; start < items.length; start += size) {
+		// Sequential chunks by design; see above.
+		// eslint-disable-next-line no-await-in-loop
+		await Promise.all(items.slice(start, start + size).map(task));
+	}
 };
 
 // Bot protection or a non-Shopify response: let Firecrawl render it.
@@ -410,7 +430,10 @@ const crawlWooCommerce = async (
 		for (let page = 2; page <= lastPage; page += 1) {
 			// Sequential by design: one shop, one listing, in order.
 			// eslint-disable-next-line no-await-in-loop
-			const text = await fetchPageText(wooProductsUrl(input.websiteUrl, page));
+			const text = await fetchPageText(
+				wooProductsUrl(input.websiteUrl, page),
+				WOO_FETCH_HEADERS
+			);
 			const parsed = text === null ? null : parseWooPage(text);
 			if (parsed === null) {
 				pageError = `Store API page ${page} unavailable; partial catalog discarded`;
@@ -453,10 +476,13 @@ const crawlWooCommerce = async (
 			`${input.websiteUrl}: ${variationParents.length} variable products, expanding ${expansions.length}`
 		);
 	}
-	await Promise.all(
-		expansions.map(async ({ externalId, parentId }) => {
+	await inChunks(
+		expansions,
+		PRODUCT_SCRAPE_CONCURRENCY,
+		async ({ externalId, parentId }) => {
 			const text = await fetchPageText(
-				wooVariationsUrl(input.websiteUrl, parentId)
+				wooVariationsUrl(input.websiteUrl, parentId),
+				WOO_FETCH_HEADERS
 			);
 			if (text === null) {
 				return;
@@ -471,7 +497,7 @@ const crawlWooCommerce = async (
 			if (product !== undefined && variants.length > 0) {
 				products.set(externalId, { ...product, variants });
 			}
-		})
+		}
 	);
 
 	await commitCatalog(ctx, {
@@ -650,18 +676,7 @@ const crawlProductPages = async (
 			unreadable += 1;
 		}
 	};
-	for (
-		let start = 0;
-		start < urls.length;
-		start += PRODUCT_SCRAPE_CONCURRENCY
-	) {
-		// Chunked on purpose: the plan's concurrency limit throttles beyond a
-		// few scrapes at once.
-		// eslint-disable-next-line no-await-in-loop
-		await Promise.all(
-			urls.slice(start, start + PRODUCT_SCRAPE_CONCURRENCY).map(readOne)
-		);
-	}
+	await inChunks(urls, PRODUCT_SCRAPE_CONCURRENCY, readOne);
 
 	if (products.length === 0 && rejected.length === 0) {
 		await failCrawl(ctx, {
@@ -774,9 +789,9 @@ export const detectSourceMode = internalAction({
  * Commit an already-extracted catalog for a source. Tests drive the commit
  * path through it (batched applyProductBatch, then finalizeCrawl). Confirms
  * the shop market like the products_json path does, so the recommendation
- * eligibility gate (`confirmedAt === lastSuccessAt`) can be exercised: the
- * confirmation stamps `fetchedAt`, which finalizeCrawl writes as
- * `lastSuccessAt`. Fails closed: no confirmation, absent market, crawl still
+ * eligibility gate (`confirmedAt === observedAt(source)`) can be exercised:
+ * the confirmation stamps `fetchedAt`, which finalizeCrawl writes as
+ * `lastSuccessAt` and `lastFullCrawlAt`. Fails closed: no confirmation, absent market, crawl still
  * succeeds.
  */
 export const commitExtractedCatalog = internalAction({

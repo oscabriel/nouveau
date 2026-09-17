@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
+import { bareProductUrl } from "./lotUrl";
 import {
-	bareProductUrl,
 	isProductUrl,
 	parseProductPage,
 	productSitemaps,
@@ -135,6 +135,16 @@ describe("product URL discovery", () => {
 		expect(bareProductUrl(`${PAGE}/?Size=250%20g#top`)).toBe(PAGE);
 		expect(bareProductUrl("ftp://x/y")).toBeNull();
 		expect(bareProductUrl("nope")).toBeNull();
+	});
+
+	test("productSitemaps skips a malformed <loc> instead of throwing", () => {
+		expect(
+			productSitemaps([
+				"not a url.xml",
+				"https://shop.example/product-sitemap.xml",
+				"https://shop.example/post-sitemap.xml",
+			])
+		).toEqual(["https://shop.example/product-sitemap.xml"]);
 	});
 
 	test("isProductUrl accepts Shopify and WooCommerce product paths on the shop's host", () => {

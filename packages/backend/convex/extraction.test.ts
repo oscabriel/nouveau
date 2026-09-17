@@ -655,6 +655,30 @@ describe("classifyLot (§16)", () => {
 		).toBe(false);
 	});
 
+	test("brewing water is a hard good even under a Coffee category; water-process decafs are lots", () => {
+		expect(
+			classifyLot({
+				productType: "Coffee,Merch",
+				tags: [],
+				title: "Third Wave Water-Espresso Profile",
+			})
+		).toEqual({ isLot: false, rule: "title" });
+		expect(
+			classifyLot({
+				productType: "Coffee",
+				tags: [],
+				title: "Decaf Ethiopia - Swiss Water Processed",
+			}).isLot
+		).toBe(true);
+		expect(
+			classifyLot({
+				productType: "",
+				tags: [],
+				title: "Vancouver Mountain Water Decaf",
+			}).isLot
+		).toBe(true);
+	});
+
 	test("Passenger's Archival Release lots are lots (#31)", () => {
 		expect(
 			lot(

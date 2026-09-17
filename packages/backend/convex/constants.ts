@@ -52,7 +52,8 @@ export const COMMIT_BATCH_PRODUCTS = 50;
 // already in the catalog, then the sitemap if the page listed nothing.
 export const MAX_PRODUCT_PAGES = 120;
 // Product scrapes in flight at once; the plan's concurrency limit throttles
-// above a handful and a throttled scrape is a slow one.
+// above a handful and a throttled scrape is a slow one. The WooCommerce
+// variation fetches use the same bound toward the shop's own origin.
 export const PRODUCT_SCRAPE_CONCURRENCY = 3;
 // The collection page's change tracking gates the product scrapes: an
 // unchanged page skips them. A size selling out can leave the grid
