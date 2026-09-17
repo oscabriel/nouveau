@@ -30,9 +30,6 @@
 
 # Environment & local files
 .env*
-!.env.example
-# Prod build target: a public URL, not a secret. Keeps `bun run deploy` reproducible.
-!.env.production
 .DS_Store
 *.pem
 *.local
