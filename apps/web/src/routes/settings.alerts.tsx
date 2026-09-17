@@ -57,13 +57,14 @@ const AlertSettingsComponent = () => {
 				<h2 className="mb-2 text-lg font-medium">Alert inbox</h2>
 				{me?.alertInboxAddress === undefined ? (
 					<p className="text-muted-foreground max-w-prose text-sm">
-						Your alert inbox is being set up. Alerts fire only after it exists;
-						nothing is held in the meantime.
+						Alerts are still being set up. They fire only once the alert inbox
+						exists; nothing is held in the meantime.
 					</p>
 				) : (
 					<p className="max-w-prose text-sm">
-						Alerts are delivered from your alert inbox:{" "}
-						<span className="font-mono">{me.alertInboxAddress}</span>
+						Alerts are delivered from the Nouveau alert inbox{" "}
+						<span className="font-mono">{me.alertInboxAddress}</span> to your
+						sign-in email.
 					</p>
 				)}
 			</section>

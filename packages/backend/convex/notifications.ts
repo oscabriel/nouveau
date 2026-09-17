@@ -1,11 +1,12 @@
-// Alert email fanout and per-user AgentMail inboxes (build order step 4).
+// Alert email fanout and the shared AgentMail alert inbox (build order step 4).
 //
 // Every Drop event fans out to its roaster's unmuted watchers: one
 // notifications-ledger row per (user, event) doubles as the one-email-per-
 // event dedup guard (build spec §5), and the row's outboundId links to the
-// AgentMail component's reactive delivery lifecycle. Alerts are sent from
-// the user's own AgentMail inbox (created after signup, §8.3) so replies
-// thread into a mailbox the user already controls.
+// AgentMail component's reactive delivery lifecycle. AgentMail's free plan
+// allows only 3 inboxes total, so alerts send from one shared product inbox
+// to each watcher's email (§8.3 as amended): replies from all users land in
+// that one inbox, threaded per conversation.
 
 import { AgentMail } from "@agentmail/convex";
 import { v } from "convex/values";
@@ -18,15 +19,22 @@ import {
 	internalMutation,
 	mutation,
 } from "./_generated/server";
-import type { MutationCtx } from "./_generated/server";
+import type { ActionCtx, MutationCtx } from "./_generated/server";
 import {
 	ALERT_WORTHY_TYPES,
 	INBOX_CLAIM_TTL_MS,
 	MAX_ALERT_RECIPIENTS_PER_EVENT,
 } from "./constants";
-import { requireUserId } from "./identity";
 
 const agentmail = new AgentMail(components.agentmail);
+
+const ALERT_INBOX_DISPLAY_NAME = "Nouveau Alerts";
+// Usernames on the shared @agentmail.to domain are unique, so pinning it
+// makes the from-address readable instead of a random generated one. The
+// inbox can be pre-created in the console to lock the name; provisioning
+// adopts it in that case (see findInboxByUsername).
+const ALERT_INBOX_USERNAME = "nouveau-alerts";
+const ALERT_INBOX_ADDRESS = `${ALERT_INBOX_USERNAME}@agentmail.to`;
 
 export type AlertType = (typeof ALERT_WORTHY_TYPES)[number];
 
@@ -138,6 +146,19 @@ export const notifyWatchersOfEvent = async (
 	}
 	const variant =
 		event.variantId === undefined ? null : await ctx.db.get(event.variantId);
+	// Alerts send from the shared product inbox; without it there is nowhere
+	// to send from. Lazy-provision it and skip this event's sends — the claim
+	// guard makes repeated schedules (and the fanout on the next event) safe.
+	const config = await ctx.db.query("appConfig").unique();
+	if (config?.alertInbox === undefined) {
+		await ctx.scheduler.runAfter(
+			0,
+			internal.notifications.provisionAlertInbox,
+			{}
+		);
+		return;
+	}
+	const { inboxId } = config.alertInbox;
 	const watches = await ctx.db
 		.query("watches")
 		.withIndex("by_roaster_id", (q) => q.eq("roasterId", event.roasterId))
@@ -148,13 +169,8 @@ export const notifyWatchersOfEvent = async (
 			.filter((watch) => !watch.muted)
 			.map(async (watch) => {
 				const user = await ctx.db.get(watch.userId);
-				// A user without a provisioned inbox (or email) gets no alert
-				// rather than a broken send; ensureInbox covers the gap at signup.
-				if (
-					user === null ||
-					user.email === undefined ||
-					user.agentmailInbox === undefined
-				) {
+				// A user without an email gets no alert rather than a broken send.
+				if (user === null || user.email === undefined) {
 					return;
 				}
 				const existing = await ctx.db
@@ -185,15 +201,11 @@ export const notifyWatchersOfEvent = async (
 					variantName: variant?.name ?? null,
 				};
 				try {
-					const outboundId = await agentmail.sendMessage(
-						ctx,
-						user.agentmailInbox.inboxId,
-						{
-							subject: alertSubject(emailInput),
-							text: alertBody(emailInput),
-							to: user.email,
-						}
-					);
+					const outboundId = await agentmail.sendMessage(ctx, inboxId, {
+						subject: alertSubject(emailInput),
+						text: alertBody(emailInput),
+						to: user.email,
+					});
 					// The ledger keeps "pending"; personalizedFeed reads the live
 					// pending → sent → delivered lifecycle from the component via
 					// outboundId, so this field stays the pre-send fallback state.
@@ -222,91 +234,138 @@ export const fanoutEvent = internalMutation({
 });
 
 /**
- * Atomically claim the right to provision this user's inbox. createUser and
- * ensureInbox can both schedule provisionInbox for a fresh signup, and
- * actions don't serialize, so the exclusivity check lives here in a
- * mutation: the transaction system orders concurrent claims and only the
- * winner returns won: true.
+ * Atomically claim the right to provision the shared alert inbox. Any code
+ * path may schedule provisionAlertInbox (fanout with no inbox yet, sign-ins
+ * via ensureAlertInbox), and actions don't serialize, so the exclusivity
+ * check lives here in a mutation: the transaction system orders concurrent
+ * claims and only the winner returns won: true.
  *
- * A claim older than INBOX_CLAIM_TTL_MS counts as stale (its action crashed
+ * The claim lives on the singleton appConfig row, creating it when absent; a
+ * claim older than INBOX_CLAIM_TTL_MS counts as stale (its action crashed
  * before the release mutation) and can be retaken.
  */
 export const claimInboxProvisioning = internalMutation({
-	args: { userId: v.id("users") },
-	handler: async (ctx, args) => {
-		const user = await ctx.db.get(args.userId);
-		if (user === null || user.agentmailInbox !== undefined) {
-			return { name: undefined, won: false };
+	args: {},
+	handler: async (ctx) => {
+		const config = await ctx.db.query("appConfig").unique();
+		if (config?.alertInbox !== undefined) {
+			return { won: false };
 		}
 		const now = Date.now();
-		const claimedAt = user.agentmailInboxClaimedAt;
-		if (claimedAt !== undefined && now - claimedAt < INBOX_CLAIM_TTL_MS) {
-			return { name: undefined, won: false };
+		if (config === null) {
+			await ctx.db.insert("appConfig", { alertInboxClaimedAt: now });
+			return { won: true };
 		}
-		await ctx.db.patch(args.userId, { agentmailInboxClaimedAt: now });
-		return { name: user.name, won: true };
+		const claimedAt = config.alertInboxClaimedAt;
+		if (claimedAt !== undefined && now - claimedAt < INBOX_CLAIM_TTL_MS) {
+			return { won: false };
+		}
+		await ctx.db.patch(config._id, { alertInboxClaimedAt: now });
+		return { won: true };
 	},
-	returns: v.object({
-		name: v.optional(v.string()),
-		won: v.boolean(),
-	}),
+	returns: v.object({ won: v.boolean() }),
 });
 
 /** Give up an unfulfilled provisioning claim so a retry can take it. */
 export const releaseInboxProvisioningClaim = internalMutation({
-	args: { userId: v.id("users") },
-	handler: async (ctx, args) => {
-		await ctx.db.patch(args.userId, { agentmailInboxClaimedAt: undefined });
+	args: {},
+	handler: async (ctx) => {
+		const config = await ctx.db.query("appConfig").unique();
+		if (config !== null) {
+			await ctx.db.patch(config._id, { alertInboxClaimedAt: undefined });
+		}
 		return null;
 	},
 	returns: v.null(),
 });
 
-/** Store a provisioned inbox on the user row and clear the claim. */
-export const setAgentmailInbox = internalMutation({
-	args: {
-		inbox: v.object({ address: v.string(), inboxId: v.string() }),
-		userId: v.id("users"),
-	},
+/** Store the provisioned shared inbox on the config row and clear the claim. */
+export const setAlertInbox = internalMutation({
+	args: { inbox: v.object({ address: v.string(), inboxId: v.string() }) },
 	handler: async (ctx, args) => {
-		await ctx.db.patch(args.userId, {
-			agentmailInbox: args.inbox,
-			agentmailInboxClaimedAt: undefined,
-		});
+		const config = await ctx.db.query("appConfig").unique();
+		await (config === null
+			? ctx.db.insert("appConfig", { alertInbox: args.inbox })
+			: ctx.db.patch(config._id, {
+					alertInbox: args.inbox,
+					alertInboxClaimedAt: undefined,
+				}));
 		return null;
 	},
 	returns: v.null(),
 });
 
 /**
- * Create the user's AgentMail inbox (§8.3). Scheduled by createUser at
- * signup and by ensureInbox for users who predate the feature. The two
- * schedules race on fresh signups, so a claim mutation decides which run
- * actually calls AgentMail; the loser returns without doing anything.
+ * Find the org's inbox with the pinned address, paging through the list
+ * (newest first). Returns null when no inbox of ours has that address —
+ * meaning the username is owned by a different organization.
  */
-export const provisionInbox = internalAction({
-	args: { userId: v.id("users") },
-	handler: async (ctx, args) => {
+const findInboxByUsername = async (ctx: ActionCtx): Promise<unknown | null> => {
+	let pageToken: string | undefined;
+	for (;;) {
+		// Pagination is inherently sequential: each request needs the next
+		// page token from the previous response.
+		// eslint-disable-next-line no-await-in-loop
+		const page = (await agentmail.listInboxes(ctx, {
+			limit: 100,
+			pageToken,
+		})) as {
+			inboxes?: { email?: unknown; inbox_id?: unknown }[];
+			next_page_token?: string;
+		};
+		for (const inbox of page.inboxes ?? []) {
+			if (inbox.email === ALERT_INBOX_ADDRESS) {
+				return inbox;
+			}
+		}
+		pageToken = page.next_page_token;
+		if (pageToken === undefined || pageToken === "") {
+			return null;
+		}
+	}
+};
+
+/**
+ * Create the shared Nouveau alert inbox once (§8.3 as amended). Scheduled by
+ * the fanout when the inbox is missing and by ensureAlertInbox on sign-ins;
+ * the claim mutation decides which run actually calls AgentMail, and the
+ * loser returns without doing anything.
+ *
+ * When the pinned username already exists — pre-created in the console to
+ * lock the name, or owned by another organization — the inbox list decides
+ * which: our own inbox is adopted, a foreign one fails the run.
+ */
+export const provisionAlertInbox = internalAction({
+	args: {},
+	handler: async (ctx) => {
 		const claim = await ctx.runMutation(
 			internal.notifications.claimInboxProvisioning,
-			{ userId: args.userId }
+			{}
 		);
 		if (!claim.won) {
 			return null;
 		}
 		let inbox: unknown;
 		try {
-			inbox = await agentmail.createInbox(
-				ctx,
-				claim.name === undefined ? {} : { displayName: claim.name }
-			);
+			try {
+				inbox = await agentmail.createInbox(ctx, {
+					displayName: ALERT_INBOX_DISPLAY_NAME,
+					username: ALERT_INBOX_USERNAME,
+				});
+			} catch (createError) {
+				const existing = await findInboxByUsername(ctx);
+				if (existing === null) {
+					throw createError;
+				}
+				inbox = existing;
+			}
 		} catch (error) {
-			// The remote call failed, so no inbox exists: release the claim and
-			// the next signup or sign-in retries immediately instead of waiting
-			// out the TTL.
+			// The remote calls failed without an inbox we can adopt, so release
+			// the claim and the next trigger retries immediately instead of
+			// waiting out the TTL.
 			await ctx.runMutation(
 				internal.notifications.releaseInboxProvisioningClaim,
-				{ userId: args.userId }
+				{}
 			);
 			throw error;
 		}
@@ -322,9 +381,8 @@ export const provisionInbox = internalAction({
 				`AgentMail inbox response missing inbox_id/email: ${JSON.stringify(inbox)}`
 			);
 		}
-		await ctx.runMutation(internal.notifications.setAgentmailInbox, {
+		await ctx.runMutation(internal.notifications.setAlertInbox, {
 			inbox: { address, inboxId },
-			userId: args.userId,
 		});
 		return null;
 	},
@@ -332,21 +390,22 @@ export const provisionInbox = internalAction({
 });
 
 /**
- * Public backfill entry: signed-in users whose row predates step 4 get an
- * inbox provisioned on next sign-in. Idempotent: the provisioning action's
- * claim mutation makes a repeated or concurrent schedule a no-op.
+ * Public lazy entry, called from the app shell on sign-ins: provision the
+ * shared alert inbox if it doesn't exist yet. Idempotent: a repeated or
+ * concurrent schedule loses the provisioning claim and does nothing.
  */
-export const ensureInbox = mutation({
+export const ensureAlertInbox = mutation({
 	args: {},
 	handler: async (ctx) => {
-		const userId = await requireUserId(ctx);
-		const user = await ctx.db.get(userId);
-		if (user === null || user.agentmailInbox !== undefined) {
+		const config = await ctx.db.query("appConfig").unique();
+		if (config?.alertInbox !== undefined) {
 			return null;
 		}
-		await ctx.scheduler.runAfter(0, internal.notifications.provisionInbox, {
-			userId,
-		});
+		await ctx.scheduler.runAfter(
+			0,
+			internal.notifications.provisionAlertInbox,
+			{}
+		);
 		return null;
 	},
 	returns: v.null(),

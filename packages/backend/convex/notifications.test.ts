@@ -109,16 +109,28 @@ interface FanoutFixture {
 	userId: Id<"users">;
 }
 
-const inbox = { address: "user@agentmail.to", inboxId: "inb_user1" };
+const sharedInbox = {
+	address: "alerts@agentmail.to",
+	inboxId: "inb_shared",
+};
+
+const inboxResponse = {
+	email: "provisioned@agentmail.to",
+	inbox_id: "inb_provisioned",
+};
 
 const setupFanout = async (
-	watch: { muted?: boolean } = {}
+	watch: { muted?: boolean } = {},
+	options: { withAlertInbox?: boolean } = {}
 ): Promise<Omit<FanoutFixture, "roasterId">> => {
 	const t = convexTest(schema, modules);
 	t.registerComponent("agentmail", agentmailTest.schema, agentmailModules);
 	registerWorkpool(t, "agentmail/sendPool");
 	registerWorkpool(t, "agentmail/callbackPool");
 	const ids = await t.run(async (ctx) => {
+		if (options.withAlertInbox !== false) {
+			await ctx.db.insert("appConfig", { alertInbox: sharedInbox });
+		}
 		const roaster = await ctx.db.insert("roasters", {
 			city: "Brooklyn",
 			claimed: false,
@@ -132,7 +144,6 @@ const setupFanout = async (
 			websiteUrl: "https://sey.example.com",
 		});
 		const user = await ctx.db.insert("users", {
-			agentmailInbox: inbox,
 			email: "watcher@example.com",
 			providerAccountId: "google-123",
 		});
@@ -240,23 +251,23 @@ describe("alert fanout", () => {
 		await t.finishAllScheduledFunctions(vi.runAllTimers);
 	});
 
-	test("muted watches and users without an inbox get no alert", async () => {
+	test("muted watches and users without an email get no alert", async () => {
 		const muted = await setupFanout({ muted: true });
 		await muted.t.mutation(internal.notifications.fanoutEvent, {
 			eventId: muted.dropEventId,
 		});
-		const noInbox = await setupFanout();
-		await noInbox.t.run(async (ctx) => {
-			const user = await ctx.db.get(noInbox.userId);
+		const noEmail = await setupFanout();
+		await noEmail.t.run(async (ctx) => {
+			const user = await ctx.db.get(noEmail.userId);
 			if (user !== null) {
-				await ctx.db.patch(user._id, { agentmailInbox: undefined });
+				await ctx.db.patch(user._id, { email: undefined });
 			}
 		});
-		await noInbox.t.mutation(internal.notifications.fanoutEvent, {
-			eventId: noInbox.dropEventId,
+		await noEmail.t.mutation(internal.notifications.fanoutEvent, {
+			eventId: noEmail.dropEventId,
 		});
 		await Promise.all(
-			[muted, noInbox].map(async (fixture) => {
+			[muted, noEmail].map(async (fixture) => {
 				const rows = await fixture.t.run((ctx) =>
 					ctx.db.query("notifications").collect()
 				);
@@ -264,6 +275,30 @@ describe("alert fanout", () => {
 			})
 		);
 		await muted.t.finishAllScheduledFunctions(vi.runAllTimers);
+	});
+
+	test("with no shared inbox yet, nothing sends and provisioning is scheduled", async () => {
+		const fetchSpy = vi.fn().mockResolvedValue(jsonResponse(inboxResponse));
+		vi.stubGlobal("fetch", fetchSpy);
+		const fixture = await setupFanout({}, { withAlertInbox: false });
+
+		await fixture.t.mutation(internal.notifications.fanoutEvent, {
+			eventId: fixture.dropEventId,
+		});
+
+		const rows = await fixture.t.run((ctx) =>
+			ctx.db.query("notifications").collect()
+		);
+		expect(rows).toHaveLength(0);
+
+		// The scheduled provisioning action creates the inbox (the only fetch);
+		// the next event's fanout is the one that sends.
+		await fixture.t.finishAllScheduledFunctions(vi.runAllTimers);
+		expect(fetchSpy).toHaveBeenCalledTimes(1);
+		const config = await fixture.t.run((ctx) =>
+			ctx.db.query("appConfig").unique()
+		);
+		expect(config?.alertInbox).toMatchObject({ inboxId: "inb_provisioned" });
 	});
 
 	test("non-alert-worthy event types never fan out", async () => {
@@ -286,28 +321,19 @@ describe("alert fanout", () => {
 
 interface ProvisionFixture {
 	t: ReturnType<typeof convexTest>;
-	userId: Id<"users">;
 }
 
-const inboxResponse = {
-	email: "provisioned@agentmail.to",
-	inbox_id: "inb_provisioned",
-};
-
-// A user with no inbox yet: exactly the row a fresh signup gets, which is
-// where createUser and ensureInbox both schedule provisionInbox.
-const setupProvisioning = async (): Promise<ProvisionFixture> => {
+// An empty fixture: provisioning state lives on the singleton appConfig row,
+// which starts absent.
+const setupProvisioning = (): ProvisionFixture => {
 	const t = convexTest(schema, modules);
 	t.registerComponent("agentmail", agentmailTest.schema, agentmailModules);
 	registerWorkpool(t, "agentmail/sendPool");
 	registerWorkpool(t, "agentmail/callbackPool");
-	const userId = await t.run((ctx) =>
-		ctx.db.insert("users", { providerAccountId: "google-123" })
-	);
-	return { t, userId };
+	return { t };
 };
 
-describe("inbox provisioning race", () => {
+describe("shared inbox provisioning race", () => {
 	beforeEach(() => {
 		process.env.AGENTMAIL_API_KEY = "test-key";
 	});
@@ -320,46 +346,49 @@ describe("inbox provisioning race", () => {
 	test("two concurrent provisions call AgentMail once and clear the claim", async () => {
 		const fetchSpy = vi.fn().mockResolvedValue(jsonResponse(inboxResponse));
 		vi.stubGlobal("fetch", fetchSpy);
-		const { t, userId } = await setupProvisioning();
+		const { t } = await setupProvisioning();
 
 		await Promise.all([
-			t.action(internal.notifications.provisionInbox, { userId }),
-			t.action(internal.notifications.provisionInbox, { userId }),
+			t.action(internal.notifications.provisionAlertInbox, {}),
+			t.action(internal.notifications.provisionAlertInbox, {}),
 		]);
 
 		expect(fetchSpy).toHaveBeenCalledTimes(1);
-		const user = await t.run((ctx) => ctx.db.get(userId));
-		expect(user?.agentmailInbox).toMatchObject({
+		const config = await t.run((ctx) => ctx.db.query("appConfig").unique());
+		expect(config?.alertInbox).toMatchObject({
 			address: inboxResponse.email,
 			inboxId: inboxResponse.inbox_id,
 		});
-		expect(user?.agentmailInboxClaimedAt).toBeUndefined();
+		expect(config?.alertInboxClaimedAt).toBeUndefined();
 	});
 
 	test("a live claim blocks provisioning; an expired claim lets a retry through", async () => {
 		const fetchSpy = vi.fn().mockResolvedValue(jsonResponse(inboxResponse));
 		vi.stubGlobal("fetch", fetchSpy);
-		const { t, userId } = await setupProvisioning();
+		const { t } = await setupProvisioning();
 
 		// Someone else claimed a moment ago: this run must stand down.
 		await t.run(async (ctx) => {
-			await ctx.db.patch(userId, {
-				agentmailInboxClaimedAt: Date.now() - (INBOX_CLAIM_TTL_MS - 1000),
+			await ctx.db.insert("appConfig", {
+				alertInboxClaimedAt: Date.now() - (INBOX_CLAIM_TTL_MS - 1000),
 			});
 		});
-		await t.action(internal.notifications.provisionInbox, { userId });
+		await t.action(internal.notifications.provisionAlertInbox, {});
 		expect(fetchSpy).not.toHaveBeenCalled();
 
 		// The claim is stale (its action died before releasing): retake it.
 		await t.run(async (ctx) => {
-			await ctx.db.patch(userId, {
-				agentmailInboxClaimedAt: Date.now() - (INBOX_CLAIM_TTL_MS + 1000),
-			});
+			const config = await ctx.db.query("appConfig").unique();
+			if (config !== null) {
+				await ctx.db.patch(config._id, {
+					alertInboxClaimedAt: Date.now() - (INBOX_CLAIM_TTL_MS + 1000),
+				});
+			}
 		});
-		await t.action(internal.notifications.provisionInbox, { userId });
+		await t.action(internal.notifications.provisionAlertInbox, {});
 		expect(fetchSpy).toHaveBeenCalledTimes(1);
-		const user = await t.run((ctx) => ctx.db.get(userId));
-		expect(user?.agentmailInbox).toMatchObject({
+		const config = await t.run((ctx) => ctx.db.query("appConfig").unique());
+		expect(config?.alertInbox).toMatchObject({
 			inboxId: inboxResponse.inbox_id,
 		});
 	});
@@ -367,41 +396,71 @@ describe("inbox provisioning race", () => {
 	test("a failed AgentMail call releases the claim so a retry can win", async () => {
 		const fetchSpy = vi.fn().mockRejectedValue(new Error("boom"));
 		vi.stubGlobal("fetch", fetchSpy);
-		const { t, userId } = await setupProvisioning();
+		const { t } = await setupProvisioning();
 
 		await expect(
-			t.action(internal.notifications.provisionInbox, { userId })
+			t.action(internal.notifications.provisionAlertInbox, {})
 		).rejects.toThrow("boom");
-		let user = await t.run((ctx) => ctx.db.get(userId));
-		expect(user?.agentmailInbox).toBeUndefined();
-		expect(user?.agentmailInboxClaimedAt).toBeUndefined();
+		let config = await t.run((ctx) => ctx.db.query("appConfig").unique());
+		expect(config?.alertInbox).toBeUndefined();
+		expect(config?.alertInboxClaimedAt).toBeUndefined();
 
 		// The released claim means the retry is not gated on the TTL.
 		vi.stubGlobal(
 			"fetch",
 			vi.fn().mockResolvedValue(jsonResponse(inboxResponse))
 		);
-		await t.action(internal.notifications.provisionInbox, { userId });
-		user = await t.run((ctx) => ctx.db.get(userId));
-		expect(user?.agentmailInbox).toMatchObject({
+		await t.action(internal.notifications.provisionAlertInbox, {});
+		config = await t.run((ctx) => ctx.db.query("appConfig").unique());
+		expect(config?.alertInbox).toMatchObject({
 			inboxId: inboxResponse.inbox_id,
 		});
 	});
 
-	test("an already-provisioned user never calls AgentMail again", async () => {
+	test("an inbox pre-created with the pinned username is adopted, not duplicated", async () => {
+		// createInbox rejects with the resource-taken conflict; the inbox list
+		// shows the console-created inbox under the pinned address.
+		const fetchSpy = vi.fn((input: unknown, init?: RequestInit) => {
+			if ((init?.method ?? "GET") === "POST") {
+				return new Response("username already in use", { status: 409 });
+			}
+			return jsonResponse({
+				count: 1,
+				inboxes: [
+					{
+						email: "nouveau-alerts@agentmail.to",
+						inbox_id: "inb_pinned",
+					},
+				],
+			});
+		});
+		vi.stubGlobal("fetch", fetchSpy);
+		const { t } = await setupProvisioning();
+
+		await t.action(internal.notifications.provisionAlertInbox, {});
+
+		const config = await t.run((ctx) => ctx.db.query("appConfig").unique());
+		expect(config?.alertInbox).toMatchObject({
+			address: "nouveau-alerts@agentmail.to",
+			inboxId: "inb_pinned",
+		});
+		expect(config?.alertInboxClaimedAt).toBeUndefined();
+	});
+
+	test("an already-provisioned inbox never calls AgentMail again", async () => {
 		const fetchSpy = vi.fn().mockResolvedValue(jsonResponse(inboxResponse));
 		vi.stubGlobal("fetch", fetchSpy);
-		const { t, userId } = await setupProvisioning();
+		const { t } = await setupProvisioning();
 		await t.run(async (ctx) => {
-			await ctx.db.patch(userId, {
-				agentmailInbox: {
+			await ctx.db.insert("appConfig", {
+				alertInbox: {
 					address: "existing@agentmail.to",
 					inboxId: "inb_existing",
 				},
 			});
 		});
 
-		await t.action(internal.notifications.provisionInbox, { userId });
+		await t.action(internal.notifications.provisionAlertInbox, {});
 
 		expect(fetchSpy).not.toHaveBeenCalled();
 	});

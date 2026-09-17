@@ -1,7 +1,6 @@
 import { vGoogleProfile } from "@convex-dev/auth/providers/oauth/google";
 import { v } from "convex/values";
 
-import { internal } from "./_generated/api";
 import { internalMutation, query } from "./_generated/server";
 
 /**
@@ -32,12 +31,6 @@ export const createUser = internalMutation({
 			name: args.profile.name,
 			providerAccountId: args.providerAccountId,
 		});
-		// Provision the per-user AgentMail alert inbox (§8.3). createUser and
-		// ensureInbox both schedule this on first sign-in; the action's claim
-		// mutation makes the duplicate schedule a no-op.
-		await ctx.scheduler.runAfter(0, internal.notifications.provisionInbox, {
-			userId,
-		});
 		return userId;
 	},
 	returns: v.id("users"),
@@ -58,8 +51,11 @@ export const getCurrentUser = query({
 		if (user === null) {
 			return null;
 		}
+		// The shared alert inbox lives on the singleton appConfig row, not on
+		// the user (AgentMail free plan: one product inbox for everyone).
+		const config = await ctx.db.query("appConfig").unique();
 		return {
-			alertInboxAddress: user.agentmailInbox?.address,
+			alertInboxAddress: config?.alertInbox?.address,
 			id: user._id,
 			imageUrl: user.imageUrl,
 			name: user.name,

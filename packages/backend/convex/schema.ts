@@ -13,6 +13,20 @@ import { shopMarketValidator } from "./shopMarket";
 import { sourceModeValidator } from "./sourceMode";
 
 export default defineSchema({
+	// Singleton config row (at most one document). Holds the shared AgentMail
+	// alert inbox (AgentMail free plan allows only 3 inboxes total, so alerts
+	// send from one product inbox rather than one per user) plus the claim
+	// stamp that serializes its provisioning.
+	appConfig: defineTable({
+		alertInbox: v.optional(
+			v.object({ address: v.string(), inboxId: v.string() })
+		),
+		// Claim stamp for inbox provisioning: claimInboxProvisioning sets it so
+		// concurrent scheduled provisions don't both call AgentMail; expired
+		// claims are treated as stale and can be retaken.
+		alertInboxClaimedAt: v.optional(v.number()),
+	}),
+
 	crawlSources: defineTable({
 		cadenceMinutes: v.number(),
 		consecutiveFailures: v.number(),
@@ -261,15 +275,6 @@ export default defineSchema({
 		.index("by_user_and_product", ["userId", "productId"]),
 
 	users: defineTable({
-		// The per-user AgentMail inbox (build spec §8.3) that sends this
-		// user's alerts; provisioned after signup, so optional.
-		agentmailInbox: v.optional(
-			v.object({ address: v.string(), inboxId: v.string() })
-		),
-		// Claim stamp for inbox provisioning: claimInboxProvisioning sets it so
-		// concurrent scheduled provisions don't both call AgentMail (the prod
-		// 403 bug); expired claims are treated as stale and can be retaken.
-		agentmailInboxClaimedAt: v.optional(v.number()),
 		email: v.optional(v.string()),
 		emailVerified: v.optional(v.boolean()),
 		imageUrl: v.optional(v.string()),

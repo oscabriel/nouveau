@@ -47,12 +47,12 @@ const SignInButton = () => {
 const SignOutButton = () => {
 	const { signOut } = useAuthActions();
 	const user = useQuery(api.users.getCurrentUser);
-	// Backfills the per-user alert inbox (§8.3) for sign-ins that predate it;
-	// the mutation is a no-op when the inbox already exists.
-	const ensureInbox = useMutation(api.notifications.ensureInbox);
+	// Lazily provisions the shared alert inbox on sign-in; the mutation is a
+	// no-op when the inbox already exists.
+	const ensureAlertInbox = useMutation(api.notifications.ensureAlertInbox);
 	useEffect(() => {
-		void ensureInbox();
-	}, [ensureInbox]);
+		void ensureAlertInbox();
+	}, [ensureAlertInbox]);
 	const endSession = async () => {
 		try {
 			await signOut();
