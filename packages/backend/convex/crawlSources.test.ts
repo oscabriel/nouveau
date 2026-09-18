@@ -231,6 +231,27 @@ describe("commit: baseline rule", () => {
 	});
 });
 
+const sweeps = (fx: Fixture) =>
+	fx.t.run(async (ctx) => {
+		const rows = await ctx.db.system.query("_scheduled_functions").collect();
+		return rows.filter((row) => row.name === "pageFacts:sweep");
+	});
+
+describe("commit: crawl-end page sweep (ADR-0008)", () => {
+	test("a successful commit schedules one sweep of the roaster's thin lots; a failed crawl schedules none", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [product("a"), product("b")]);
+		const scheduled = await sweeps(fx);
+		expect(scheduled).toHaveLength(1);
+		expect(scheduled[0]).toMatchObject({
+			args: [{ roasterId: fx.roasterId }],
+		});
+		const failed = await setup();
+		await fail(failed, T0, "shop down");
+		expect(await sweeps(failed)).toHaveLength(0);
+	});
+});
+
 describe("commit: new-event collapse (#19)", () => {
 	test("a lot first seen post-baseline fires one new event citing its cheapest size", async () => {
 		const fx = await setup();

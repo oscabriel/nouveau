@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { PAGE_FACTS_PER_HOUR } from "./pageFacts";
+import {
+	PAGE_FACTS_PER_HOUR,
+	PAGE_SWEEP_PER_CRAWL,
+	PAGE_SWEEP_SPACING_MS,
+} from "./pageFacts";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -26,17 +30,40 @@ const PAGE_MARKDOWN = [
 	"In the cup we find peach, melon, and red tea.",
 ].join("\n\n");
 
+/** The same page as the shop serves it: theme chrome around the facts. */
+const PAGE_HTML = [
+	"<html><body><header><nav><a href='/'>Home</a> | <a href='/shop'>Shop</a></nav></header>",
+	"<main><h1>Mullugeta</h1>",
+	"<p>Process: Natural</p><p>Variety: Heirloom</p>",
+	"<p>Altitude: 1,900 - 2,100 masl</p>",
+	"<p>Tasting notes: peach, melon, red tea.</p>",
+	"<p>In the cup we find peach, melon, and red tea.</p>",
+	"<p>Mullugeta Muntasha's washing station sits above Yirgacheffe town. Cherries are sorted by hand, fermented for 48 hours and dried slowly on raised beds for three weeks.</p></main>",
+	"<footer>Subscribe | Terms</footer></body></html>",
+].join("\n");
+
 /**
- * The two providers a read touches: Firecrawl returns the page markdown;
- * Jev answers every question with its first real option (Choice) or a yes
- * (Noul), so the stored facts follow from the fixture markdown.
+ * The providers a read touches. The shop serves the product page itself
+ * (`html`; null means the shop answered with an error); Firecrawl is the
+ * fallback and returns the page markdown; Jev answers every question with
+ * its first real option (Choice) or a yes (Noul), so the stored facts
+ * follow from the fixture page.
  */
 const stubProviders = ({
+	html = PAGE_HTML as string | null,
 	jev = true,
 	markdown = PAGE_MARKDOWN,
 	statusCode = 200,
 } = {}) => {
 	const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+		if (url === PAGE_URL) {
+			return html === null
+				? new Response("shop down", { status: 500 })
+				: new Response(html, {
+						headers: { "content-type": "text/html; charset=utf-8" },
+						status: statusCode,
+					});
+		}
 		if (url.includes("firecrawl")) {
 			return Response.json({
 				data: {
@@ -210,6 +237,89 @@ describe("pageFacts.request", () => {
 	});
 });
 
+const insertLot = (
+	fx: Fixture,
+	index: number,
+	fields: Record<string, unknown> = {}
+) =>
+	fx.t.run((ctx) =>
+		ctx.db.insert("products", {
+			externalId: `s${index}`,
+			firstSeenAt: 1000,
+			handle: `sweep-${index}`,
+			lastSeenAt: 1000,
+			missedCrawls: 0,
+			name: `Sweep ${index}`,
+			roasterId: fx.roasterId,
+			status: "current",
+			...fields,
+		})
+	);
+const scheduledReads = (fx: Fixture) =>
+	fx.t.run(async (ctx) => {
+		const rows = await ctx.db.system.query("_scheduled_functions").collect();
+		return rows.filter((row) => row.name === "pageFacts:scrape");
+	});
+
+describe("pageFacts.sweep", () => {
+	test("after a crawl, every thin current lot is stamped and gets one read; settled, tried and archived lots are left alone", async () => {
+		const fx = await setup();
+		const settled = await insertLot(fx, 1, {
+			process: "Washed",
+			roasterNotes: ["peach"],
+			variety: "Heirloom",
+		});
+		const triedToday = await insertLot(fx, 2, { copyFetchedAt: Date.now() });
+		const archived = await insertLot(fx, 3, { status: "archived" });
+		const thin = await insertLot(fx, 4);
+		const count = await fx.t.mutation(internal.pageFacts.sweep, {
+			roasterId: fx.roasterId,
+		});
+		expect(count).toBe(2);
+		const reads = await scheduledReads(fx);
+		expect(reads.map((row) => row.args[0])).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ productId: fx.lotId }),
+				expect.objectContaining({ productId: thin }),
+			])
+		);
+		expect(reads).toHaveLength(2);
+		const rows = await fx.t.run((ctx) =>
+			Promise.all(
+				[settled, triedToday, archived, thin].map((id) => ctx.db.get(id))
+			)
+		);
+		expect(rows[0]?.copyFetchedAt).toBeUndefined();
+		expect(rows[2]?.copyFetchedAt).toBeUndefined();
+		expect(rows[3]?.copyFetchedAt).toEqual(expect.any(Number));
+		// The next sweep in the same day finds nothing to do.
+		expect(
+			await fx.t.mutation(internal.pageFacts.sweep, { roasterId: fx.roasterId })
+		).toBe(0);
+	});
+
+	test("a sweep reads at most PAGE_SWEEP_PER_CRAWL lots, spaced apart, and the rest wait for the next crawl", async () => {
+		const fx = await setup();
+		for (let index = 0; index < PAGE_SWEEP_PER_CRAWL + 5; index += 1) {
+			// oxlint-disable-next-line no-await-in-loop -- sequential inserts
+			await insertLot(fx, 10 + index);
+		}
+		expect(
+			await fx.t.mutation(internal.pageFacts.sweep, { roasterId: fx.roasterId })
+		).toBe(PAGE_SWEEP_PER_CRAWL);
+		const reads = await scheduledReads(fx);
+		expect(reads).toHaveLength(PAGE_SWEEP_PER_CRAWL);
+		const times = reads.map((row) => row.scheduledTime);
+		expect(Math.max(...times) - Math.min(...times)).toBe(
+			(PAGE_SWEEP_PER_CRAWL - 1) * PAGE_SWEEP_SPACING_MS
+		);
+		// The lots left over are unstamped, so the next crawl's sweep takes them.
+		expect(
+			await fx.t.mutation(internal.pageFacts.sweep, { roasterId: fx.roasterId })
+		).toBe(6);
+	});
+});
+
 describe("pageFacts.store and the lot page", () => {
 	test("verified facts land on the product and the lot page merges them under the feed", async () => {
 		const fx = await setup();
@@ -274,7 +384,7 @@ describe("pageFacts.store and the lot page", () => {
 });
 
 describe("pageFacts.scrape", () => {
-	test("one markdown scrape and one Jev request; the picks become facts", async () => {
+	test("the shop's own page and one Jev request; no Firecrawl credit when the page has content", async () => {
 		const fx = await setup();
 		const fetchMock = stubProviders();
 		await fx.t.action(internal.pageFacts.scrape, {
@@ -282,6 +392,26 @@ describe("pageFacts.scrape", () => {
 			url: PAGE_URL,
 		});
 		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(
+			fetchMock.mock.calls.some(([url]) => String(url).includes("firecrawl"))
+		).toBe(false);
+		const read = await product(fx);
+		expect(read?.pageFacts).toEqual({
+			elevation: "1,900 - 2,100 masl",
+			process: "Natural",
+			tastingNotes: ["peach", "melon", "red tea"],
+			variety: "Heirloom",
+		});
+	});
+
+	test("a shop that answers with an error falls back to one markdown scrape", async () => {
+		const fx = await setup();
+		const fetchMock = stubProviders({ html: null });
+		await fx.t.action(internal.pageFacts.scrape, {
+			productId: fx.lotId,
+			url: PAGE_URL,
+		});
+		expect(fetchMock).toHaveBeenCalledTimes(3);
 		const scrape = fetchMock.mock.calls.find(([url]) =>
 			String(url).includes("firecrawl")
 		);
@@ -293,6 +423,26 @@ describe("pageFacts.scrape", () => {
 			tastingNotes: ["peach", "melon", "red tea"],
 			variety: "Heirloom",
 		});
+	});
+
+	test("a page that is only a script shell falls back to Firecrawl", async () => {
+		const fx = await setup();
+		const fetchMock = stubProviders({
+			html: "<html><body><div id='app'></div><script>render()</script></body></html>",
+		});
+		await fx.t.action(internal.pageFacts.scrape, {
+			productId: fx.lotId,
+			url: PAGE_URL,
+		});
+		expect(
+			fetchMock.mock.calls.some(([url]) => String(url).includes("firecrawl"))
+		).toBe(true);
+		const read = await product(fx);
+		expect(read?.pageFacts?.tastingNotes).toEqual([
+			"peach",
+			"melon",
+			"red tea",
+		]);
 	});
 
 	test("a Jev failure stores nothing and the lot retries after the window", async () => {
@@ -309,7 +459,7 @@ describe("pageFacts.scrape", () => {
 
 	test("an unavailable page stores nothing", async () => {
 		const fx = await setup();
-		stubProviders({ statusCode: 404 });
+		stubProviders({ html: null, statusCode: 404 });
 		await fx.t.action(internal.pageFacts.scrape, {
 			productId: fx.lotId,
 			url: PAGE_URL,

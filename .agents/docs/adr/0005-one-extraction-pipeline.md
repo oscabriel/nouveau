@@ -2,6 +2,8 @@
 
 Decided 2026-09-15 (owner, closing issue #32). Evidence: `.agents/research/extraction-audit.md` (§3 where facts live, §4 determinism, §5 schema, §11 change list). Decision: Option C with A's schema.
 
+Scheduling amended by ADR-0008 (2026-09-18): the page read now also runs at crawl time for thin lots, from the shop's own page first. The schema and verifier decisions below stand.
+
 Two systems read roaster copy today: crawl-time regex into `lotCopy` (`extraction.ts`) and request-time Firecrawl json extraction into 24-hour `recommendationEvidence` passages (`recommendationRules.ts`). The second system's facts never reach `products`, so lot pages show attributes for 3 of 20 roasters, Find-my-next-bag spends ~10 credits per run, and evidence expires daily. The audit found the page is the only source for variety, elevation, producer and tasting notes at six roasters (Onyx, Sey, Intelligentsia, Merit, Counter Culture, Stumptown), and that Firecrawl extraction is stable for shaped fields but drifts on prose and lets a wrong-field value through the verbatim check (`roastLevel: "Espresso"`).
 
 ## Decision

@@ -141,6 +141,12 @@ const commitCatalog = async (
 		...capture,
 		...rejected,
 	});
+	// The page sweep (ADR-0008) runs behind the commit for the same reason:
+	// a shop or Jev outage during the reads must not fail the crawl, and the
+	// reads are paced by the sweep itself.
+	await ctx.scheduler.runAfter(0, internal.pageFacts.sweep, {
+		roasterId: input.roasterId,
+	});
 	// The shadow rides behind a successful commit, off the crawl's critical
 	// path: a Jev outage must not fail the crawl that produced the
 	// candidates, so it is scheduled rather than awaited inline.

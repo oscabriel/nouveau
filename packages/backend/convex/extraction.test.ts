@@ -10,6 +10,7 @@ import {
 	parseProductsJson,
 	parseVariantGrams,
 	pageFactCandidates,
+	pageTextFromHtml,
 	PRODUCTS_JSON_PAGE_SIZE,
 	SHOPIFY_FETCH_HEADERS,
 	shopifyProductsUrl,
@@ -1838,5 +1839,57 @@ describe("verifyPageFacts (ADR-0005)", () => {
 		expect(verifyPageFacts({ tastingNotes: ["Notes of Cherry"] })).toEqual({
 			tastingNotes: ["Cherry"],
 		});
+	});
+});
+
+describe("pageTextFromHtml", () => {
+	// Real theme markup (ADR-0008): Onyx renders one span per note, Counter
+	// Culture a pipe-separated line, Stumptown a div per note. None is a
+	// list the line rules read, and nav lines fill the candidate cap first.
+	const chrome =
+		"<header><nav><a>Coffee</a> | <a>Holiday</a> | <a>Subscription</a></nav></header>" +
+		"<div>Free shipping on $30 and up!</div><div>Subscribe | Save | Gift Guide</div>";
+	const story =
+		"<p>Fredy Perez is a longtime producer in San Andrés, Lempira, and one of the people who first helped us find our footing in this relatively young coffee-producing region. Since beginning our work here around 2021, Fredy has become both a trusted producer and an important local connection.</p>";
+
+	test("a theme's tasting-notes element leads the note candidates (Onyx spans)", () => {
+		const text = pageTextFromHtml(
+			`<html><body>${chrome}<main><h1>Honduras Fredy Perez</h1><p class="tasting-notes kapra"><span class="note">Tart Apple</span><span class="note">Pecan</span><span class="note">Fig</span><span class="note">Allspice</span></p>${story}</main></body></html>`
+		);
+		expect(text).not.toBeNull();
+		expect(pageFactCandidates(text ?? "").tastingNotes.slice(0, 4)).toEqual([
+			"Tart Apple",
+			"Pecan",
+			"Fig",
+			"Allspice",
+		]);
+	});
+
+	test("a pipe-separated notes wrapper (Counter Culture) and a per-note div block (Stumptown)", () => {
+		const counterCulture = pageTextFromHtml(
+			`<html><body>${chrome}<div class="tasting-notes--wrapper flex"><p class="italic">tropical | brown sugar | juicy</p><button title="Toggle Taste Notes">?</button></div>${story}</body></html>`
+		);
+		expect(
+			pageFactCandidates(counterCulture ?? "").tastingNotes.slice(0, 3)
+		).toEqual(["tropical", "brown sugar", "juicy"]);
+		const stumptown = pageTextFromHtml(
+			`<html><body>${chrome}<div class="product-flavor-profile__tasting-notes"><h3 class="product-flavor-profile__tasting-notes-title">Tasting Notes</h3><div class="product-flavor-profile__flavors"><div class="product-flavor-profile__flavor">Red Currant</div><div class="product-flavor-profile__flavor">Cocoa</div><div class="product-flavor-profile__flavor">Honey</div></div></div>${story}</body></html>`
+		);
+		expect(
+			pageFactCandidates(stumptown ?? "").tastingNotes.slice(0, 3)
+		).toEqual(["Red Currant", "Cocoa", "Honey"]);
+	});
+
+	test("a script shell is null; chrome never reaches the text", () => {
+		expect(
+			pageTextFromHtml(
+				"<html><body><div id='app'></div><script>render()</script></body></html>"
+			)
+		).toBeNull();
+		const text = pageTextFromHtml(
+			`<html><body>${chrome}<main>${story}</main><footer>Terms | Privacy</footer></body></html>`
+		);
+		expect(text).not.toContain("Holiday");
+		expect(text).not.toContain("Privacy");
 	});
 });

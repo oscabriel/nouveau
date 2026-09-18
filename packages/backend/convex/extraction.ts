@@ -160,6 +160,114 @@ export const stripHtml = (html: string): string =>
 		.replaceAll(/\s*\n\s*/gu, "\n")
 		.trim();
 
+/** Page chrome whose text is never a fact about the coffee: dropped whole. */
+const CHROME_ELEMENT =
+	/<(?<tag>header|nav|footer|aside)\b[^>]*>[\s\S]*?<\/\k<tag>\s*>/giu;
+
+/**
+ * A page below this much text is a script shell (the theme renders
+ * client-side), not a product page a plain fetch can read.
+ */
+export const MIN_PAGE_TEXT_LENGTH = 200;
+
+/**
+ * The opening tag of an element a theme dedicates to the coffee's notes
+ * (Onyx `tasting-notes`, Counter Culture `tasting-notes--wrapper`,
+ * Stumptown `product-flavor-profile__tasting-notes`, Intelligentsia
+ * `pv-gallery__flavors`). A class that also says upsell, related or card is
+ * another product's block and is skipped.
+ */
+const NOTES_ELEMENT =
+	/<(?<tag>[a-z][a-z0-9]*)\b[^>]*\bclass="(?<classes>[^"]*(?:tast(?:e|ing)[-_]?notes?|flavou?r[-_]?(?:notes?|profile|s)\b)[^"]*)"[^>]*>/giu;
+const OTHER_PRODUCT_CLASS = /upsell|related|recommend|card|collection|grid/iu;
+const NOTES_LABEL = /^(?:tast(?:e|ing)|flavou?r)\s*notes?$/iu;
+const ANY_TAG = /<\/?(?<name>[a-z][a-z0-9-]*)\b[^>]*>/giu;
+/** An element longer than this is a section, not a notes block. */
+const MAX_NOTES_ELEMENT_LENGTH = 4000;
+/** Notes elements tried before giving up (an upsell block can sit first). */
+const MAX_NOTES_ELEMENTS = 3;
+
+/** The inner HTML of the element whose opening tag starts at `start`. */
+const elementInnerHtml = (
+	html: string,
+	tag: string,
+	start: number,
+	openLength: number
+): string => {
+	const scanner = new RegExp(ANY_TAG.source, "giu");
+	scanner.lastIndex = start + openLength;
+	const bodyStart = scanner.lastIndex;
+	let depth = 1;
+	for (
+		let match = scanner.exec(html);
+		match !== null && match.index - bodyStart < MAX_NOTES_ELEMENT_LENGTH;
+		match = scanner.exec(html)
+	) {
+		if (match.groups?.name?.toLowerCase() !== tag) {
+			continue;
+		}
+		depth += match[0].startsWith("</") ? -1 : 1;
+		if (depth === 0) {
+			return html.slice(bodyStart, match.index);
+		}
+	}
+	return html.slice(bodyStart, bodyStart + MAX_NOTES_ELEMENT_LENGTH);
+};
+
+/**
+ * The notes a theme's dedicated element carries, one per child element or
+ * separator-split item, each through verifyNote; the block's own label
+ * ("Tasting Notes") is not a note. Empty when the page has no such element.
+ */
+export const themeNotesFromHtml = (html: string): string[] => {
+	let tried = 0;
+	for (const match of html.matchAll(NOTES_ELEMENT)) {
+		const { classes = "", tag = "" } = match.groups ?? {};
+		if (OTHER_PRODUCT_CLASS.test(classes)) {
+			continue;
+		}
+		tried += 1;
+		if (tried > MAX_NOTES_ELEMENTS) {
+			break;
+		}
+		const inner = elementInnerHtml(
+			html,
+			tag.toLowerCase(),
+			match.index,
+			match[0].length
+		);
+		// Every child element is its own line: a theme renders one note per
+		// span or div, and stripHtml would run inline spans together.
+		const notes = splitNotes(
+			stripHtml(inner.replaceAll(/<[^>]*>/gu, "\n")).replaceAll("\n", ", ")
+		).filter((note) => !NOTES_LABEL.test(note));
+		if (notes.length > 0) {
+			return notes;
+		}
+	}
+	return [];
+};
+
+/**
+ * A product page as the shop serves it, reduced to the block text the page
+ * candidate finder reads: chrome (header, nav, footer, aside) dropped, then
+ * stripHtml. Every roaster checked (ADR-0008) renders its notes server-side,
+ * so this is the same text Firecrawl's markdown carries, without the credit.
+ * When the theme marks its notes element, those notes open the text as a
+ * labelled line, so they lead the candidates instead of trailing the nav
+ * lines that fill the cap. Null for a shell page.
+ */
+export const pageTextFromHtml = (html: string): string | null => {
+	const text = stripHtml(html.replaceAll(CHROME_ELEMENT, "\n"));
+	if (text.length < MIN_PAGE_TEXT_LENGTH) {
+		return null;
+	}
+	const themeNotes = themeNotesFromHtml(html);
+	return themeNotes.length === 0
+		? text
+		: `Tasting notes: ${themeNotes.join(", ")}\n${text}`;
+};
+
 /**
  * When the last space before the cap sits this early, the text is one long
  * unbroken token (a URL, a run of dashes) and a word-boundary cut would keep

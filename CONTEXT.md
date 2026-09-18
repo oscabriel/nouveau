@@ -46,6 +46,10 @@ A drop-alert service with a social layer for home coffee brewers: watches US spe
 
 **Roaster notes**: Tasting descriptors taken from the roaster's own copy — description prose and tags on the lot's shop page. Only descriptors literally present count; nothing is invented. _Avoid_: AI summary (that's the alert email's generated line)
 
+**Page facts**: The facts a lot's rendered shop page states that its feed did not: process, variety, region, elevation, producer, roast level and tasting notes. Read once per lot, verbatim from the page, and shown only where the feed left a gap. _Avoid_: Enrichment, scrape results
+
+**Thin lot**: A current lot with no process, no variety or no notes after its feed facts and page facts are merged. The only kind of lot whose page gets read. _Avoid_: Incomplete, sparse
+
 **Profile**: A user's public page: their logs, ratings and notes, plus the roasters they watch. One per user. _Avoid_: Account (that's the sign-in); Taste profile (that's the deferred matching concept)
 
 **Activity feed**: The public feed of recent logs across all users. _Avoid_: Timeline, social feed; the drop feed (§8.1 of the build spec) is the other feed and stays distinct

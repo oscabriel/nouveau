@@ -19,7 +19,11 @@ import {
 	mutation,
 } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
-import { pageFactCandidates, verifyPageFacts } from "./extraction";
+import {
+	pageFactCandidates,
+	pageTextFromHtml,
+	verifyPageFacts,
+} from "./extraction";
 import type { PageFactField } from "./extraction";
 import { askJev, JEV_MODEL, jevChoice, jevNoul } from "./jev";
 import type { JevQuestion } from "./jev";
@@ -30,6 +34,16 @@ import { sentenceCandidates } from "./recommendationRules";
 
 /** Anyone can open a lot page, so the spend is capped deployment-wide. */
 export const PAGE_FACTS_PER_HOUR = 20;
+/**
+ * Thin lots one crawl's sweep reads (ADR-0008). The first sweep of a
+ * catalog is a backfill spread over crawls; after that a crawl finds only
+ * its new lots, so the cap mostly bounds a Jev outage's retry cost.
+ */
+export const PAGE_SWEEP_PER_CRAWL = 25;
+/** Reads in one sweep are spaced so a shop sees one request at a time. */
+export const PAGE_SWEEP_SPACING_MS = 2000;
+/** Current lots one sweep considers; above any real catalog (Sey ~900). */
+const PAGE_SWEEP_SCAN = 1000;
 /**
  * Variety, elevation and producer do not change between crawls, so a page
  * Firecrawl read within a day is good enough (a fresh scrape is slower and
@@ -56,6 +70,14 @@ const NONE_OPTION = "none";
 const YES = 0.5;
 /** A page read contributes at most this many description sentences. */
 const MAX_PAGE_SENTENCES = 3;
+/** A shop that has not answered by then is read through Firecrawl instead. */
+const PAGE_FETCH_TIMEOUT_MS = 15_000;
+/** Shopify and WooCommerce themes serve a browser the full page; a bare client UA can get a challenge page. */
+const PAGE_FETCH_HEADERS: Record<string, string> = {
+	accept: "text/html",
+	"user-agent":
+		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36 nouveau-crawler",
+};
 
 /** The Choice question for one fact field, over its candidate spans. */
 const CHOICE_FIELDS: readonly (readonly [
@@ -233,6 +255,55 @@ export const request = mutation({
 	returns: requestResultValidator,
 });
 
+/**
+ * The crawl-end sweep (ADR-0008): every current lot of the roaster that is
+ * still thin after the feed merge, has no page facts, and was not tried
+ * inside the retry window gets stamped and one scheduled read, up to
+ * PAGE_SWEEP_PER_CRAWL per crawl. Same stamp-then-schedule as `request`,
+ * so a viewer's ask and the sweep never read the same lot twice. Returns
+ * how many reads it scheduled.
+ */
+export const sweep = internalMutation({
+	args: { roasterId: v.id("roasters") },
+	handler: async (ctx, args) => {
+		const roaster = await ctx.db.get("roasters", args.roasterId);
+		if (roaster === null) {
+			return 0;
+		}
+		const now = Date.now();
+		const lots = await ctx.db
+			.query("products")
+			.withIndex("by_roaster_and_status_and_last_seen_at", (q) =>
+				q.eq("roasterId", args.roasterId).eq("status", "current")
+			)
+			.order("desc")
+			.take(PAGE_SWEEP_SCAN);
+		const due = lots
+			.filter((lot) => needsPageFacts(lot, now))
+			.slice(0, PAGE_SWEEP_PER_CRAWL);
+		let scheduled = 0;
+		for (const lot of due) {
+			const url = lotShopUrl(roaster, lot);
+			if (url === null) {
+				continue;
+			}
+			// Sequential on purpose: the stamp and the schedule are one step
+			// per lot, and the spacing is the lot's position in the sweep.
+			// oxlint-disable-next-line no-await-in-loop
+			await ctx.db.patch("products", lot._id, { copyFetchedAt: now });
+			// oxlint-disable-next-line no-await-in-loop
+			await ctx.scheduler.runAfter(
+				scheduled * PAGE_SWEEP_SPACING_MS,
+				internal.pageFacts.scrape,
+				{ productId: lot._id, url }
+			);
+			scheduled += 1;
+		}
+		return scheduled;
+	},
+	returns: v.number(),
+});
+
 /** What one page read yields: facts for the product, sentences for evidence. */
 export interface PageRead {
 	facts: PageFacts;
@@ -242,17 +313,31 @@ export interface PageRead {
 }
 
 /**
- * One product page through a markdown-only Firecrawl scrape and one Jev
- * request, verified. Shared by the scheduled scrape and the recommendation
- * worker so both write the same thing. `known` is the catalog copy the
- * evidence must be new against (empty for the lot-page ask). Throws when
- * the page is unavailable; the caller decides what a failure means for it.
+ * The product page's text from the shop itself: one plain request, no
+ * credit. Null when the shop errors, times out, serves something other
+ * than HTML, or serves a script shell; the caller falls back to Firecrawl.
  */
-export const readPageFacts = async (
-	ctx: ActionCtx,
-	url: string,
-	known = ""
-): Promise<PageRead> => {
+const fetchPageText = async (url: string): Promise<string | null> => {
+	let response: Response;
+	try {
+		response = await fetch(url, {
+			headers: PAGE_FETCH_HEADERS,
+			signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT_MS),
+		});
+	} catch {
+		return null;
+	}
+	if (
+		!response.ok ||
+		!(response.headers.get("content-type") ?? "").includes("text/html")
+	) {
+		return null;
+	}
+	return pageTextFromHtml(await response.text());
+};
+
+/** The page through Firecrawl's markdown scrape (one credit, cached a day). */
+const scrapePageText = async (ctx: ActionCtx, url: string): Promise<string> => {
 	const page = await firecrawl.scrape(ctx, url, {
 		formats: ["markdown"],
 		maxAge: PAGE_FACTS_MAX_AGE_MS,
@@ -263,7 +348,25 @@ export const readPageFacts = async (
 	if (metadata?.statusCode !== 200 || metadata.sourceURL !== url) {
 		throw new Error("Source page unavailable");
 	}
-	const markdown = page.markdown ?? "";
+	return page.markdown ?? "";
+};
+
+/**
+ * One product page and one Jev request, verified. The page comes from the
+ * shop itself when a plain fetch yields content (ADR-0008), else through a
+ * markdown-only Firecrawl scrape. Shared by the scheduled scrape and the
+ * recommendation worker so both write the same thing. `known` is the
+ * catalog copy the evidence must be new against (empty for the lot-page
+ * ask). Throws when the page is unavailable both ways; the caller decides
+ * what a failure means for it.
+ */
+export const readPageFacts = async (
+	ctx: ActionCtx,
+	url: string,
+	known = ""
+): Promise<PageRead> => {
+	const markdown =
+		(await fetchPageText(url)) ?? (await scrapePageText(ctx, url));
 	const empty: PageRead = { facts: {}, markdown, sentences: [] };
 	const apiKey = env.TYPESAFE_API_KEY;
 	// Without the key the read still succeeds: the lot keeps its attempt
