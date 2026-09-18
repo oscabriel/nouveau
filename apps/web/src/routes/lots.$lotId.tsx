@@ -74,9 +74,9 @@ const VariantRow = ({
 		<td className={`${bodyCell} tnum whitespace-nowrap`}>
 			{formatPrice(variant.priceCents)}
 		</td>
-		<td className={bodyCell}>
+		<td className={`${bodyCell} whitespace-nowrap`}>
 			{variant.available ? (
-				""
+				<span className="label-caps text-muted-foreground">In stock</span>
 			) : (
 				<span className="label-caps opacity-70">Sold out</span>
 			)}
@@ -121,10 +121,10 @@ const SizeTable = ({
 						Price
 					</th>
 					<th className={headCell} scope="col">
-						<span className="sr-only">Stock</span>
+						Stock
 					</th>
-					<th className={headCell} scope="col">
-						<span className="sr-only">Shop</span>
+					<th className={`${headCell} text-right`} scope="col">
+						Shop
 					</th>
 				</tr>
 			</thead>
