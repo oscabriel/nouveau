@@ -115,6 +115,13 @@ export const MAX_PROFILE_LOGS = 50;
 // Lots rendered on one lot page (§15); a highlight, like the profile.
 export const LOT_PAGE_LOGS_LIMIT = 20;
 
+// Variant rows the lot page's size table reads. Sits above any real lot:
+// Shopify publishes at most 100 variants per product and the biggest lot in
+// the catalog (a Proud Mary blend) has 21, and variants are name-matched per
+// crawl and never deleted, so renamed sizes accumulate slowly. A bound, not
+// a display cap: the page still promises every purchasable option.
+export const LOT_PAGE_VARIANTS_LIMIT = 128;
+
 // Lots returned by a name search on one roaster's catalog.
 export const LOT_SEARCH_LIMIT = 20;
 
