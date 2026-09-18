@@ -12,7 +12,7 @@ import { LogForm } from "@/components/log-form";
 import { SearchField } from "@/components/search-field";
 import { displayPriceCents, formatGrams, formatPrice } from "@/lib/format";
 
-type LotRow = FunctionReturnType<typeof api.roasters.listLots>[number];
+type LotRow = FunctionReturnType<typeof api.roasters.listLots>["page"][number];
 
 const PAGE_SIZE = 20;
 
@@ -23,6 +23,11 @@ interface LotFilters {
 	maxPriceCents?: number;
 	origin?: string;
 }
+
+const fromPrice = (minPriceCents: number | null): string => {
+	const cents = displayPriceCents(minPriceCents);
+	return cents === null ? "" : `from ${formatPrice(cents)}`;
+};
 
 const LotTableRow = ({
 	canLog,
@@ -85,9 +90,7 @@ const LotTableRow = ({
 				<td
 					className={`${bodyCell} text-muted-foreground tnum hidden pr-4 whitespace-nowrap sm:table-cell`}
 				>
-					{displayPriceCents(lot.minPriceCents) === null
-						? ""
-						: `from ${formatPrice(lot.minPriceCents)}`}
+					{fromPrice(lot.minPriceCents)}
 				</td>
 				{canLog && (
 					<td className={`${bodyCell} w-12 py-0 text-right align-middle`}>
