@@ -79,6 +79,16 @@ interface VariantMove {
 	variantId: Id<"productVariants">;
 }
 
+/**
+ * One crawl of one product: the burst every variant write and every
+ * collapsed event of that product shares.
+ */
+interface BurstContext {
+	fetchedAt: number;
+	productId: Id<"products">;
+	roasterId: Id<"roasters">;
+}
+
 interface DiffInput {
 	eventsAllowed: boolean;
 	fetchedAt: number;
@@ -88,8 +98,6 @@ interface DiffInput {
 		grams?: number;
 		priceCents: number;
 	};
-	productId: Id<"products">;
-	roasterId: Id<"roasters">;
 	variant: Doc<"productVariants">;
 }
 
@@ -156,25 +164,21 @@ interface BurstEvent {
 
 const emitBurstEvents = async (
 	ctx: MutationCtx,
-	input: {
-		events: BurstEvent[];
-		fetchedAt: number;
-		productId: Id<"products">;
-		roasterId: Id<"roasters">;
-	}
+	burst: BurstContext,
+	events: BurstEvent[]
 ): Promise<void> => {
-	for (const event of input.events) {
+	for (const event of events) {
 		// eslint-disable-next-line no-await-in-loop -- at most five events per burst; each insert fans out to watchers before the next
 		const eventId = await ctx.db.insert("dropEvents", {
-			detectedAt: input.fetchedAt,
+			detectedAt: burst.fetchedAt,
 			...(event.newPriceCents === undefined
 				? {}
 				: { newPriceCents: event.newPriceCents }),
 			...(event.oldPriceCents === undefined
 				? {}
 				: { oldPriceCents: event.oldPriceCents }),
-			productId: input.productId,
-			roasterId: input.roasterId,
+			productId: burst.productId,
+			roasterId: burst.roasterId,
 			type: event.type,
 			variantId: event.variantId,
 			...(event.variantIds.length > 1
@@ -186,16 +190,13 @@ const emitBurstEvents = async (
 	}
 };
 
-interface ApplyVariantsInput {
+interface ApplyVariantsInput extends BurstContext {
 	eventsAllowed: boolean;
-	fetchedAt: number;
 	// True when upsertProduct inserted the product row during this same crawl:
 	// the lot's first sighting. Every size is new at once and they are one
 	// fact, so they share one "new" event citing the cheapest size (#19).
 	isNewProduct: boolean;
 	product: ExtractedProduct;
-	productId: Id<"products">;
-	roasterId: Id<"roasters">;
 }
 
 /**
@@ -395,8 +396,6 @@ const applyVariants = async (
 				eventsAllowed: input.eventsAllowed,
 				fetchedAt: input.fetchedAt,
 				next,
-				productId: input.productId,
-				roasterId: input.roasterId,
 				variant: prior,
 			})
 		)
@@ -407,12 +406,12 @@ const applyVariants = async (
 		return;
 	}
 
-	await emitBurstEvents(ctx, {
-		events: planBurstEvents(moves),
+	const burst: BurstContext = {
 		fetchedAt: input.fetchedAt,
 		productId: input.productId,
 		roasterId: input.roasterId,
-	});
+	};
+	await emitBurstEvents(ctx, burst, planBurstEvents(moves));
 
 	if (added.length === 0) {
 		return;
@@ -429,19 +428,14 @@ const applyVariants = async (
 		}
 	}
 	if (cheapest !== undefined) {
-		await emitBurstEvents(ctx, {
-			events: [
-				{
-					newPriceCents: cheapest.priceCents,
-					type: "new",
-					variantId: cheapest.variantId,
-					variantIds: added.map((item) => item.variantId),
-				},
-			],
-			fetchedAt: input.fetchedAt,
-			productId: input.productId,
-			roasterId: input.roasterId,
-		});
+		await emitBurstEvents(ctx, burst, [
+			{
+				newPriceCents: cheapest.priceCents,
+				type: "new",
+				variantId: cheapest.variantId,
+				variantIds: added.map((item) => item.variantId),
+			},
+		]);
 	}
 };
 
