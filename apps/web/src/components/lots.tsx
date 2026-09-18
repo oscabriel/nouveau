@@ -237,6 +237,7 @@ const LotsBody = ({
 const LotFilterRow = ({
 	origin,
 	onOrigin,
+	onPrice,
 	onSize,
 	onStock,
 	price,
@@ -246,6 +247,7 @@ const LotFilterRow = ({
 }: {
 	origin: string;
 	onOrigin: (next: string) => void;
+	onPrice: (next: string) => void;
 	onSize: (next: number | null) => void;
 	onStock: (next: boolean) => void;
 	price: string;
@@ -388,9 +390,7 @@ export const Lots = ({ roasterId }: { roasterId: Id<"roasters"> }) => {
 				origin={originTerm}
 				onOrigin={setOriginTerm}
 				onPrice={setMaxPriceDollars}
-				onSize={(grams) => {
-					setWeight(grams);
-				}}
+				onSize={setWeight}
 				onStock={setInStockOnly}
 				price={maxPriceDollars}
 				size={weight}
