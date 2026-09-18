@@ -69,6 +69,10 @@ export default defineSchema({
 		),
 		// The variant that moved, cited on the event.
 		variantId: v.optional(v.id("productVariants")),
+		// A collapsed burst (one event per alert-worthy type per crawl) cites
+		// every moved variant here, capped by MAX_CITED_VARIANTS; variantId
+		// stays the headline.
+		variantIds: v.optional(v.array(v.id("productVariants"))),
 	})
 		.index("by_roaster_and_detected_at", ["roasterId", "detectedAt"])
 		.index("by_product", ["productId"])
@@ -142,6 +146,9 @@ export default defineSchema({
 
 	productVariants: defineTable({
 		available: v.boolean(),
+		// The id the source knows the variant by (a Shopify variant id), when
+		// the source publishes one; the deep link to the exact size uses it.
+		externalId: v.optional(v.string()),
 		grams: v.optional(v.number()),
 		name: v.string(),
 		observedAt: v.optional(v.number()),
@@ -151,6 +158,13 @@ export default defineSchema({
 	}).index("by_product_id", ["productId"]),
 
 	products: defineTable({
+		// Variant rollup (lot page + roaster-grid filters), recomputed from the
+		// fetched variants on every upsert, so it tracks the feed: whether any
+		// size is purchaseable, the cheapest size's price, and the distinct
+		// bag sizes (grams, ascending, capped). Absent fields mean the crawl
+		// has not seen this lot's variants yet. Written only at upsert; the
+		// page scrape never touches it.
+		anyAvailable: v.optional(v.boolean()),
 		// When the roaster's product page was last read for pageFacts (ADR-0005).
 		// Set at the request so concurrent viewers share one scrape; a read that
 		// found nothing keeps the stamp and is retried after PAGE_FACTS_RETRY_MS.
@@ -165,6 +179,8 @@ export default defineSchema({
 		handle: v.string(),
 		imageUrl: v.optional(v.string()),
 		lastSeenAt: v.number(),
+		// What the cheapest size in the feed costs (the rollup's price half).
+		minPriceCents: v.optional(v.number()),
 		// Consecutive successful crawls this product was absent from.
 		missedCrawls: v.optional(v.number()),
 		name: v.string(),
@@ -191,6 +207,8 @@ export default defineSchema({
 		// `/products/{handle}` (lotUrl.ts).
 		url: v.optional(v.string()),
 		variety: v.optional(v.string()),
+		// The rollup's weight half: distinct bag sizes, ascending, capped.
+		weightOptions: v.optional(v.array(v.number())),
 	})
 		.index("by_roaster_and_external_id", ["roasterId", "externalId"])
 		// Recommendation candidates: one roaster's current lots from its latest

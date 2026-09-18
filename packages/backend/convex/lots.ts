@@ -2,13 +2,17 @@
 // Letterboxd object-page shape. The lot's published copy (§14.4) plus its
 // recent logs with ratings and tasters.
 
+import type { Infer } from "convex/values";
 import { v } from "convex/values";
 
+import type { Doc } from "./_generated/dataModel";
 import { query } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { LOT_PAGE_LOGS_LIMIT } from "./constants";
 import { hydrateAll, logCardValidator } from "./logs";
-import { isThin, mergedFacts } from "./lotFacts";
-import { lotShopUrl } from "./lotUrl";
+import { isThin, mergedFacts, variantGrind } from "./lotFacts";
+import { lotShopUrl, variantShopUrl } from "./lotUrl";
+import { MAX_VARIANTS_PER_PRODUCT } from "./recommendationRules";
 
 const factsValidator = v.object({
 	elevation: v.union(v.string(), v.null()),
@@ -21,7 +25,27 @@ const factsValidator = v.object({
 	variety: v.union(v.string(), v.null()),
 });
 
+/**
+ * One row of the lot page's size table: a weight, its grind options, its
+ * price, its stock, and the deep link to the exact size on the roaster's
+ * shop (the lot page when the source publishes no variant id).
+ */
+const variantRowValidator = v.object({
+	available: v.boolean(),
+	// The weight in grams when the variant name carried one.
+	grams: v.union(v.number(), v.null()),
+	// The grind option, split off the display name ("2kg / Grind for Espresso").
+	grind: v.union(v.string(), v.null()),
+	id: v.id("productVariants"),
+	name: v.string(),
+	priceCents: v.number(),
+	url: v.string(),
+});
+
 const lotValidator = v.object({
+	// The lot page's stock boundary: status current and at least one size in
+	// stock (denormalized variant rollup, refreshed per crawl).
+	available: v.boolean(),
 	description: v.union(v.string(), v.null()),
 	// The roaster's facts, feed first with page facts filling gaps
 	// (ADR-0005, lotFacts.mergedFacts).
@@ -42,7 +66,46 @@ const lotValidator = v.object({
 	// pageFactsKnown false this is the lot page's cue to ask.
 	thin: v.boolean(),
 	url: v.string(),
+	// The size table, one row per purchasable option the roaster publishes.
+	variants: v.array(variantRowValidator),
 });
+
+/** The size table's rows: one per stored variant, sizes first, stable order. */
+const lotVariantRows = async (
+	ctx: QueryCtx,
+	lot: Doc<"products">,
+	roaster: Doc<"roasters">
+): Promise<Infer<typeof variantRowValidator>[]> => {
+	const variants = await ctx.db
+		.query("productVariants")
+		.withIndex("by_product_id", (q) => q.eq("productId", lot._id))
+		.take(MAX_VARIANTS_PER_PRODUCT);
+	const rows = variants.map((variant) => {
+		const grind = variantGrind(variant.name);
+		return {
+			available: variant.available,
+			grams: variant.grams ?? null,
+			grind,
+			id: variant._id,
+			name: variant.name,
+			priceCents: variant.priceCents,
+			url:
+				variantShopUrl(roaster, lot, variant) ??
+				lotShopUrl(roaster, lot) ??
+				roaster.websiteUrl,
+		};
+	});
+	// Sizes ascending, grind options next to their size, sold out last.
+	// eslint-disable-next-line unicorn/no-array-sort -- ES2021 backend; no toSorted in this lib target
+	const sorted = [...rows].sort(
+		(a, b) =>
+			Number(b.available) - Number(a.available) ||
+			(a.grams ?? Number.MAX_SAFE_INTEGER) -
+				(b.grams ?? Number.MAX_SAFE_INTEGER) ||
+			a.name.localeCompare(b.name)
+	);
+	return sorted;
+};
 
 /**
  * One lot page's data. The id arrives as a string straight from the URL, so
@@ -74,6 +137,7 @@ export const get = query({
 			logs: await hydrateAll(ctx, logs.slice(0, LOT_PAGE_LOGS_LIMIT)),
 			logsTruncated: logs.length > LOT_PAGE_LOGS_LIMIT,
 			lot: {
+				available: lot.status === "current" && (lot.anyAvailable ?? false),
 				description: lot.description ?? null,
 				facts: mergedFacts(lot),
 				handle: lot.handle,
@@ -85,6 +149,7 @@ export const get = query({
 				status: lot.status,
 				thin: isThin(lot),
 				url: lotShopUrl(roaster, lot) ?? roaster.websiteUrl,
+				variants: await lotVariantRows(ctx, lot, roaster),
 			},
 			roaster: { name: roaster.name, slug: roaster.slug },
 		};

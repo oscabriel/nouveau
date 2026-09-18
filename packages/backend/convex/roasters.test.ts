@@ -81,4 +81,174 @@ describe("roasters", () => {
 		).toBeNull();
 		expect(pending).toBeDefined();
 	});
+
+	test("the lot rows carry the rollup and the stock boundary", async () => {
+		const { active, t } = await setup();
+		await t.run(async (ctx) => {
+			const inStock = await ctx.db.insert("products", {
+				anyAvailable: true,
+				externalId: "a1",
+				firstSeenAt: 1000,
+				handle: "lot-a",
+				lastSeenAt: 1000,
+				minPriceCents: 1800,
+				name: "In-stock lot",
+				origin: "Colombia",
+				roasterId: active,
+				status: "current",
+				weightOptions: [250, 1000],
+			});
+			await ctx.db.insert("productVariants", {
+				available: true,
+				grams: 250,
+				name: "250g",
+				priceCents: 1800,
+				productId: inStock,
+			});
+			await ctx.db.insert("productVariants", {
+				available: false,
+				grams: 1000,
+				name: "1kg",
+				priceCents: 5600,
+				productId: inStock,
+			});
+			const soldOut = await ctx.db.insert("products", {
+				anyAvailable: false,
+				externalId: "a2",
+				firstSeenAt: 1000,
+				handle: "lot-b",
+				lastSeenAt: 1000,
+				minPriceCents: 2200,
+				name: "Sold-out lot",
+				origin: "Ethiopia",
+				roasterId: active,
+				status: "current",
+				weightOptions: [250],
+			});
+			await ctx.db.insert("productVariants", {
+				available: false,
+				grams: 250,
+				name: "250g",
+				priceCents: 2200,
+				productId: soldOut,
+			});
+		});
+		const rows = await t.query(api.roasters.listLots, {
+			paginationOpts: { cursor: null, numItems: 10 },
+			roasterId: active,
+		});
+		const byName = Object.fromEntries(rows.page.map((row) => [row.name, row]));
+		expect(byName["In-stock lot"]).toMatchObject({
+			available: true,
+			minPriceCents: 1800,
+		});
+		expect(byName["Sold-out lot"]).toMatchObject({ available: false });
+	});
+
+	test("listLotsFiltered applies every filter axis", async () => {
+		const { active, t } = await setup();
+		const lots = await t.run(async (ctx) => {
+			const insert = (
+				externalId: string,
+				fields: {
+					anyAvailable: boolean;
+					minPriceCents: number;
+					name: string;
+					origin: string;
+					weightOptions: number[];
+				}
+			) =>
+				ctx.db.insert("products", {
+					externalId,
+					firstSeenAt: 1000,
+					handle: `lot-${externalId}`,
+					lastSeenAt: 1000,
+					roasterId: active,
+					status: "current",
+					...fields,
+				});
+			return {
+				colombiaCheap: await insert("c1", {
+					anyAvailable: true,
+					minPriceCents: 1600,
+					name: "Cheap Colombia",
+					origin: "Colombia",
+					weightOptions: [250],
+				}),
+				colombiaRich: await insert("c2", {
+					anyAvailable: true,
+					minPriceCents: 3600,
+					name: "Rich Colombia",
+					origin: "Colombia",
+					weightOptions: [1000],
+				}),
+				ethSoldOut: await insert("e1", {
+					anyAvailable: false,
+					minPriceCents: 2800,
+					name: "Sold-out Ethiopia",
+					origin: "Ethiopia",
+					weightOptions: [500],
+				}),
+			};
+		});
+		const inStock = await t.query(api.roasters.listLotsFiltered, {
+			availableOnly: true,
+			roasterId: active,
+		});
+		expect(inStock.map((row) => row.id).toSorted()).toEqual(
+			[lots.colombiaCheap, lots.colombiaRich].toSorted()
+		);
+		const cheap = await t.query(api.roasters.listLotsFiltered, {
+			maxPriceCents: 2000,
+			roasterId: active,
+		});
+		expect(cheap.map((row) => row.id)).toEqual([lots.colombiaCheap]);
+		const colombia = await t.query(api.roasters.listLotsFiltered, {
+			origin: "colo",
+			roasterId: active,
+		});
+		expect(colombia).toHaveLength(2);
+		const quarterKilo = await t.query(api.roasters.listLotsFiltered, {
+			grams: 250,
+			roasterId: active,
+		});
+		expect(quarterKilo.map((row) => row.id)).toEqual([lots.colombiaCheap]);
+	});
+
+	test("searchLots carries the same filters", async () => {
+		const { active, t } = await setup();
+		await t.run(async (ctx) => {
+			await ctx.db.insert("products", {
+				anyAvailable: true,
+				externalId: "c1",
+				firstSeenAt: 1000,
+				handle: "lot-c1",
+				lastSeenAt: 1000,
+				minPriceCents: 1600,
+				name: "Cheap Colombia Washed",
+				origin: "Colombia",
+				roasterId: active,
+				status: "current",
+			});
+			await ctx.db.insert("products", {
+				anyAvailable: false,
+				externalId: "c2",
+				firstSeenAt: 1000,
+				handle: "lot-c2",
+				lastSeenAt: 1000,
+				minPriceCents: 1200,
+				name: "Cheap Colombia Natural",
+				origin: "Colombia",
+				roasterId: active,
+				status: "current",
+			});
+		});
+		const inStock = await t.query(api.roasters.searchLots, {
+			availableOnly: true,
+			roasterId: active,
+			term: "colombia",
+		});
+		expect(inStock).toHaveLength(1);
+		expect(inStock[0]?.name).toBe("Cheap Colombia Washed");
+	});
 });

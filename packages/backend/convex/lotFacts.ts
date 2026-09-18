@@ -267,6 +267,28 @@ export const factPassage = (facts: LotFacts): string | null => {
 	return parts.length === 0 ? null : parts.join(" ");
 };
 
+/**
+ * A leading bag size in a variant display name ("2kg / Grind for Pour Over",
+ * "250 g - Whole Bean", "12 oz"), with its separator. The weight itself lives
+ * on the stored variant (grams); this only splits the grind option off the
+ * name, so the size table can show the two axes separately.
+ */
+const VARIANT_SIZE_PREFIX =
+	/^\s*\d+(?:[.,]\d+)?\s*[x×-]?\s*\d*\.?\d*\s*(?:kilo|kilos|kg|pound|pounds|lbs|lb|ounce|ounces|oz|gram|grams|gms|gm|g)\b\s*(?:[/\-–:]|\s)+/iu;
+
+/**
+ * The grind axis of a variant name: what the name says beyond its size.
+ * "2kg / Grind for Pour Over" is "Grind for Pour Over"; "Whole Bean" is
+ * "Whole Bean"; a plain "Default" is no grind axis at all.
+ */
+export const variantGrind = (name: string): string | null => {
+	const text = name.trim();
+	const stripped = text.replace(VARIANT_SIZE_PREFIX, "").trim();
+	return stripped === "" || /^(?:default|regular)$/iu.test(stripped)
+		? null
+		: stripped;
+};
+
 /** The feed left the fields a card leans on empty. */
 export const isThin = (product: FactSource): boolean => {
 	const facts = mergedFacts(product);

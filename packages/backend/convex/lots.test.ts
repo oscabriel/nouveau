@@ -73,6 +73,47 @@ const addLog = (
 	);
 
 describe("lots.get", () => {
+	test("returns the size table with deep links and the stock boundary", async () => {
+		const fx = await setup({ anyAvailable: true, minPriceCents: 1800 });
+		await fx.t.run(async (ctx) => {
+			await ctx.db.insert("productVariants", {
+				available: false,
+				grams: 1000,
+				name: "1kg / Whole Bean",
+				priceCents: 5600,
+				productId: fx.lotId,
+			});
+			await ctx.db.insert("productVariants", {
+				available: true,
+				externalId: "424242",
+				grams: 250,
+				name: "250g / Grind for Espresso",
+				priceCents: 1800,
+				productId: fx.lotId,
+			});
+		});
+		const page = await fx.t.query(api.lots.get, { lotId: fx.lotId });
+		expect(page?.lot.available).toBe(true);
+		expect(page?.lot.variants).toHaveLength(2);
+		// In-stock sizes go first; the grind option splits off the name.
+		const [espresso, wholeBean] = page?.lot.variants ?? [];
+		expect(espresso).toMatchObject({
+			grams: 250,
+			grind: "Grind for Espresso",
+			priceCents: 1800,
+		});
+		expect(wholeBean).toMatchObject({
+			available: false,
+			grams: 1000,
+			grind: "Whole Bean",
+		});
+		// A variant id deep-links to the exact size; no id links the lot page.
+		expect(espresso?.url).toBe(
+			"https://sey.example.com/products/mullugeta?variant=424242"
+		);
+		expect(wholeBean?.url).toBe("https://sey.example.com/products/mullugeta");
+	});
+
 	test("resolves the lot, its roaster and its logs newest first", async () => {
 		const fx = await setup({
 			description: "A washed lot from Urrao.",

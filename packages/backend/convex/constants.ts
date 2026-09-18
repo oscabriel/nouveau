@@ -39,6 +39,14 @@ export const shouldStoreRawCapture = (input: {
 	input.now - input.lastOkCaptureAt >= RAW_CAPTURE_SUCCESS_INTERVAL_MS;
 
 // Raw captures deleted per prune transaction; a full batch reschedules.
+/** How far one filtered roaster-grid scan reads (the extreme is ~900 lots). */
+export const LOT_FILTER_SCAN = 1000;
+
+/** How many moved variants one collapsed Drop event cites (variantIds). */
+export const MAX_CITED_VARIANTS = 32;
+/** Distinct bag sizes (grams) the variant rollup keeps on the product. */
+export const MAX_WEIGHT_OPTIONS = 8;
+
 export const PRUNE_BATCH = 200;
 
 // Products upserted per commit transaction. Each product costs one lookup

@@ -18,6 +18,11 @@ import {
 
 export const extractedVariant = v.object({
 	available: v.boolean(),
+	// The id the source knows the variant by (a Shopify variant id), when the
+	// source publishes one. Enables a deep link to the exact size on the
+	// roaster's shop; WooCommerce variations have no stable public link, so
+	// they stay nameless ids and link to the lot page.
+	externalId: v.optional(v.string()),
 	grams: v.optional(v.number()),
 	name: v.string(),
 	priceCents: v.number(),
@@ -54,6 +59,8 @@ export const extractedProduct = v.object({
 
 export interface ExtractedVariant {
 	available: boolean;
+	/** The source's own variant id, when it publishes one (Shopify does). */
+	externalId?: string;
 	grams?: number;
 	name: string;
 	priceCents: number;
@@ -1358,6 +1365,7 @@ export const toCents = (price: unknown): number => {
 interface ShopifyVariant {
 	available?: boolean | null;
 	grams?: number | null;
+	id?: number | null;
 	option1?: string | null;
 	option2?: string | null;
 	option3?: string | null;
@@ -1855,6 +1863,11 @@ export const parseProductsJson = (text: string): ProductsJsonPage => {
 			);
 			return {
 				available: variant.available === true,
+				// Shopify variant ids are numeric; stored as the id-string the
+				// deep link needs.
+				...(typeof variant.id === "number"
+					? { externalId: String(variant.id) }
+					: {}),
 				...(grams === undefined ? {} : { grams }),
 				name,
 				priceCents: toCents(variant.price),

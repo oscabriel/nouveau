@@ -7,7 +7,7 @@ import { v } from "convex/values";
 
 import type { Doc } from "./_generated/dataModel";
 import { query } from "./_generated/server";
-import { LOT_SEARCH_LIMIT } from "./constants";
+import { LOT_FILTER_SCAN, LOT_SEARCH_LIMIT } from "./constants";
 import { followerCounts } from "./followerCounts";
 import { crawlStatusValidator, getCrawlStatus } from "./health";
 import { joinNotes } from "./lotFacts";
@@ -80,9 +80,22 @@ export const getBySlug = query({
 });
 
 const lotRowValidator = v.object({
+	// The stock boundary (denormalized variant rollup, refreshed per crawl):
+	// status current AND at least one purchasable size. Absent rollup data
+	// reads as unknown, not sold out, so a lot the crawl has not priced yet
+	// is not wrongly marked unavailable.
+	available: v.boolean(),
+	// The bag sizes the feed carries (grams ascending); the weight filter's
+	// choices derive from these.
+	grams: v.array(v.number()),
 	handle: v.string(),
 	id: v.id("products"),
+	// What the cheapest purchasable size costs; null when the feed gave no
+	// prices (unknown, not free).
+	minPriceCents: v.union(v.number(), v.null()),
 	name: v.string(),
+	// The lot's origin as the feed publishes it (filterable, shown on md+).
+	origin: v.union(v.string(), v.null()),
 	// Roaster notes (§14.4): descriptors from the roaster's own copy, shown
 	// while picking a lot and while logging it.
 	roasterNotes: v.union(v.string(), v.null()),
@@ -90,12 +103,71 @@ const lotRowValidator = v.object({
 });
 
 const toLotRow = (lot: Doc<"products">): Infer<typeof lotRowValidator> => ({
+	available: lot.status === "current" && (lot.anyAvailable ?? false),
+	grams: lot.weightOptions ?? [],
 	handle: lot.handle,
 	id: lot._id,
+	minPriceCents: lot.minPriceCents ?? null,
 	name: lot.name,
+	origin: lot.origin ?? null,
 	roasterNotes: joinNotes(lot.roasterNotes),
 	status: lot.status,
 });
+
+/** The grid's optional filters; every field absent means "no filter". */
+const lotFilterValidator = v.object({
+	// Purchaseable now: status current and at least one size in stock.
+	availableOnly: v.optional(v.boolean()),
+	// The feed carries this bag size (grams).
+	grams: v.optional(v.number()),
+	// The cheapest size costs at most this many cents.
+	maxPriceCents: v.optional(v.number()),
+	// Case-insensitive substring of the lot's origin.
+	origin: v.optional(v.string()),
+});
+
+/**
+ * The filters as one predicate over a stored lot. Weight membership and
+ * origin substrings are not FilterBuilder expressions, so the filtered
+ * queries run a bounded index scan and filter in JS; per-roaster catalogs
+ * are bounded (~900 lots at the extreme), so the scan is too.
+ */
+const matchesLotFilters = (
+	lot: Doc<"products">,
+	args: {
+		availableOnly?: boolean;
+		maxPriceCents?: number;
+		grams?: number;
+		origin?: string;
+	}
+): boolean => {
+	if (
+		args.availableOnly === true &&
+		!(lot.status === "current" && (lot.anyAvailable ?? false))
+	) {
+		return false;
+	}
+	if (
+		args.maxPriceCents !== undefined &&
+		(lot.minPriceCents ?? Infinity) > args.maxPriceCents
+	) {
+		return false;
+	}
+	if (
+		args.grams !== undefined &&
+		!(lot.weightOptions ?? []).includes(args.grams)
+	) {
+		return false;
+	}
+	if (
+		args.origin !== undefined &&
+		args.origin !== "" &&
+		!(lot.origin ?? "").toLowerCase().includes(args.origin.toLowerCase())
+	) {
+		return false;
+	}
+	return true;
+};
 
 /**
  * One roaster's lot catalog, paginated (screen inventory §11's Lots grid).
@@ -120,12 +192,35 @@ export const listLots = query({
 });
 
 /**
+ * The catalog under the grid's filters: one bounded index scan of the whole
+ * roaster, one JS filter, one bounded result. Used instead of listLots when
+ * a filter is active; the browse-then-load-more path stays paginate-based.
+ */
+export const listLotsFiltered = query({
+	args: { ...lotFilterValidator.fields, roasterId: v.id("roasters") },
+	handler: async (ctx, args) => {
+		const lots = await ctx.db
+			.query("products")
+			.withIndex("by_roaster_and_external_id", (q) =>
+				q.eq("roasterId", args.roasterId)
+			)
+			.take(LOT_FILTER_SCAN);
+		return lots.filter((lot) => matchesLotFilters(lot, args)).map(toLotRow);
+	},
+	returns: v.array(lotRowValidator),
+});
+
+/**
  * Find lots by name within one roaster's catalog, for the taster who knows
  * what they drank but not where it sits in an 800-lot list. Full-text over
  * `products.name`; archived lots included for the same reason as listLots.
  */
 export const searchLots = query({
-	args: { roasterId: v.id("roasters"), term: v.string() },
+	args: {
+		...lotFilterValidator.fields,
+		roasterId: v.id("roasters"),
+		term: v.string(),
+	},
 	handler: async (ctx, args) => {
 		const term = args.term.trim();
 		if (term === "") {
@@ -137,7 +232,7 @@ export const searchLots = query({
 				q.search("name", term).eq("roasterId", args.roasterId)
 			)
 			.take(LOT_SEARCH_LIMIT);
-		return lots.map(toLotRow);
+		return lots.filter((lot) => matchesLotFilters(lot, args)).map(toLotRow);
 	},
 	returns: v.array(lotRowValidator),
 });

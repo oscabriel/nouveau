@@ -42,7 +42,10 @@ const feedCard = {
 		v.literal("back_in_stock"),
 		v.literal("price_drop")
 	),
+	// The headline size the card names, then every moved size a collapsed
+	// burst cited (the pre-collapse events carry only the headline).
 	variantName: v.union(v.string(), v.null()),
+	variantNames: v.array(v.string()),
 };
 
 type AlertType = (typeof ALERT_WORTHY_TYPES)[number];
@@ -64,6 +67,7 @@ interface FeedCard {
 	roasterState: string;
 	type: AlertType;
 	variantName: string | null;
+	variantNames: string[];
 }
 
 const isAlertWorthy = (
@@ -82,6 +86,16 @@ const toCard = async (
 		return null;
 	}
 	const variant = event.variantId ? await ctx.db.get(event.variantId) : null;
+	const cited = [
+		...(event.variantIds ?? []),
+		...(event.variantId === undefined ? [] : [event.variantId]),
+	];
+	const moved = await Promise.all(
+		cited.map(async (id) => await ctx.db.get(id))
+	);
+	const variantNames = moved
+		.map((doc) => doc?.name)
+		.filter((name): name is string => name !== undefined);
 	return {
 		detectedAt: event.detectedAt,
 		eventId: event._id,
@@ -99,6 +113,7 @@ const toCard = async (
 		roasterState: roaster.state,
 		type: event.type,
 		variantName: variant?.name ?? null,
+		variantNames,
 	};
 };
 

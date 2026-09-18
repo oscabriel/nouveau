@@ -9,7 +9,9 @@ import { internalMutation, internalQuery } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import {
 	ARCHIVE_STRIKES,
+	MAX_CITED_VARIANTS,
 	MAX_PRODUCT_PAGES,
+	MAX_WEIGHT_OPTIONS,
 	PRUNE_BATCH,
 	rawCaptureRetentionMs,
 	stalenessThresholdMs,
@@ -65,63 +67,121 @@ export const getSource = internalQuery({
 	),
 });
 
+/**
+ * One variant's move as the crawl observed it, taken while patching: the
+ * event vocabulary's kind, the variant id, and the prices on both sides of
+ * the move. A burst collects these and emits at most one event per kind.
+ */
+interface VariantMove {
+	kind: "back_in_stock" | "sold_out" | "price_drop" | "price_rise";
+	newPriceCents: number;
+	oldPriceCents: number;
+	variantId: Id<"productVariants">;
+}
+
 interface DiffInput {
 	eventsAllowed: boolean;
 	fetchedAt: number;
-	next: { available: boolean; grams?: number; priceCents: number };
+	next: {
+		available: boolean;
+		externalId?: string;
+		grams?: number;
+		priceCents: number;
+	};
 	productId: Id<"products">;
 	roasterId: Id<"roasters">;
 	variant: Doc<"productVariants">;
 }
 
 /**
- * Compare one fetched variant against the stored one, patch it, and emit the
- * matching Drop event. Availability moves outrank price moves; a variant
- * coming back in stock while its price also changed cites both.
+ * Compare one fetched variant against the stored one, patch it, and report
+ * the move without emitting: one crawl of one product is one burst, and the
+ * burst emits at most one event per kind (#19 generalized). Availability
+ * outranks price for the same variant, so a variant that came back in stock
+ * while its price also changed reports one back_in_stock move citing both
+ * prices. Null when nothing moved.
  */
 const diffVariant = async (
 	ctx: MutationCtx,
 	input: DiffInput
-): Promise<void> => {
+): Promise<VariantMove | null> => {
 	const { next, variant } = input;
+	const oldPriceCents = variant.priceCents;
 	await ctx.db.patch(variant._id, {
 		available: next.available,
+		// The id backfills on the next crawl after the source added it; a
+		// name-matched variant keeps its name identity while gaining the link.
+		...(next.externalId === undefined || next.externalId === variant.externalId
+			? {}
+			: { externalId: next.externalId }),
 		...(next.grams === undefined ? {} : { grams: next.grams }),
 		observedAt: input.fetchedAt,
 		priceCents: next.priceCents,
 		sizeObservedAt: next.grams === undefined ? undefined : input.fetchedAt,
 	});
 	if (!input.eventsAllowed) {
-		return;
+		return null;
 	}
-
-	const priceChanged = variant.priceCents !== next.priceCents;
-	const priceFields = {
-		...(priceChanged ? { newPriceCents: next.priceCents } : {}),
-		...(priceChanged ? { oldPriceCents: variant.priceCents } : {}),
-	};
-
 	if (variant.available !== next.available) {
-		const eventId = await ctx.db.insert("dropEvents", {
-			detectedAt: input.fetchedAt,
-			...priceFields,
-			productId: input.productId,
-			roasterId: input.roasterId,
-			type: next.available ? "back_in_stock" : "sold_out",
+		return {
+			kind: next.available ? "back_in_stock" : "sold_out",
+			newPriceCents: next.priceCents,
+			oldPriceCents,
 			variantId: variant._id,
-		});
-		await notifyWatchersOfEvent(ctx, eventId);
-		return;
+		};
 	}
-	if (priceChanged) {
+	if (oldPriceCents !== next.priceCents) {
+		return {
+			kind: next.priceCents < oldPriceCents ? "price_drop" : "price_rise",
+			newPriceCents: next.priceCents,
+			oldPriceCents,
+			variantId: variant._id,
+		};
+	}
+	return null;
+};
+
+/**
+ * One collapsed Drop event: the type, the headline variant the cards and
+ * emails name, its price fields, and every moved variant cited in
+ * `variantIds`.
+ */
+interface BurstEvent {
+	newPriceCents?: number;
+	oldPriceCents?: number;
+	type: "back_in_stock" | "new" | "price_drop" | "price_rise" | "sold_out";
+	variantId: Id<"productVariants">;
+	variantIds: Id<"productVariants">[];
+}
+
+const emitBurstEvents = async (
+	ctx: MutationCtx,
+	input: {
+		events: BurstEvent[];
+		fetchedAt: number;
+		productId: Id<"products">;
+		roasterId: Id<"roasters">;
+	}
+): Promise<void> => {
+	for (const event of input.events) {
+		// eslint-disable-next-line no-await-in-loop -- at most five events per burst; each insert fans out to watchers before the next
 		const eventId = await ctx.db.insert("dropEvents", {
 			detectedAt: input.fetchedAt,
-			...priceFields,
+			...(event.newPriceCents === undefined
+				? {}
+				: { newPriceCents: event.newPriceCents }),
+			...(event.oldPriceCents === undefined
+				? {}
+				: { oldPriceCents: event.oldPriceCents }),
 			productId: input.productId,
 			roasterId: input.roasterId,
-			type: next.priceCents < variant.priceCents ? "price_drop" : "price_rise",
-			variantId: variant._id,
+			type: event.type,
+			variantId: event.variantId,
+			...(event.variantIds.length > 1
+				? { variantIds: event.variantIds.slice(0, MAX_CITED_VARIANTS) }
+				: {}),
 		});
+		// eslint-disable-next-line no-await-in-loop -- paired with the insert above
 		await notifyWatchersOfEvent(ctx, eventId);
 	}
 };
@@ -138,35 +198,137 @@ interface ApplyVariantsInput {
 	roasterId: Id<"roasters">;
 }
 
-/** Emit one "new" event for a size that just appeared, and fan it out. */
-const emitNewEvent = async (
-	ctx: MutationCtx,
-	input: {
-		fetchedAt: number;
-		priceCents: number;
-		productId: Id<"products">;
-		roasterId: Id<"roasters">;
-		variantId: Id<"productVariants">;
+/** Positive when `a` is the bigger price move (ties: cheaper new price). */
+const isBiggerMove = (best: VariantMove, move: VariantMove): number =>
+	move.oldPriceCents -
+		move.newPriceCents -
+		(best.oldPriceCents - best.newPriceCents) ||
+	best.newPriceCents - move.newPriceCents;
+
+/**
+ * The variant rollup the lot page and the roaster-grid filters read, taken
+ * from the fetched variants (the feed is the truth on stock and price every
+ * crawl): whether any size is purchaseable, the cheapest size's price, and
+ * the distinct bag sizes ascending (capped). Written in the same patch as
+ * the product's other feed fields, so it never drifts by more than one
+ * crawl.
+ */
+export const variantRollup = (
+	variants: readonly ExtractedVariant[]
+): {
+	anyAvailable?: boolean;
+	minPriceCents?: number;
+	weightOptions?: number[];
+} => {
+	if (variants.length === 0) {
+		return {};
 	}
-): Promise<void> => {
-	const eventId = await ctx.db.insert("dropEvents", {
-		detectedAt: input.fetchedAt,
-		newPriceCents: input.priceCents,
-		productId: input.productId,
-		roasterId: input.roasterId,
-		type: "new",
-		variantId: input.variantId,
-	});
-	await notifyWatchersOfEvent(ctx, eventId);
+	const grams = [
+		...new Set(
+			variants
+				.map((variant) => variant.grams)
+				.filter((value): value is number => value !== undefined)
+		),
+	];
+	return {
+		anyAvailable: variants.some((variant) => variant.available),
+		minPriceCents: Math.min(...variants.map((variant) => variant.priceCents)),
+		// oxlint-disable-next-line unicorn/no-array-sort -- ES2021 backend; slice copies first
+		weightOptions: grams.slice(0, MAX_WEIGHT_OPTIONS).sort((a, b) => a - b),
+	};
+};
+
+/**
+ * The collapsed events one burst emits, planned from the reported moves:
+ * at most one event per kind, each naming a headline variant and carrying
+ * every moved variant in `variantIds`.
+ *
+ * Availability moves headline the cheapest restocked size, so the card
+ * names the price a customer can actually pay first; the price fields are
+ * cited only when the headline's own price moved. Price moves headline the
+ * biggest delta (ties: cheaper new price), availability-unchanged variants
+ * only — a variant that both restocked and repriced is already covered by
+ * its back_in_stock event. The sold-out burst cites the cheapest size that
+ * sold out; it is stored but not alert-worthy, so no card or email rides
+ * on it.
+ */
+const planBurstEvents = (moves: VariantMove[]): BurstEvent[] => {
+	const burstEvents: BurstEvent[] = [];
+	const ofKind = (kind: VariantMove["kind"]) =>
+		moves.filter((move) => move.kind === kind);
+
+	const restocks = ofKind("back_in_stock");
+	let cheapestRestock: VariantMove | undefined;
+	for (const move of restocks) {
+		if (
+			cheapestRestock === undefined ||
+			move.newPriceCents < cheapestRestock.newPriceCents
+		) {
+			cheapestRestock = move;
+		}
+	}
+	if (cheapestRestock !== undefined) {
+		burstEvents.push({
+			...(cheapestRestock.oldPriceCents === cheapestRestock.newPriceCents
+				? {}
+				: {
+						newPriceCents: cheapestRestock.newPriceCents,
+						oldPriceCents: cheapestRestock.oldPriceCents,
+					}),
+			type: "back_in_stock",
+			variantId: cheapestRestock.variantId,
+			variantIds: restocks.map((move) => move.variantId),
+		});
+	}
+
+	for (const kind of ["price_drop", "price_rise"] as const) {
+		const priceMoves = ofKind(kind);
+		let headlineMove: VariantMove | undefined;
+		for (const move of priceMoves) {
+			if (headlineMove === undefined || isBiggerMove(headlineMove, move) > 0) {
+				headlineMove = move;
+			}
+		}
+		if (headlineMove !== undefined) {
+			burstEvents.push({
+				newPriceCents: headlineMove.newPriceCents,
+				oldPriceCents: headlineMove.oldPriceCents,
+				type: kind,
+				variantId: headlineMove.variantId,
+				variantIds: priceMoves.map((move) => move.variantId),
+			});
+		}
+	}
+
+	const soldOut = ofKind("sold_out");
+	let cheapestSoldOut: VariantMove | undefined;
+	for (const move of soldOut) {
+		if (
+			cheapestSoldOut === undefined ||
+			move.oldPriceCents < cheapestSoldOut.oldPriceCents
+		) {
+			cheapestSoldOut = move;
+		}
+	}
+	if (cheapestSoldOut !== undefined) {
+		burstEvents.push({
+			type: "sold_out",
+			variantId: cheapestSoldOut.variantId,
+			variantIds: soldOut.map((move) => move.variantId),
+		});
+	}
+
+	return burstEvents;
 };
 
 /**
  * Upsert one product's variants and emit its Drop events. A variant the
- * catalog has never seen is a "new" event; known variants diff against their
- * stored state. On a lot's first sighting every size is new at once, so the
- * events collapse to one citing the cheapest size (#19) — one card, one
- * alert. Sizes added to a known lot later keep one event each. Variants are
- * matched by display name (the schema keeps no Shopify variant id).
+ * catalog has never seen joins a "new" event; known variants diff against
+ * their stored state and the burst emits at most one event per kind. On a
+ * lot's first sighting every size is new at once, so the events collapse to
+ * one citing the cheapest size (#19); sizes added to a known lot later
+ * collapse the same way. Variants are matched by display name (the schema
+ * keeps no source variant id as identity).
  */
 const applyVariants = async (
 	ctx: MutationCtx,
@@ -208,6 +370,9 @@ const applyVariants = async (
 		addTargets.map(async (next) => {
 			const variantId = await ctx.db.insert("productVariants", {
 				available: next.available,
+				...(next.externalId === undefined
+					? {}
+					: { externalId: next.externalId }),
 				...(next.grams === undefined ? {} : { grams: next.grams }),
 				name: next.name,
 				observedAt: input.fetchedAt,
@@ -218,7 +383,7 @@ const applyVariants = async (
 			return { priceCents: next.priceCents, variantId };
 		})
 	);
-	await Promise.all(
+	const reported = await Promise.all(
 		diffTargets.map(({ next, prior }) =>
 			diffVariant(ctx, {
 				eventsAllowed: input.eventsAllowed,
@@ -230,43 +395,48 @@ const applyVariants = async (
 			})
 		)
 	);
+	const moves = reported.filter((move): move is VariantMove => move !== null);
 
-	if (!input.eventsAllowed || added.length === 0) {
+	if (!input.eventsAllowed) {
 		return;
 	}
-	if (input.isNewProduct) {
-		// First minimum wins, so a price tie cites the size the feed listed
-		// first. added is non-empty here (guarded above).
-		let cheapest:
-			| { priceCents: number; variantId: Id<"productVariants"> }
-			| undefined;
-		for (const item of added) {
-			if (cheapest === undefined || item.priceCents < cheapest.priceCents) {
-				cheapest = item;
-			}
-		}
-		if (cheapest !== undefined) {
-			await emitNewEvent(ctx, {
-				fetchedAt: input.fetchedAt,
-				priceCents: cheapest.priceCents,
-				productId: input.productId,
-				roasterId: input.roasterId,
-				variantId: cheapest.variantId,
-			});
-		}
+
+	await emitBurstEvents(ctx, {
+		events: planBurstEvents(moves),
+		fetchedAt: input.fetchedAt,
+		productId: input.productId,
+		roasterId: input.roasterId,
+	});
+
+	if (added.length === 0) {
 		return;
 	}
-	await Promise.all(
-		added.map((item) =>
-			emitNewEvent(ctx, {
-				fetchedAt: input.fetchedAt,
-				priceCents: item.priceCents,
-				productId: input.productId,
-				roasterId: input.roasterId,
-				variantId: item.variantId,
-			})
-		)
-	);
+	// One "new" event per burst (#19, also for sizes added to a known lot):
+	// first minimum wins, so a price tie cites the size the feed listed
+	// first. added is non-empty here (guarded above).
+	let cheapest:
+		| { priceCents: number; variantId: Id<"productVariants"> }
+		| undefined;
+	for (const item of added) {
+		if (cheapest === undefined || item.priceCents < cheapest.priceCents) {
+			cheapest = item;
+		}
+	}
+	if (cheapest !== undefined) {
+		await emitBurstEvents(ctx, {
+			events: [
+				{
+					newPriceCents: cheapest.priceCents,
+					type: "new",
+					variantId: cheapest.variantId,
+					variantIds: added.map((item) => item.variantId),
+				},
+			],
+			fetchedAt: input.fetchedAt,
+			productId: input.productId,
+			roasterId: input.roasterId,
+		});
+	}
 };
 
 interface UpsertProductInput {
@@ -333,6 +503,9 @@ const upsertProduct = async (
 		)
 		.unique();
 	let productId: Id<"products">;
+	// The variant rollup comes from this crawl's fetched variants (the feed's
+	// own stock and price), not the stored ones: the feed is the truth.
+	const rollup = variantRollup(product.variants);
 	if (current === null) {
 		productId = await ctx.db.insert("products", {
 			externalId: product.externalId,
@@ -345,6 +518,7 @@ const upsertProduct = async (
 			status: "current",
 			...lotCopyFields(product),
 			...(product.url === undefined ? {} : { url: product.url }),
+			...rollup,
 		});
 	} else {
 		productId = current._id;
@@ -355,6 +529,7 @@ const upsertProduct = async (
 			status: "current",
 			...lotCopyFields(product),
 			...(product.url === undefined ? {} : { url: product.url }),
+			...rollup,
 		});
 	}
 	await applyVariants(ctx, {

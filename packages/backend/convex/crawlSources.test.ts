@@ -258,7 +258,7 @@ describe("commit: new-event collapse (#19)", () => {
 		expect(event?.variantId).toBe(cheapest?._id);
 	});
 
-	test("sizes added to a known lot later keep one event each", async () => {
+	test("sizes added to a known lot later collapse to one new event citing the cheapest", async () => {
 		const fx = await setup();
 		await crawl(fx, T0, [product("a")]);
 		await crawl(fx, T0 + CADENCE_MS, [
@@ -269,9 +269,140 @@ describe("commit: new-event collapse (#19)", () => {
 			]),
 		]);
 
-		const events = await readEvents(fx);
-		expect(events).toHaveLength(2);
-		expect(events.map((e) => e.type)).toEqual(["new", "new"]);
+		const state = await readAll(fx);
+		expect(state.events).toHaveLength(1);
+		const [event] = state.events;
+		const oneKg = state.variants.find((v) => v.name === "1kg");
+		// Only the added sizes are "new": 250g existed, so the cheapest new
+		// size is 1kg at 5600.
+		expect(event).toMatchObject({
+			newPriceCents: 5600,
+			type: "new",
+		});
+		expect(event?.variantId).toBe(oneKg?._id);
+	});
+});
+
+describe("commit: variant burst collapse (#19 generalized)", () => {
+	test("several sizes restocking in one crawl emit one back_in_stock event citing them all", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [
+			product("a", [
+				{ available: false, grams: 125, name: "125g", priceCents: 1400 },
+				{ available: false, grams: 250, name: "250g", priceCents: 1800 },
+				{ available: true, grams: 1000, name: "1kg", priceCents: 5600 },
+			]),
+		]);
+		await crawl(fx, T0 + CADENCE_MS, [
+			product("a", [
+				{ available: true, grams: 125, name: "125g", priceCents: 1400 },
+				{ available: true, grams: 250, name: "250g", priceCents: 1800 },
+				{ available: true, grams: 1000, name: "1kg", priceCents: 5600 },
+			]),
+		]);
+
+		const state = await readAll(fx);
+		expect(state.events).toHaveLength(1);
+		const [event] = state.events;
+		// The headline cites the cheapest restocked size's unchanged price —
+		// so no price fields at all.
+		expect(event).toMatchObject({
+			detectedAt: T0 + CADENCE_MS,
+			type: "back_in_stock",
+		});
+		expect(event?.newPriceCents).toBeUndefined();
+		expect(event?.variantId).toBe(
+			state.variants.find((v) => v.name === "125g")?._id
+		);
+		expect(event?.variantIds).toHaveLength(2);
+		expect(event?.variantIds).toContain(
+			state.variants.find((v) => v.name === "250g")?._id
+		);
+	});
+
+	test("a burst of mixed moves emits one event per kind, not one per variant", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [
+			product("a", [
+				{ available: false, grams: 125, name: "125g", priceCents: 1400 },
+				{ available: true, grams: 250, name: "250g", priceCents: 1800 },
+				{ available: true, grams: 1000, name: "1kg", priceCents: 5600 },
+			]),
+		]);
+		await crawl(fx, T0 + CADENCE_MS, [
+			product("a", [
+				{ available: true, grams: 125, name: "125g", priceCents: 1400 },
+				{ available: true, grams: 250, name: "250g", priceCents: 1600 },
+				{ available: true, grams: 1000, name: "1kg", priceCents: 5300 },
+			]),
+		]);
+
+		const state = await readAll(fx);
+		expect(state.events).toHaveLength(2);
+		const stock = state.events.find((e) => e.type === "back_in_stock");
+		const drop = state.events.find((e) => e.type === "price_drop");
+		expect(stock?.variantId).toBe(
+			state.variants.find((v) => v.name === "125g")?._id
+		);
+		// The price-drop headline is the biggest move (1kg dropped 300).
+		expect(drop?.newPriceCents).toBe(5300);
+		expect(drop?.oldPriceCents).toBe(5600);
+		expect(drop?.variantIds).toHaveLength(2);
+	});
+
+	test("a sold-out burst stores one event citing every size that sold out", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [
+			product("a", [
+				{ available: true, name: "250g", priceCents: 1800 },
+				{ available: true, name: "1kg", priceCents: 5600 },
+			]),
+		]);
+		await crawl(fx, T0 + CADENCE_MS, [
+			product("a", [
+				{ available: false, name: "250g", priceCents: 1800 },
+				{ available: false, name: "1kg", priceCents: 5600 },
+			]),
+		]);
+
+		const state = await readAll(fx);
+		expect(state.events).toHaveLength(1);
+		expect(state.events[0]).toMatchObject({ type: "sold_out" });
+		expect(state.events[0]?.variantIds).toHaveLength(2);
+	});
+
+	test("a variant id backfills onto the known variant on the next crawl", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [product("a")]);
+		await crawl(fx, T0 + CADENCE_MS, [
+			product("a", [
+				{
+					available: true,
+					externalId: "424242",
+					grams: 250,
+					name: "250g",
+					priceCents: 1800,
+				},
+			]),
+		]);
+		const state = await readAll(fx);
+		expect(state.variants[0]).toMatchObject({ externalId: "424242" });
+	});
+
+	test("the variant rollup lands on the product in the same patch", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [
+			product("a", [
+				{ available: false, grams: 250, name: "250g", priceCents: 1800 },
+				{ available: true, grams: 1000, name: "1kg", priceCents: 5600 },
+			]),
+		]);
+		const state = await readAll(fx);
+		expect(state.products[0]).toMatchObject({
+			anyAvailable: true,
+			minPriceCents: 1800,
+			weightOptions: [250, 1000],
+		});
 	});
 });
 

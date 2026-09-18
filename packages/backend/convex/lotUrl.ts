@@ -51,3 +51,27 @@ export const lotShopUrl = (
 	roaster: Pick<Doc<"roasters">, "websiteUrl">,
 	lot: Pick<Doc<"products">, "handle" | "url">
 ): string | null => lot.url ?? productUrl(roaster.websiteUrl, lot.handle);
+
+/**
+ * The deep link to one size on the roaster's shop: a Shopify variant id
+ * appends `?variant=` to the lot page; anything else falls back to the lot's
+ * own page. Null when no safe lot URL exists.
+ */
+export const variantShopUrl = (
+	roaster: Pick<Doc<"roasters">, "websiteUrl">,
+	lot: Pick<Doc<"products">, "handle" | "url">,
+	variant: Pick<Doc<"productVariants">, "externalId" | "name">
+): string | null => {
+	const base = lotShopUrl(roaster, lot);
+	if (base === null) {
+		return null;
+	}
+	if (
+		variant.externalId !== undefined &&
+		/^[0-9]+$/u.test(variant.externalId) &&
+		lot.url === undefined
+	) {
+		return `${base}?variant=${variant.externalId}`;
+	}
+	return base;
+};
