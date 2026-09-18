@@ -371,11 +371,10 @@ export const Lots = ({ roasterId }: { roasterId: Id<"roasters"> }) => {
 		visible === undefined ||
 		(!searching && !filtered && pages.status === "LoadingFirstPage");
 
-	// The size filter's choices: the bag sizes the catalog carries, from the
-	// loaded browse pages (they cover what a visitor is likely to filter on).
-	const weightOptions = [
-		...new Set((pages.results ?? []).flatMap((lot) => lot.grams)),
-	].toSorted((a, b) => a - b);
+	// The size filter's choices: every bag size the whole catalog carries,
+	// not only the loaded pages. Empty until the query answers.
+	const weightOptions =
+		useQuery(api.roasters.lotWeightOptions, { roasterId }) ?? [];
 
 	return (
 		<section aria-labelledby="lots-heading">

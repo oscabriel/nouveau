@@ -208,6 +208,28 @@ export const listLotsFiltered = query({
 });
 
 /**
+ * The bag sizes one roaster's catalog carries, distinct and ascending: the
+ * grid's size-filter choices. Read over the whole catalog (the same bounded
+ * scan as listLotsFiltered), so a size that first appears on page three is
+ * selectable before that page loads.
+ */
+export const lotWeightOptions = query({
+	args: { roasterId: v.id("roasters") },
+	handler: async (ctx, args) => {
+		const lots = await ctx.db
+			.query("products")
+			.withIndex("by_roaster_and_external_id", (q) =>
+				q.eq("roasterId", args.roasterId)
+			)
+			.take(LOT_FILTER_SCAN);
+		const grams = [...new Set(lots.flatMap((lot) => lot.weightOptions ?? []))];
+		// eslint-disable-next-line unicorn/no-array-sort -- ES2021 backend; grams is a fresh array
+		return grams.sort((a, b) => a - b);
+	},
+	returns: v.array(v.number()),
+});
+
+/**
  * Find lots by name within one roaster's catalog, for the taster who knows
  * what they drank but not where it sits in an 800-lot list. Full-text over
  * `products.name`; archived lots included for the same reason as listLots.

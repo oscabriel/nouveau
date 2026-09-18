@@ -182,6 +182,29 @@ describe("roasters", () => {
 		expect(inStock.map((row) => row.name)).toEqual(["In-stock lot"]);
 	});
 
+	test("lotWeightOptions is the catalog's distinct sizes, ascending", async () => {
+		const { active, t } = await setup();
+		await t.run(async (ctx) => {
+			const sizes: number[][] = [[1000, 250], [250], [], [2000, 500]];
+			for (const [i, weightOptions] of sizes.entries()) {
+				// eslint-disable-next-line no-await-in-loop -- fixture rows in a fixed order
+				await ctx.db.insert("products", {
+					externalId: `w${i}`,
+					firstSeenAt: 1000,
+					handle: `lot-w${i}`,
+					lastSeenAt: 1000,
+					name: `Lot ${i}`,
+					roasterId: active,
+					status: "current",
+					...(weightOptions.length === 0 ? {} : { weightOptions }),
+				});
+			}
+		});
+		expect(
+			await t.query(api.roasters.lotWeightOptions, { roasterId: active })
+		).toEqual([250, 500, 1000, 2000]);
+	});
+
 	test("listLotsFiltered applies every filter axis", async () => {
 		const { active, t } = await setup();
 		const lots = await t.run(async (ctx) => {
