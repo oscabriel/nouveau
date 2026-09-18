@@ -75,6 +75,9 @@ const DeliveryFooter = ({ status }: { status: DeliveryStatus }) => {
 	);
 };
 
+/** Sizes named on a card before it folds the rest into "+N". */
+const MAX_SIZES_SHOWN = 3;
+
 const SizeLine = ({
 	headline,
 	names,
@@ -88,8 +91,8 @@ const SizeLine = ({
 	if (list.length === 0) {
 		return null;
 	}
-	const shown = list.slice(0, 3).join(" · ");
-	const more = list.length - 3;
+	const shown = list.slice(0, MAX_SIZES_SHOWN).join(" · ");
+	const more = list.length - MAX_SIZES_SHOWN;
 	return (
 		<span className="text-muted-foreground text-sm">
 			{shown}

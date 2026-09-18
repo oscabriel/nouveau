@@ -28,13 +28,19 @@ export const displayPriceCents = (cents: number | null): number | null =>
  * everything else reads in grams with kilos as the fallback for the odd
  * sizes (5 lb is 2268 g; "2.27 kg" is easier to buy than "2268 g").
  */
+const GRAMS_PER_KILO = 1000;
+/** Kilos print to two decimals (2.27 kg), so round to hundredths. */
+const KILO_DECIMALS = 2;
+const KILO_ROUNDING = 10 ** KILO_DECIMALS;
+
 export const formatGrams = (grams: number | null): string | null => {
 	if (grams === null) {
 		return null;
 	}
-	if (grams >= 1000) {
-		const kilos = Math.round((grams / 1000) * 100) / 100;
-		return `${Number.isInteger(kilos) ? kilos : kilos.toFixed(2)} kg`;
+	if (grams >= GRAMS_PER_KILO) {
+		const kilos =
+			Math.round((grams / GRAMS_PER_KILO) * KILO_ROUNDING) / KILO_ROUNDING;
+		return `${Number.isInteger(kilos) ? kilos : kilos.toFixed(KILO_DECIMALS)} kg`;
 	}
 	return `${grams} g`;
 };
