@@ -261,8 +261,10 @@ export const variantRollup = (
 	return {
 		anyAvailable: variants.some((variant) => variant.available),
 		minPriceCents: Math.min(...variants.map((variant) => variant.priceCents)),
-		// oxlint-disable-next-line unicorn/no-array-sort -- ES2021 backend; slice copies first
-		weightOptions: grams.slice(0, MAX_WEIGHT_OPTIONS).sort((a, b) => a - b),
+		// Sort, then cap, so the cap drops the largest sizes (ADR-0007:
+		// "distinct grams, ascending, capped").
+		// oxlint-disable-next-line unicorn/no-array-sort -- ES2021 backend; grams is a fresh array
+		weightOptions: grams.sort((a, b) => a - b).slice(0, MAX_WEIGHT_OPTIONS),
 	};
 };
 

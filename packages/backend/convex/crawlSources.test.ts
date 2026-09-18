@@ -413,6 +413,26 @@ describe("commit: variant burst collapse (#19 generalized)", () => {
 		expect(state.variants[0]).toMatchObject({ externalId: "424242" });
 	});
 
+	test("the weight options are the smallest sizes ascending when the cap trims", async () => {
+		const fx = await setup();
+		const sizes = [5000, 250, 2000, 125, 1000, 500, 340, 454, 907];
+		await crawl(fx, T0, [
+			product(
+				"a",
+				sizes.map((grams) => ({
+					available: true,
+					grams,
+					name: `${grams}g`,
+					priceCents: grams,
+				}))
+			),
+		]);
+		const state = await readAll(fx);
+		expect(state.products[0]?.weightOptions).toEqual([
+			125, 250, 340, 454, 500, 907, 1000, 2000,
+		]);
+	});
+
 	test("the variant rollup lands on the product in the same patch", async () => {
 		const fx = await setup();
 		await crawl(fx, T0, [
