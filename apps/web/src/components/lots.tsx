@@ -350,14 +350,13 @@ export const Lots = ({ roasterId }: { roasterId: Id<"roasters"> }) => {
 		{ initialNumItems: PAGE_SIZE }
 	);
 	const filteredRows = useQuery(
-		filtered && !searching ? api.roasters.listLotsFiltered : "skip",
-		{ roasterId, ...filters }
+		api.roasters.listLotsFiltered,
+		filtered && !searching ? { roasterId, ...filters } : "skip"
 	);
-	const hits = useQuery(term === "" ? "skip" : api.roasters.searchLots, {
-		roasterId,
-		term,
-		...filters,
-	});
+	const hits = useQuery(
+		api.roasters.searchLots,
+		searching ? { roasterId, term, ...filters } : "skip"
+	);
 
 	const browsable = filtered ? filteredRows : pages.results;
 	const visible = searching ? hits : browsable;
