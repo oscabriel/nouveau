@@ -3,7 +3,7 @@ import { api } from "@nouveau/backend/convex/_generated/api";
 import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
 import { Link } from "@tanstack/react-router";
 import { usePaginatedQuery, useQuery } from "convex/react";
-import type { FunctionReturnType } from "convex/server";
+import type { FunctionArgs, FunctionReturnType } from "convex/server";
 import { useState } from "react";
 
 import { bodyCell, headCell } from "@/components/drop-index";
@@ -17,12 +17,10 @@ type LotRow = FunctionReturnType<typeof api.roasters.listLots>["page"][number];
 const PAGE_SIZE = 20;
 
 /** The grid's filters, as the backend queries take them. */
-interface LotFilters {
-	availableOnly?: boolean;
-	grams?: number;
-	maxPriceCents?: number;
-	origin?: string;
-}
+type LotFilters = Omit<
+	FunctionArgs<typeof api.roasters.listLotsFiltered>,
+	"roasterId"
+>;
 
 const fromPrice = (minPriceCents: number | null): string => {
 	const cents = displayPriceCents(minPriceCents);

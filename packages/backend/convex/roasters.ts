@@ -134,12 +134,7 @@ const lotFilterValidator = v.object({
  */
 const matchesLotFilters = (
 	lot: Doc<"products">,
-	args: {
-		availableOnly?: boolean;
-		maxPriceCents?: number;
-		grams?: number;
-		origin?: string;
-	}
+	args: Infer<typeof lotFilterValidator>
 ): boolean => {
 	if (args.availableOnly === true && lotAvailability(lot) !== true) {
 		return false;
