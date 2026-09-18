@@ -10,9 +10,13 @@ export type SavedCoffee = FunctionReturnType<
 	typeof api.savedCoffees.recentMine
 >["items"][number];
 
-const stockLabel = (item: SavedCoffee): string => {
+/** Null when stock is unknown (no rollup yet): the card says nothing. */
+const stockLabel = (item: SavedCoffee): string | null => {
 	if (item.lot.status === "archived") {
 		return "No longer listed";
+	}
+	if (item.available === null) {
+		return null;
 	}
 	return item.available ? "In stock at last check" : "Sold out at last check";
 };
@@ -48,8 +52,9 @@ export const SavedCoffeeCard = ({ item }: { item: SavedCoffee }) => (
 				</span>
 			</div>
 			<p className="text-muted-foreground text-xs">
-				{stockLabel(item)}
-				{" · saved "}
+				{[stockLabel(item), "saved "]
+					.filter((part) => part !== null)
+					.join(" · ")}
 				<time dateTime={new Date(item.savedAt).toISOString()}>
 					{relativeTime(item.savedAt)}
 				</time>

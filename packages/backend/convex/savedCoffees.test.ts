@@ -33,6 +33,7 @@ const setup = async (): Promise<Fixture> => {
 			websiteUrl: "https://sey.example.com",
 		});
 		const lot = await ctx.db.insert("products", {
+			anyAvailable: true,
 			externalId: "p1",
 			firstSeenAt: 1000,
 			handle: "mullugeta",
@@ -49,6 +50,7 @@ const setup = async (): Promise<Fixture> => {
 			productId: lot,
 		});
 		const otherLot = await ctx.db.insert("products", {
+			anyAvailable: true,
 			externalId: "p2",
 			firstSeenAt: 900,
 			handle: "old-lot",
@@ -196,8 +198,10 @@ describe("savedCoffees", () => {
 		const byLot = new Map(page.page.map((item) => [item.lot.id, item]));
 		expect(byLot.get(f.lotId)?.fromRunId).toBe(myRun);
 		expect(byLot.get(f.otherLotId)?.fromRunId).toBeNull();
-		// Archived lots are never "available", whatever their variants say.
+		// Archived lots are never "available", whatever their rollup says.
 		expect(byLot.get(f.otherLotId)?.available).toBe(false);
+		// The saved lot reads the crawl's rollup, not a capped variant scan.
+		expect(byLot.get(f.lotId)?.available).toBe(true);
 	});
 
 	test("recentMine caps the home section and flags more", async () => {
@@ -228,7 +232,7 @@ describe("savedCoffees", () => {
 		const recent = await me.query(api.savedCoffees.recentMine);
 		expect(recent.items).toHaveLength(5);
 		expect(recent.more).toBe(true);
-		// No variants at all means nothing is in stock.
-		expect(recent.items[0]?.available).toBe(false);
+		// No rollup yet (crawled before ADR-0007) is unknown stock, not sold out.
+		expect(recent.items[0]?.available).toBeNull();
 	});
 });

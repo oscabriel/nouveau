@@ -73,6 +73,39 @@ const addLog = (
 	);
 
 describe("lots.get", () => {
+	test("the size table lists every variant, past the recommender's cap", async () => {
+		const fx = await setup({ anyAvailable: true, minPriceCents: 1800 });
+		// Proud Mary's Humbler Blend: 3 sizes x 7 grinds = 21 options.
+		const names = [250, 1000, 2000].flatMap((grams) =>
+			[
+				"Whole Bean",
+				"Espresso",
+				"Stovetop",
+				"Plunger",
+				"Filter",
+				"Aeropress",
+				"Cold Brew",
+			].map((grind) => ({ grams, name: `${grams}g / ${grind}` }))
+		);
+		await fx.t.run(async (ctx) => {
+			for (const variant of names) {
+				// eslint-disable-next-line no-await-in-loop -- fixture rows in a fixed order
+				await ctx.db.insert("productVariants", {
+					available: true,
+					grams: variant.grams,
+					name: variant.name,
+					priceCents: variant.grams * 2,
+					productId: fx.lotId,
+				});
+			}
+		});
+		const page = await fx.t.query(api.lots.get, { lotId: fx.lotId });
+		expect(page?.lot.variants).toHaveLength(21);
+		expect(page?.lot.variants.filter((row) => row.grams === 2000)).toHaveLength(
+			7
+		);
+	});
+
 	test("a lot without the rollup reads as unknown stock, not sold out", async () => {
 		const fx = await setup();
 		await fx.t.run(async (ctx) => {

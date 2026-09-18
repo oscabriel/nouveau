@@ -17,12 +17,14 @@ import {
 	MAX_SAVED_COFFEES_PER_USER,
 } from "./constants";
 import { optionalUserId, requireUserId } from "./identity";
-import { MAX_VARIANTS_PER_PRODUCT } from "./recommendationRules";
+import { lotAvailability, lotAvailabilityValidator } from "./lotStock";
 
 /** One saved lot as the home section and the full list render it. */
 export const savedCoffeeValidator = v.object({
-	// Whether any variant is in stock as of the latest crawl.
-	available: v.boolean(),
+	// The stock boundary as of the latest crawl (lotStock.lotAvailability):
+	// true in stock, false sold out or archived, null when the rollup is not
+	// written yet.
+	available: lotAvailabilityValidator,
 	fromRunId: v.union(v.id("recommendationRuns"), v.null()),
 	lot: v.object({
 		id: v.id("products"),
@@ -54,20 +56,12 @@ const hydrateSave = async (ctx: QueryCtx, save: Doc<"savedCoffees">) => {
 	if (product === null) {
 		return null;
 	}
-	const [roaster, variants] = await Promise.all([
-		ctx.db.get(product.roasterId),
-		ctx.db
-			.query("productVariants")
-			.withIndex("by_product_id", (q) => q.eq("productId", product._id))
-			.take(MAX_VARIANTS_PER_PRODUCT),
-	]);
+	const roaster = await ctx.db.get(product.roasterId);
 	if (roaster === null) {
 		return null;
 	}
 	return {
-		available:
-			product.status === "current" &&
-			variants.some((variant) => variant.available),
+		available: lotAvailability(product),
 		fromRunId: save.fromRunId ?? null,
 		lot: {
 			id: product._id,

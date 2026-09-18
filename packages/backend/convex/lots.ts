@@ -13,7 +13,6 @@ import { hydrateAll, logCardValidator } from "./logs";
 import { isThin, mergedFacts, variantGrind } from "./lotFacts";
 import { lotAvailability, lotAvailabilityValidator } from "./lotStock";
 import { lotShopUrl, variantShopUrl } from "./lotUrl";
-import { MAX_VARIANTS_PER_PRODUCT } from "./recommendationRules";
 
 const factsValidator = v.object({
 	elevation: v.union(v.string(), v.null()),
@@ -72,7 +71,14 @@ const lotValidator = v.object({
 	variants: v.array(variantRowValidator),
 });
 
-/** The size table's rows: one per stored variant, sizes first, stable order. */
+/**
+ * The size table's rows: one per stored variant, sizes first, stable order.
+ * The page promises every purchasable option, so this reads the whole set
+ * rather than a bounded prefix: a lot's variants are the source's own list
+ * (Shopify publishes at most 100 per product; a Proud Mary blend has 21),
+ * matched by name each crawl, never appended per crawl. The recommender's
+ * MAX_VARIANTS_PER_PRODUCT is its own eligibility cut, not a page limit.
+ */
 const lotVariantRows = async (
 	ctx: QueryCtx,
 	lot: Doc<"products">,
@@ -81,7 +87,7 @@ const lotVariantRows = async (
 	const variants = await ctx.db
 		.query("productVariants")
 		.withIndex("by_product_id", (q) => q.eq("productId", lot._id))
-		.take(MAX_VARIANTS_PER_PRODUCT);
+		.collect();
 	const rows = variants.map((variant) => {
 		const grind = variantGrind(variant.name);
 		return {
