@@ -74,9 +74,11 @@ const lotValidator = v.object({
 /**
  * The size table's rows: one per stored variant, sizes first, stable order.
  * The page promises every purchasable option, so this reads the whole set
- * rather than a bounded prefix: a lot's variants are the source's own list
- * (Shopify publishes at most 100 per product; a Proud Mary blend has 21),
- * matched by name each crawl, never appended per crawl. The recommender's
+ * rather than a bounded prefix. Variants are matched by name each crawl and
+ * never deleted, so the set is the lot's name history: the source's current
+ * list (Shopify publishes at most 100 per product; a Proud Mary blend has
+ * 21) plus any sizes the roaster renamed along the way. Small per lot, and
+ * bounded by the roaster, not by table growth. The recommender's
  * MAX_VARIANTS_PER_PRODUCT is its own eligibility cut, not a page limit.
  */
 const lotVariantRows = async (

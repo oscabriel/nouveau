@@ -5,7 +5,8 @@ import {
 import type { Infer } from "convex/values";
 import { v } from "convex/values";
 
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { QueryCtx } from "./_generated/server";
 import { query } from "./_generated/server";
 import { LOT_FILTER_SCAN, LOT_SEARCH_LIMIT } from "./constants";
 import { followerCounts } from "./followerCounts";
@@ -188,15 +189,19 @@ export const listLots = query({
  * roaster, one JS filter, one bounded result. Used instead of listLots when
  * a filter is active; the browse-then-load-more path stays paginate-based.
  */
+/** One roaster's whole catalog, up to the ADR-0007 scan bound. */
+const scanRoasterLots = (ctx: QueryCtx, roasterId: Id<"roasters">) =>
+	ctx.db
+		.query("products")
+		.withIndex("by_roaster_and_external_id", (q) =>
+			q.eq("roasterId", roasterId)
+		)
+		.take(LOT_FILTER_SCAN);
+
 export const listLotsFiltered = query({
 	args: { ...lotFilterValidator.fields, roasterId: v.id("roasters") },
 	handler: async (ctx, args) => {
-		const lots = await ctx.db
-			.query("products")
-			.withIndex("by_roaster_and_external_id", (q) =>
-				q.eq("roasterId", args.roasterId)
-			)
-			.take(LOT_FILTER_SCAN);
+		const lots = await scanRoasterLots(ctx, args.roasterId);
 		return lots.filter((lot) => matchesLotFilters(lot, args)).map(toLotRow);
 	},
 	returns: v.array(lotRowValidator),
@@ -211,14 +216,9 @@ export const listLotsFiltered = query({
 export const lotWeightOptions = query({
 	args: { roasterId: v.id("roasters") },
 	handler: async (ctx, args) => {
-		const lots = await ctx.db
-			.query("products")
-			.withIndex("by_roaster_and_external_id", (q) =>
-				q.eq("roasterId", args.roasterId)
-			)
-			.take(LOT_FILTER_SCAN);
+		const lots = await scanRoasterLots(ctx, args.roasterId);
 		const grams = [...new Set(lots.flatMap((lot) => lot.weightOptions ?? []))];
-		// eslint-disable-next-line unicorn/no-array-sort -- ES2021 backend; grams is a fresh array
+		// oxlint-disable-next-line unicorn/no-array-sort -- ES2021 backend; grams is a fresh array
 		return grams.sort((a, b) => a - b);
 	},
 	returns: v.array(v.number()),

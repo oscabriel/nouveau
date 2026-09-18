@@ -61,9 +61,9 @@ const setup = async () => {
 
 /** Row ids in a fixed order, for set comparisons. */
 const ids = (rows: { id: string }[]) =>
-	// eslint-disable-next-line unicorn/no-array-sort -- ES2021 backend; map copies first
+	// oxlint-disable-next-line unicorn/no-array-sort -- ES2021 backend; map copies first
 	rows.map((row) => row.id).sort();
-// eslint-disable-next-line unicorn/no-array-sort -- ES2021 backend; spread copies first
+// oxlint-disable-next-line unicorn/no-array-sort -- ES2021 backend; spread copies first
 const sorted = (list: string[]) => [...list].sort();
 
 describe("roasters", () => {
