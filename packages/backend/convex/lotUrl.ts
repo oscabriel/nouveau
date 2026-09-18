@@ -56,6 +56,15 @@ export const lotShopUrl = (
  * The deep link to one size on the roaster's shop: a Shopify variant id
  * appends `?variant=` to the lot page; anything else falls back to the lot's
  * own page. Null when no safe lot URL exists.
+ *
+ * The gate stands on two facts about the extractors, not on the source
+ * mode (crawlSources.mode is not in reach here). Only the Shopify
+ * products.json extractor sets a variant externalId (extraction.ts), and
+ * only that extractor leaves products.url unset, because its page is
+ * /products/{handle} (productUrl above). A stored url therefore marks a
+ * WooCommerce or product-page lot, whose shop ignores ?variant=. If a
+ * later extractor sets variant ids on a lot that stores its url, pass the
+ * mode through instead of widening this test.
  */
 export const variantShopUrl = (
 	roaster: Pick<Doc<"roasters">, "websiteUrl">,
@@ -66,11 +75,10 @@ export const variantShopUrl = (
 	if (base === null) {
 		return null;
 	}
-	if (
-		variant.externalId !== undefined &&
-		/^[0-9]+$/u.test(variant.externalId) &&
-		lot.url === undefined
-	) {
+	const shopifyLot = lot.url === undefined;
+	const shopifyVariantId =
+		variant.externalId !== undefined && /^[0-9]+$/u.test(variant.externalId);
+	if (shopifyLot && shopifyVariantId) {
 		return `${base}?variant=${variant.externalId}`;
 	}
 	return base;
