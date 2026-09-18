@@ -192,10 +192,6 @@ const emitBurstEvents = async (
 
 interface ApplyVariantsInput extends BurstContext {
 	eventsAllowed: boolean;
-	// True when upsertProduct inserted the product row during this same crawl:
-	// the lot's first sighting. Every size is new at once and they are one
-	// fact, so they share one "new" event citing the cheapest size (#19).
-	isNewProduct: boolean;
 	product: ExtractedProduct;
 }
 
@@ -537,7 +533,6 @@ const upsertProduct = async (
 	await applyVariants(ctx, {
 		eventsAllowed: input.eventsAllowed,
 		fetchedAt: now,
-		isNewProduct: current === null,
 		product,
 		productId,
 		roasterId,
