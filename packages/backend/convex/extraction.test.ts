@@ -212,6 +212,54 @@ describe("parseProductsJson", () => {
 		expect(page.products.map((p) => p.externalId)).toEqual(["1"]);
 		expect(page.rejectedExternalIds).toEqual([]);
 	});
+
+	test("a default rejection becomes a shadow candidate; a named one does not (§16)", () => {
+		const page = parseProductsJson(
+			feedBody([
+				// Hard non-lot signals name their reason: no shadow check needed.
+				feedProduct(1, { product_type: "Merch", title: "Tote" }),
+				// The ambiguous tail: untyped, untagged, nothing to read.
+				feedProduct(2, {
+					body_html: "<p>Sun-dried Sidamo, roasted last Tuesday.</p>",
+					product_type: "",
+					tags: [],
+					title: "Special Release",
+				}),
+				// Untyped and untagged, but the title says gift card.
+				feedProduct(3, { product_type: "", title: "Gift Card" }),
+			])
+		);
+		expect(page.shadowCandidates).toEqual([
+			{
+				description: "Sun-dried Sidamo, roasted last Tuesday.",
+				externalId: "2",
+				title: "Special Release",
+			},
+		]);
+	});
+
+	test("shadow candidates are deduped across pages by externalId", async () => {
+		const websiteUrl = "https://shop.example.com";
+		const page2 = feedBody([
+			feedProduct(2, { title: "Special Release (restock)" }),
+		]);
+		const fetchPage = vi.fn(() => Promise.resolve(page2));
+		const firstPage = parseProductsJson(
+			feedBody([
+				...Array.from({ length: PRODUCTS_JSON_PAGE_SIZE - 1 }, (_, i) =>
+					feedProduct(i + 1)
+				),
+				feedProduct(2, {
+					product_type: "",
+					tags: [],
+					title: "Special Release",
+				}),
+			])
+		);
+		const result = await walkFeedPages({ fetchPage, firstPage, websiteUrl });
+		expect(result.shadowCandidates).toHaveLength(1);
+		expect(result.shadowCandidates[0]?.externalId).toBe("2");
+	});
 });
 
 // Every case below is a real product from a seed roaster's feed, sampled
@@ -1487,6 +1535,7 @@ describe("walkFeedPages", () => {
 			pageError: null,
 			products: [expect.objectContaining({ externalId: "1" })],
 			rejectedExternalIds: [],
+			shadowCandidates: [],
 		});
 	});
 
@@ -1554,6 +1603,7 @@ describe("walkFeedPages", () => {
 			pageError: "products.json page 2 unavailable; partial catalog discarded",
 			products: [],
 			rejectedExternalIds: [],
+			shadowCandidates: [],
 		});
 	});
 

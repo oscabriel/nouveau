@@ -1255,6 +1255,68 @@ const classifyUntyped = (tags: string[], title: string): LotClassification => {
  * coffees, and a false lot pollutes the feed while a missed one costs a
  * sold-out archive row.
  */
+/** One ambiguous-tail item as the parsers hand it to the Jev shadow check. */
+export interface ShadowCandidate {
+	/** The item's own description, stripped and capped, as Jev context. */
+	description?: string;
+	externalId: string;
+	productType?: string;
+	/** The shop's own tags, capped: a long tag list is context rot, not signal. */
+	tags?: string[];
+	title: string;
+}
+
+const SHADOW_DESCRIPTION_MAX_LENGTH = 300;
+const SHADOW_TAGS_MAX = 12;
+
+/**
+ * A candidate for the Jev shadow check (§16): a `default` verdict is a
+ * guess, not a decision — the feed paths reject the item while the page path
+ * accepts it. Only that rule qualifies: a title or tag rejection named its
+ * reason, and Jev would not add one. Everything the candidate carries is the
+ * shop's own words; nothing is invented.
+ */
+export const shadowCandidateFrom = (
+	verdict: LotClassification,
+	input: {
+		bodyHtml?: string | null;
+		externalId: string;
+		productType?: string | null;
+		tags?: string[] | string | null;
+		title?: string | null;
+	}
+): ShadowCandidate | null => {
+	if (verdict.isLot || verdict.rule !== "default") {
+		return null;
+	}
+	if (input.externalId === "") {
+		return null;
+	}
+	const title = (input.title ?? "").trim();
+	if (title === "") {
+		return null;
+	}
+	const candidate: ShadowCandidate = { externalId: input.externalId, title };
+	const productType = (input.productType ?? "").trim();
+	if (productType !== "") {
+		candidate.productType = productType.slice(0, PRODUCT_TYPE_MAX_LENGTH);
+	}
+	const tags = parseTags(input.tags).slice(0, SHADOW_TAGS_MAX);
+	if (tags.length > 0) {
+		candidate.tags = tags;
+	}
+	if (typeof input.bodyHtml === "string") {
+		const description = capAtWord(
+			stripHtml(input.bodyHtml).replaceAll("\n", " "),
+			SHADOW_DESCRIPTION_MAX_LENGTH
+		);
+		if (description !== null) {
+			candidate.description = description;
+		}
+	}
+	return candidate;
+};
+
 export const classifyLot = (input: LotClassifierInput): LotClassification => {
 	const title = input.title ?? "";
 	const tags = parseTags(input.tags);
@@ -1393,6 +1455,11 @@ export interface ProductsJsonPage {
 	 * finalizeCrawl, which purges any that are still in the catalog.
 	 */
 	rejectedExternalIds: string[];
+	/**
+	 * The classifier's ambiguous tail (default rejections), for the Jev
+	 * shadow check, which records a second opinion without acting on it.
+	 */
+	shadowCandidates: ShadowCandidate[];
 }
 
 export interface LotCopyInput {
@@ -1567,6 +1634,7 @@ export const parseProductsJson = (text: string): ProductsJsonPage => {
 	}
 	const products: ExtractedProduct[] = [];
 	const rejectedExternalIds: string[] = [];
+	const shadowCandidates: ShadowCandidate[] = [];
 	for (const raw of feed) {
 		const externalId = String(raw.id ?? raw.handle ?? "");
 		const verdict = classifyLot({
@@ -1580,6 +1648,16 @@ export const parseProductsJson = (text: string): ProductsJsonPage => {
 			// empty id would match any catalog row that fell back to "".
 			if (externalId !== "") {
 				rejectedExternalIds.push(externalId);
+			}
+			const candidate = shadowCandidateFrom(verdict, {
+				bodyHtml: raw.body_html,
+				externalId,
+				productType: raw.product_type,
+				tags: raw.tags,
+				title: raw.title,
+			});
+			if (candidate !== null) {
+				shadowCandidates.push(candidate);
 			}
 			continue;
 		}
@@ -1607,7 +1685,12 @@ export const parseProductsJson = (text: string): ProductsJsonPage => {
 			variants,
 		});
 	}
-	return { feedCount: feed.length, products, rejectedExternalIds };
+	return {
+		feedCount: feed.length,
+		products,
+		rejectedExternalIds,
+		shadowCandidates,
+	};
 };
 
 /** Stop walking products.json pages here even if the feed is still full
@@ -1619,6 +1702,8 @@ export interface FeedWalkResult {
 	products: ExtractedProduct[];
 	/** Union of every page's rejected ids (§16); empty when the walk fails. */
 	rejectedExternalIds: string[];
+	/** Union of every page's shadow candidates, deduped by externalId. */
+	shadowCandidates: ShadowCandidate[];
 }
 
 export interface FeedWalkInput {
@@ -1648,8 +1733,12 @@ export const walkFeedPages = async (
 ): Promise<FeedWalkResult> => {
 	const collected = new Map<string, ExtractedProduct>();
 	const rejected = new Set<string>(input.firstPage.rejectedExternalIds);
+	const shadow = new Map<string, ShadowCandidate>();
 	for (const product of input.firstPage.products) {
 		collected.set(product.externalId, product);
+	}
+	for (const candidate of input.firstPage.shadowCandidates) {
+		shadow.set(candidate.externalId, candidate);
 	}
 	let { feedCount } = input.firstPage;
 	let page = 1;
@@ -1670,6 +1759,7 @@ export const walkFeedPages = async (
 				pageError: `products.json page ${page} unavailable; partial catalog discarded`,
 				products: [],
 				rejectedExternalIds: [],
+				shadowCandidates: [],
 			};
 		}
 		for (const product of parsed.products) {
@@ -1677,6 +1767,9 @@ export const walkFeedPages = async (
 		}
 		for (const id of parsed.rejectedExternalIds) {
 			rejected.add(id);
+		}
+		for (const candidate of parsed.shadowCandidates) {
+			shadow.set(candidate.externalId, candidate);
 		}
 		({ feedCount } = parsed);
 	}
@@ -1689,5 +1782,6 @@ export const walkFeedPages = async (
 		pageError: null,
 		products: [...collected.values()],
 		rejectedExternalIds: [...rejected],
+		shadowCandidates: [...shadow.values()],
 	};
 };

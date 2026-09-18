@@ -31,6 +31,9 @@ const app = defineApp({
 		OPENAI_API_KEY: v.optional(v.string()),
 		// Origin the OAuth flow may redirect back to (the browsed dev/prod URL).
 		SITE_URL: v.optional(v.string()),
+		// Optional: the Jev shadow check (lotClassifierShadow) is a no-op
+		// without it, and classification never depends on the key.
+		TYPESAFE_API_KEY: v.optional(v.string()),
 	},
 	httpPrefix: "/api",
 });

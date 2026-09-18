@@ -31,6 +31,7 @@ import type {
 	ExtractedProduct,
 	FeedPageResponse,
 	ProductsJsonPage,
+	ShadowCandidate,
 } from "./extraction";
 import { probeShop } from "./platform";
 import {
@@ -81,6 +82,11 @@ interface CommitInput {
 	// externalIds the lot classifier rejected (§16); finalizeCrawl purges any
 	// still in the catalog.
 	rejectedExternalIds?: string[];
+	// The classifier's ambiguous tail (§16, default rejections), handed to the
+	// Jev shadow check after the catalog commits. None from page mode: its
+	// untyped items become lots, so its tail needs the other question.
+	roasterId: Id<"roasters">;
+	shadowCandidates?: ShadowCandidate[];
 }
 
 /**
@@ -135,6 +141,18 @@ const commitCatalog = async (
 		...capture,
 		...rejected,
 	});
+	// The shadow rides behind a successful commit, off the crawl's critical
+	// path: a Jev outage must not fail the crawl that produced the
+	// candidates, so it is scheduled rather than awaited inline.
+	if (
+		input.shadowCandidates !== undefined &&
+		input.shadowCandidates.length > 0
+	) {
+		await ctx.scheduler.runAfter(0, internal.lotClassifierShadow.evaluate, {
+			candidates: input.shadowCandidates,
+			roasterId: input.roasterId,
+		});
+	}
 };
 
 const failCrawl = (
@@ -320,6 +338,7 @@ const crawlProductsJson = async (
 
 	let products: ExtractedProduct[] | null = null;
 	let rejectedExternalIds: string[] = [];
+	let shadowCandidates: ShadowCandidate[] = [];
 	let pageError: string | null = null;
 	if (firstPage !== null && firstPage.products.length > 0) {
 		// Whichever fetcher worked for page 1 also fetches the later pages.
@@ -329,7 +348,7 @@ const crawlProductsJson = async (
 			firstPage,
 			websiteUrl,
 		});
-		({ pageError, rejectedExternalIds } = walked);
+		({ pageError, rejectedExternalIds, shadowCandidates } = walked);
 		products = pageError === null ? walked.products : null;
 	}
 
@@ -360,6 +379,8 @@ const crawlProductsJson = async (
 		products,
 		rejectedExternalIds,
 		...(rawCapture === undefined ? {} : { rawCapture }),
+		roasterId: input.roasterId,
+		shadowCandidates,
 	});
 };
 
@@ -410,6 +431,7 @@ const crawlWooCommerce = async (
 
 	const products = new Map<string, ExtractedProduct>();
 	const rejected = new Set<string>();
+	const shadow = new Map<string, ShadowCandidate>();
 	const currencies = new Set<string>();
 	const variationParents: WooListingPage["variationParents"] = [];
 	let pageError: string | null = null;
@@ -419,6 +441,9 @@ const crawlWooCommerce = async (
 		}
 		for (const id of page.rejectedExternalIds) {
 			rejected.add(id);
+		}
+		for (const candidate of page.shadowCandidates) {
+			shadow.set(candidate.externalId, candidate);
 		}
 		for (const code of page.currencies) {
 			currencies.add(code);
@@ -509,6 +534,8 @@ const crawlWooCommerce = async (
 		products: [...products.values()],
 		rejectedExternalIds: [...rejected],
 		...(rawCapture === undefined ? {} : { rawCapture }),
+		roasterId: input.roasterId,
+		shadowCandidates: [...shadow.values()],
 	});
 };
 
@@ -716,6 +743,9 @@ const crawlProductPages = async (
 		market: marketFromCurrencies([...currencies], input.websiteUrl, fetchedAt),
 		products,
 		rejectedExternalIds: rejected,
+		// Page mode is not shadowed (module docstring): its default-rejection
+		// tail becomes lots, so it needs the other question.
+		roasterId: input.roasterId,
 	});
 };
 
@@ -853,6 +883,7 @@ export const commitExtractedCatalog = internalAction({
 			...(args.rejectedExternalIds === undefined
 				? {}
 				: { rejectedExternalIds: args.rejectedExternalIds }),
+			roasterId: loaded.roaster._id,
 		});
 		return null;
 	},

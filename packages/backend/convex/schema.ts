@@ -100,6 +100,28 @@ export default defineSchema({
 		.index("by_product_and_logged_at", ["productId", "loggedAt"])
 		.index("by_user_and_logged_at", ["userId", "loggedAt"]),
 
+	// Jev shadow verdicts (§16, lotClassifierShadow): the lot classifier's
+	// `default` rejections are a guess, so every crawl also asks Jev whether
+	// the item is a lot and records the answer without acting on it. One row
+	// per (roaster, externalId), ever: the same tail reappears on every crawl
+	// and only the first opinion counts.
+	lotClassifierShadow: defineTable({
+		// Jev also read the item as a non-lot (every candidate was rejected
+		// on the `default` path, so agreement means not_coffee).
+		agreed: v.boolean(),
+		// P(lot) from the Choice's probability distribution.
+		coffeeProbability: v.number(),
+		confidence: v.optional(v.number()),
+		externalId: v.string(),
+		jevChoice: v.string(),
+		// The exact version that answered, from the response body.
+		model: v.string(),
+		productType: v.optional(v.string()),
+		roasterId: v.id("roasters"),
+		tags: v.optional(v.array(v.string())),
+		title: v.string(),
+	}).index("by_roaster_and_external_id", ["roasterId", "externalId"]),
+
 	notifications: defineTable({
 		deliveryStatus: v.union(
 			v.literal("pending"),

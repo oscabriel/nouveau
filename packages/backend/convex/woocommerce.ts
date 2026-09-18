@@ -6,8 +6,17 @@
 // (`?type=variation&parent=ID`) when the sizes carry their own prices. Pure
 // parsing here; crawler.ts fetches.
 
-import { buildLotCopy, classifyLot, parseVariantGrams } from "./extraction";
-import type { ExtractedProduct, ExtractedVariant } from "./extraction";
+import {
+	buildLotCopy,
+	classifyLot,
+	parseVariantGrams,
+	shadowCandidateFrom,
+} from "./extraction";
+import type {
+	ExtractedProduct,
+	ExtractedVariant,
+	ShadowCandidate,
+} from "./extraction";
 import { bareProductUrl } from "./lotUrl";
 
 export const WOO_PAGE_SIZE = 100;
@@ -176,7 +185,12 @@ export const parseWooVariations = (raw: unknown): ExtractedVariant[] => {
 };
 
 type WooItem =
-	| { externalId: string; kind: "rejected" }
+	| {
+			/** Set when the reject was a `default` verdict, for the Jev shadow. */
+			candidate?: ShadowCandidate;
+			externalId: string;
+			kind: "rejected";
+	  }
 	| {
 			currency?: string;
 			kind: "lot";
@@ -227,7 +241,18 @@ const parseWooItem = (raw: WooProduct): WooItem | null => {
 		vendor,
 	});
 	if (!verdict.isLot) {
-		return { externalId, kind: "rejected" };
+		const candidate = shadowCandidateFrom(verdict, {
+			bodyHtml: raw.description,
+			externalId,
+			productType: categories.join(", "),
+			tags,
+			title,
+		});
+		return {
+			...(candidate === null ? {} : { candidate }),
+			externalId,
+			kind: "rejected" as const,
+		};
 	}
 	const priceCents = wooCents(raw.prices);
 	if (priceCents === null || title === "") {
@@ -274,6 +299,8 @@ export interface WooListingPage {
 	products: ExtractedProduct[];
 	/** externalIds the classifier rejected (§16), for the non-lot purge. */
 	rejectedExternalIds: string[];
+	/** The classifier's ambiguous tail (default rejections), for the Jev shadow. */
+	shadowCandidates: ShadowCandidate[];
 	/** Parents whose sizes carry their own prices; the crawler fetches these. */
 	variationParents: { externalId: string; parentId: number }[];
 }
@@ -294,6 +321,7 @@ export const parseWooListing = (text: string): WooListingPage => {
 	const currencies = new Set<string>();
 	const products: ExtractedProduct[] = [];
 	const rejectedExternalIds: string[] = [];
+	const shadowCandidates: ShadowCandidate[] = [];
 	const variationParents: WooListingPage["variationParents"] = [];
 	for (const raw of listing) {
 		const item = parseWooItem(raw);
@@ -302,6 +330,9 @@ export const parseWooListing = (text: string): WooListingPage => {
 		}
 		if (item.kind === "rejected") {
 			rejectedExternalIds.push(item.externalId);
+			if (item.candidate !== undefined) {
+				shadowCandidates.push(item.candidate);
+			}
 			continue;
 		}
 		products.push(item.product);
@@ -317,6 +348,7 @@ export const parseWooListing = (text: string): WooListingPage => {
 		feedCount: listing.length,
 		products,
 		rejectedExternalIds,
+		shadowCandidates,
 		variationParents,
 	};
 };

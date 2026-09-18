@@ -22,6 +22,7 @@ import type * as healthCheck from "../healthCheck.js";
 import type * as http from "../http.js";
 import type * as identity from "../identity.js";
 import type * as logs from "../logs.js";
+import type * as lotClassifierShadow from "../lotClassifierShadow.js";
 import type * as lotFacts from "../lotFacts.js";
 import type * as lotUrl from "../lotUrl.js";
 import type * as lots from "../lots.js";
@@ -64,6 +65,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   identity: typeof identity;
   logs: typeof logs;
+  lotClassifierShadow: typeof lotClassifierShadow;
   lotFacts: typeof lotFacts;
   lotUrl: typeof lotUrl;
   lots: typeof lots;

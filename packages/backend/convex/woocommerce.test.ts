@@ -121,6 +121,29 @@ describe("parseWooListing", () => {
 		expect(page.feedCount).toBe(3);
 	});
 
+	test("a default rejection becomes a shadow candidate; a named one does not", () => {
+		const page = parseWooListing(
+			JSON.stringify([
+				// The ambiguous tail: no categories, no tags, nothing to read.
+				jbc({
+					categories: [],
+					id: 11,
+					name: "Special Release",
+					tags: [],
+				}),
+				// A named reject (Merch) is no shadow candidate.
+				jbc({ categories: [{ name: "Merch" }], id: 12, name: "Mug" }),
+			])
+		);
+		expect(page.shadowCandidates).toEqual([
+			{
+				description: "Notes of blueberry, jasmine and cocoa nib.",
+				externalId: "11",
+				title: "Special Release",
+			},
+		]);
+	});
+
 	test("a permalink that is not an http(s) URL is dropped, the lot kept", () => {
 		const [lot] = parseWooListing(
 			JSON.stringify([
