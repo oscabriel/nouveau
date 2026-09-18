@@ -59,6 +59,13 @@ const setup = async () => {
 	return { ...ids, t };
 };
 
+/** Row ids in a fixed order, for set comparisons. */
+const ids = (rows: { id: string }[]) =>
+	// eslint-disable-next-line unicorn/no-array-sort -- ES2021 backend; map copies first
+	rows.map((row) => row.id).sort();
+// eslint-disable-next-line unicorn/no-array-sort -- ES2021 backend; spread copies first
+const sorted = (list: string[]) => [...list].sort();
+
 describe("roasters", () => {
 	test("listActive returns only active roasters with source health", async () => {
 		const { t } = await setup();
@@ -249,32 +256,56 @@ describe("roasters", () => {
 					origin: "Ethiopia",
 					weightOptions: [500],
 				}),
+				// Cheap but a kilo, in stock but not Colombia: keeps each axis
+				// from standing in for another.
+				kenyaCheapKilo: await insert("k1", {
+					anyAvailable: true,
+					minPriceCents: 1500,
+					name: "Cheap Kenya Kilo",
+					origin: "Kenya",
+					weightOptions: [1000],
+				}),
 			};
 		});
 		const inStock = await t.query(api.roasters.listLotsFiltered, {
 			availableOnly: true,
 			roasterId: active,
 		});
-		// eslint-disable-next-line unicorn/no-array-sort -- ES2021 backend; map copies first
-		expect(inStock.map((row) => row.id).sort()).toEqual(
-			// eslint-disable-next-line unicorn/no-array-sort -- ES2021 backend; literal is fresh
-			[lots.colombiaCheap, lots.colombiaRich].sort()
+		expect(ids(inStock)).toEqual(
+			sorted([lots.colombiaCheap, lots.colombiaRich, lots.kenyaCheapKilo])
 		);
 		const cheap = await t.query(api.roasters.listLotsFiltered, {
 			maxPriceCents: 2000,
 			roasterId: active,
 		});
-		expect(cheap.map((row) => row.id)).toEqual([lots.colombiaCheap]);
+		expect(ids(cheap)).toEqual(
+			sorted([lots.colombiaCheap, lots.kenyaCheapKilo])
+		);
 		const colombia = await t.query(api.roasters.listLotsFiltered, {
 			origin: "colo",
 			roasterId: active,
 		});
-		expect(colombia).toHaveLength(2);
+		expect(ids(colombia)).toEqual(
+			sorted([lots.colombiaCheap, lots.colombiaRich])
+		);
 		const quarterKilo = await t.query(api.roasters.listLotsFiltered, {
 			grams: 250,
 			roasterId: active,
 		});
-		expect(quarterKilo.map((row) => row.id)).toEqual([lots.colombiaCheap]);
+		expect(ids(quarterKilo)).toEqual([lots.colombiaCheap]);
+		const kilo = await t.query(api.roasters.listLotsFiltered, {
+			grams: 1000,
+			roasterId: active,
+		});
+		expect(ids(kilo)).toEqual(sorted([lots.colombiaRich, lots.kenyaCheapKilo]));
+		// Axes combine: cheap and in stock and 250 g is one lot.
+		const combined = await t.query(api.roasters.listLotsFiltered, {
+			availableOnly: true,
+			grams: 250,
+			maxPriceCents: 2000,
+			roasterId: active,
+		});
+		expect(ids(combined)).toEqual([lots.colombiaCheap]);
 	});
 
 	test("searchLots filters inside the scan, not after the result limit", async () => {
