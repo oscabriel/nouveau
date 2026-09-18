@@ -2,7 +2,6 @@ import { api } from "@nouveau/backend/convex/_generated/api";
 import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
 import type { CrawlStatus } from "@nouveau/backend/convex/health";
 import { useMutation } from "convex/react";
-import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { relativeTime } from "@/lib/format";
@@ -104,24 +103,17 @@ export const CheckNowButton = ({
 	const line = note === null ? null : noteLine(note, status, now);
 	const disabled = busy || status.checking;
 	return (
-		<span className="inline-flex items-center gap-2">
+		<span className="inline-flex items-center gap-3">
 			<button
-				className="hover:bg-accent inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs transition-colors disabled:cursor-default disabled:opacity-50"
+				className="label-caps disabled:text-muted-foreground inline-flex min-h-11 items-center hover:underline disabled:cursor-default disabled:no-underline"
 				disabled={disabled}
 				onClick={check}
 				type="button"
 			>
-				<RefreshCw
-					aria-hidden
-					className={`size-3 ${status.checking ? "motion-safe:animate-spin" : ""}`}
-				/>
 				{status.checking ? "Checking" : "Check now"}
 			</button>
 			{line !== null && (
-				<span
-					aria-live="polite"
-					className="text-muted-foreground text-xs tabular-nums"
-				>
+				<span aria-live="polite" className="text-muted-foreground tnum text-xs">
 					{line}
 				</span>
 			)}

@@ -2,19 +2,15 @@ import type { CrawlStatus } from "@nouveau/backend/convex/health";
 
 import { relativeTime } from "@/lib/format";
 
-const TONE = {
-	crawl_failed: {
-		dot: "bg-red-500",
-		text: "text-red-600 dark:text-red-400",
-	},
-	stale: {
-		dot: "bg-amber-500",
-		text: "text-amber-600 dark:text-amber-400",
-	},
-	watching: {
-		dot: "bg-emerald-500",
-		text: "text-muted-foreground",
-	},
+/**
+ * The dot is the one place semantic color survives in the index world: an
+ * 8px state indicator. The line beside it is always grey; the words carry
+ * the state, the dot lets you scan a column of them.
+ */
+const DOT = {
+	crawl_failed: "bg-red-500",
+	stale: "bg-amber-500",
+	watching: "bg-emerald-500",
 } as const;
 
 /**
@@ -56,7 +52,7 @@ export const HealthDot = ({
 }) => (
 	<span
 		aria-hidden
-		className={`inline-block size-2 shrink-0 rounded-full ${TONE[health].dot} ${checking ? "motion-safe:animate-pulse" : ""}`}
+		className={`inline-block size-2 shrink-0 rounded-full ${DOT[health]} ${checking ? "motion-safe:animate-pulse" : ""}`}
 	/>
 );
 
@@ -76,7 +72,7 @@ export const StatusChip = ({
 	const label = compact ? (line.split(" — ")[0] ?? line) : line;
 	return (
 		<span
-			className={`inline-flex items-center gap-1.5 text-sm ${TONE[status.health].text}`}
+			className="text-muted-foreground inline-flex items-center gap-2 text-sm leading-snug md:text-[15px]"
 			title={compact ? line : undefined}
 		>
 			<HealthDot checking={status.checking} health={status.health} />

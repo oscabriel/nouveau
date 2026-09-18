@@ -11,8 +11,11 @@ import { useEffect } from "react";
 import { ModeToggle } from "./mode-toggle";
 
 /** Caps text link, 44px tall hit area, underline on hover. */
-const navLinkClass =
+export const navLinkClass =
 	"label-caps inline-flex min-h-11 items-center hover:underline";
+
+/** The current route stays underlined so the nav doubles as a "you are here". */
+const activeProps = { className: "underline" };
 
 const SignInButton = () => {
 	const { signInGoogle } = useSignInWithGoogle(api.auth);
@@ -44,15 +47,13 @@ const SignInButton = () => {
 	);
 };
 
-const SignOutButton = () => {
+/**
+ * Signed-in utilities: the private destinations and the account controls.
+ * Grey so the primary nav stays the loudest row; each link goes ink on hover.
+ */
+const Utilities = () => {
 	const { signOut } = useAuthActions();
 	const user = useQuery(api.users.getCurrentUser);
-	// Lazily provisions the shared alert inbox on sign-in; the mutation is a
-	// no-op when the inbox already exists.
-	const ensureAlertInbox = useMutation(api.notifications.ensureAlertInbox);
-	useEffect(() => {
-		void ensureAlertInbox();
-	}, [ensureAlertInbox]);
 	const endSession = async () => {
 		try {
 			await signOut();
@@ -60,12 +61,23 @@ const SignOutButton = () => {
 			// A failed sign-out leaves the session as-is; the UI stays truthful.
 		}
 	};
+	const utilityClass = `${navLinkClass} text-muted-foreground hover:text-foreground`;
 
 	return (
-		<div className="flex items-center gap-4 md:gap-5">
+		<nav
+			aria-label="Your account"
+			className="flex flex-wrap items-center gap-x-4 md:gap-x-5"
+		>
+			<Link activeProps={activeProps} className={utilityClass} to="/watches">
+				Watches
+			</Link>
+			<Link activeProps={activeProps} className={utilityClass} to="/saved">
+				Saved
+			</Link>
 			{user !== undefined && user !== null && (
 				<Link
-					className={navLinkClass}
+					activeProps={activeProps}
+					className={`${utilityClass} max-w-40 truncate`}
 					params={{ userId: user.id }}
 					to="/profile/$userId"
 				>
@@ -73,7 +85,7 @@ const SignOutButton = () => {
 				</Link>
 			)}
 			<button
-				className={navLinkClass}
+				className={utilityClass}
 				onClick={() => {
 					endSession();
 				}}
@@ -81,54 +93,93 @@ const SignOutButton = () => {
 			>
 				Sign out
 			</button>
-		</div>
+		</nav>
 	);
 };
 
-const AuthControls = () => {
-	const { isAuthenticated, isLoading } = useConvexAuth();
-
+/** Right side of the row: utilities from `md` when signed in, else Sign in. */
+const AuthControls = ({
+	isAuthenticated,
+	isLoading,
+}: {
+	isAuthenticated: boolean;
+	isLoading: boolean;
+}) => {
 	if (isLoading) {
 		return null;
 	}
-	return isAuthenticated ? <SignOutButton /> : <SignInButton />;
+	if (isAuthenticated) {
+		return (
+			<div className="hidden md:block">
+				<Utilities />
+			</div>
+		);
+	}
+	return <SignInButton />;
 };
 
 /**
- * Site header: one row of tracked caps labels, wordmark first. No bar, no
- * rule under it; the page's own hero carries the weight below.
+ * Site header: tracked caps labels, wordmark first, no bar and no rule. The
+ * public destinations sit beside the wordmark. Signed in, the private ones
+ * (Watches, Saved, profile, sign out) join the right side from `md`; below
+ * that they take a second row so nothing wraps mid-list at 390px.
  */
 const Header = () => {
-	const { isAuthenticated } = useConvexAuth();
-	const links = isAuthenticated
-		? [
-				{ label: "Feed", to: "/feed" },
-				{ label: "Activity", to: "/activity" },
-				{ label: "Roasters", to: "/roasters" },
-				{ label: "Watches", to: "/watches" },
-				{ label: "Saved", to: "/saved" },
-			]
-		: [
-				{ label: "Roasters", to: "/roasters" },
-				{ label: "Activity", to: "/activity" },
-			];
+	const { isAuthenticated, isLoading } = useConvexAuth();
+	// Lazily provisions the shared alert inbox on sign-in; the mutation is a
+	// no-op when the inbox already exists. Lives here, not in Utilities, which
+	// renders twice (one copy per breakpoint).
+	const ensureAlertInbox = useMutation(api.notifications.ensureAlertInbox);
+	useEffect(() => {
+		if (isAuthenticated) {
+			void ensureAlertInbox();
+		}
+	}, [ensureAlertInbox, isAuthenticated]);
+	const links = [
+		{ label: "Roasters", to: "/roasters" },
+		{ label: "Activity", to: "/activity" },
+		...(isAuthenticated ? [{ label: "Feed", to: "/feed" }] : []),
+	];
 
 	return (
-		<header className="flex w-full flex-row items-center justify-between gap-4 px-5 pt-3 md:px-10 md:pt-4">
-			<nav className="flex flex-wrap items-center gap-x-4 md:gap-x-5">
-				<Link className={`${navLinkClass} font-semibold`} to="/">
-					Nouveau
-				</Link>
-				{links.map(({ to, label }) => (
-					<Link className={navLinkClass} key={to} to={to}>
-						{label}
+		<header className="px-5 pt-3 md:px-10 md:pt-4">
+			<div className="flex w-full flex-row items-center justify-between gap-4">
+				<nav
+					aria-label="Primary"
+					className="flex flex-wrap items-center gap-x-4 md:gap-x-5"
+				>
+					<Link
+						activeOptions={{ exact: true }}
+						activeProps={activeProps}
+						className={`${navLinkClass} font-semibold`}
+						to="/"
+					>
+						Nouveau
 					</Link>
-				))}
-			</nav>
-			<div className="flex items-center gap-4 md:gap-5">
-				<AuthControls />
-				<ModeToggle />
+					{links.map(({ to, label }) => (
+						<Link
+							activeProps={activeProps}
+							className={navLinkClass}
+							key={to}
+							to={to}
+						>
+							{label}
+						</Link>
+					))}
+				</nav>
+				<div className="flex items-center gap-4 md:gap-5">
+					<AuthControls
+						isAuthenticated={isAuthenticated}
+						isLoading={isLoading}
+					/>
+					<ModeToggle />
+				</div>
 			</div>
+			{isAuthenticated && (
+				<div className="md:hidden">
+					<Utilities />
+				</div>
+			)}
 		</header>
 	);
 };

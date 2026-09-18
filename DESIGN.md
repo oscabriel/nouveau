@@ -43,6 +43,18 @@ typography:
     fontWeight: 400
     lineHeight: 1.375
     letterSpacing: "normal"
+  title:
+    fontFamily: "Schibsted Grotesk Variable, Helvetica Neue, Helvetica, Arial, sans-serif"
+    fontSize: "clamp(1.75rem, 2.5vw, 2.25rem)"
+    fontWeight: 600
+    lineHeight: 1
+    letterSpacing: "normal"
+  section:
+    fontFamily: "Schibsted Grotesk Variable, Helvetica Neue, Helvetica, Arial, sans-serif"
+    fontSize: "clamp(1.25rem, 1.7vw, 1.5rem)"
+    fontWeight: 400
+    lineHeight: 1.2
+    letterSpacing: "normal"
   marquee:
     fontFamily: "Schibsted Grotesk Variable, Helvetica Neue, Helvetica, Arial, sans-serif"
     fontSize: "22vw"
@@ -94,11 +106,19 @@ components:
   tab-inactive:
     textColor: "{colors.grey}"
     typography: "{typography.tab}"
+  search-field:
+    textColor: "{colors.ink}"
+    typography: "{typography.cell}"
+    height: "44px"
+    borderBottom: "1px {colors.rule}"
+  status-line:
+    textColor: "{colors.grey}"
+    typography: "{typography.cell}"
 ---
 
 # Nouveau
 
-_Recorded from the built world, 2026-09-16, after the landing redesign. Replaces the earlier "watch tower" system (deep blue, Inter, cool neutrals) in full. References pinned by the owner: theindex.website for structure and type, vanschneider.com/blog for the table row hover. Updated as each further screen ships._
+_Recorded from the built world, 2026-09-16, after the landing redesign; extended 2026-09-18 with the header, `/roasters` and `/roasters/$slug`. Replaces the earlier "watch tower" system (deep blue, Inter, cool neutrals) in full. References pinned by the owner: theindex.website for structure and type, vanschneider.com/blog for the table row hover. Updated as each further screen ships._
 
 ## Overview
 
@@ -115,7 +135,7 @@ Strategy: restrained to the point of monochrome. Ink on ground, one grey for sec
 - Tint `oklch(0.96 0 0)` is the hovered row and the empty tile ground. Dark: `oklch(0.2 0 0)`.
 - Rule `oklch(0.88 0 0)` for every hairline. Dark: `oklch(1 0 0 / 14%)`.
 - `--primary` is ink; `--ring` is ink. Focus is a 1px ink outline offset 2px.
-- Semantic status colors (emerald healthy, amber stale, red failed) survive from the incumbent status chips and are outside the token set; they are the only colored UI on inner pages until those pages are redesigned.
+- Status color lives in the dot only. The crawl-status dot is emerald (watching), amber (stale) or red (failed), 8px, and the line beside it is always grey. Nothing else in UI chrome carries hue.
 - The tile chip is always white on near-black, both themes, because it sits on a photograph.
 
 ## Typography
@@ -126,6 +146,8 @@ Strategy: restrained to the point of monochrome. Ink on ground, one grey for sec
   - Label: 11px, weight 500, uppercase, tracking 0.06em, line-height 1. Nav, table headers, footer links, toggles, the sign-in block. The `.label-caps` utility in `globals.css`.
   - Wordmark: 28px to 36px, weight 600, uppercase, tracking 0.01em.
   - Lede: 22px to 28px serif, line-height 1.3, `text-balance`, measure capped at 44rem.
+  - Title: the wordmark size (28px to 36px) at weight 600, mixed case. Inner-page h1: "Roasters", the roaster's name. Counts follow in 14px grey tabular figures in parentheses. `page-title.tsx`.
+  - Section: 20px to 24px, weight 400. Inner-page h2 ("Drop history", "Lots"), counts in 12px tabular.
   - Tabs: 18px to 24px, weight 400; counts in 12px tabular figures in parentheses.
   - Cells: 14px on mobile, 15px from `md`, line-height snug. Row numbers 12px tabular.
   - Marquee: 22vw, weight 600, tracking -0.02em, line-height 1, cropped at 16.5vw container height so the baseline falls below the fold.
@@ -135,7 +157,8 @@ Strategy: restrained to the point of monochrome. Ink on ground, one grey for sec
 ## Layout
 
 - Full-width page, gutters 20px (mobile) and 40px (`md`). No max-width container on the landing; the table spans the gutters like the reference.
-- Header: one row of caps labels, wordmark first, actions right, no bar or rule beneath it. Pads 12px/16px top.
+- Header: one row of caps labels, wordmark first, no bar or rule beneath it. Pads 12px/16px top. Public destinations (Roasters, Activity, and Feed when signed in) sit beside the wordmark in ink. Signed in, the private set (Watches, Saved, the user's name, Sign out) is grey and goes ink on hover; it sits right of center from `md` and drops to a second left-aligned row below `md`. The current route keeps a persistent underline. The theme switch is the caps word for the theme you would switch to (DARK / LIGHT), last on the right.
+- Inner pages: title row at 40px/56px below the header, full width between the gutters like the landing table. Search field 40px/48px under the title; the table 48px/64px under that. Sections 64px/96px apart. Every inner page ends in the marquee footer.
 - Landing order, top to bottom: header, plate (224px / 272px tall), wordmark (+40px / +48px), lede (+16px), sign-in block (+36px), LATEST / SHUFFLE toggles and three 3:2 tiles (+80px / +112px), centered tabs and the table (+80px / +112px), footer marquee and link row (+128px / +160px).
 - Tiles: 3 columns from `md`, gap 24px; stacked with gap 16px below.
 - Table: `border-collapse`, hairline under the header row and under every body row. Row padding 20px top and bottom, 16px right per cell (12px on mobile). Column order N°, Lot, Roaster, City, Origin, Process, Event, Released, Price, shop link. City and Process show from `lg`, Origin from `md`, Event and Price from `sm`.
@@ -158,9 +181,15 @@ None. No shadows anywhere. Depth is photograph over ground, and the chip over th
 - **Toggle pair** (LATEST / SHUFFLE): two caps buttons, `aria-pressed`, the active one in ink with a filled 8px dot before it, the inactive one in grey with the dot faded out.
 - **Tile**: 3:2 link, `object-cover` photo, tint ground while loading, white chip bottom-left with the lot name (13px, 6px/10px padding, truncated to the tile width). Links to `/lots/$lotId`.
 - **Tabs**: centered `role="tablist"`, hairline under the group, active tab in ink with an ink hairline that overlaps the group rule (`-mb-px`), inactive in grey. Counts in tabular figures.
+- **Search field** (`search-field.tsx`): one line of cell type over a hairline, 44px tall, no box; the hairline goes ink on focus. The placeholder is the label. The browser's search clear button is hidden.
+- **Status line** (`status-chip.tsx`): colored 8px dot, grey text. Compact form (dot plus the state word) in table cells; full line ("Watching, last checked 4 min ago") on the roaster page. The dot pulses while a crawl is in flight.
+- **Watch toggle** (`watch-button.tsx`): the toggle-pair vocabulary applied to one control. WATCH in grey with a faded dot; WATCHING in ink with a filled dot. `aria-pressed` carries the state.
+- **Caps action** (Check now, Load more, Log, Close, Add a roaster): a caps link that happens to be a button. Disabled goes grey with no underline.
+- **Directory table** (`roasters.index.tsx`): N°, Roaster (ink link), City (from `sm`), Status (compact), Watchers (from `md`, right, tabular), Watch (signed in). Same rules, padding and row hover as the index.
+- **Lot catalog** (`lots.tsx`): N°, Lot (archived lots grey with a caps ARCHIVED tag), Roaster notes (from `md`, grey, truncated to 40%), Log (signed in). Log opens the form in a tinted row directly under the lot; the row above loses its hairline so the two read as one.
+- **Drop table** (`DropTable` in `drop-index.tsx`): the index table without the tabs or the one-per-lot collapse, so a roaster's history keeps every event. `showRoaster={false}` drops the Roaster and City columns. Price shows the old price struck through before the new one when they differ.
 - **Index table** (`drop-index.tsx`): one row per lot (newest event wins), row numbers in grey, lot name in ink linking to the lot page, roaster in grey linking to the roaster page, everything else grey. Row hover: tint ground, the number fades out, and the lot photo (112px wide, row height) slides in from the left over the number cell with a 300ms ease-out; `motion-reduce` snaps. Focus-within triggers the same. The circle at the row's end opens the roaster's shop in a new tab and fills on hover.
 - **Footer** (`site-footer.tsx`): the wordmark NOUVEAU.COFFEE at 22vw, two copies scrolling left over 60s (`@keyframes marquee`, translate -50%), static under `motion-reduce`. Below it one row: left links (Roasters, Activity, Feed), BACK TO THE TOP centered, right links (Sign in or Watches, GitHub).
-- **Mode toggle**: ghost icon button, no border. Redesign pending.
 - **Hero plate**: `apps/web/public/coffea-arabica.png`, 580×900, provenance embedded in the PNG comment. Rendered at 224px / 272px tall with `fetchPriority="high"`.
 
 ## Do's and Don'ts
@@ -174,4 +203,4 @@ None. No shadows anywhere. Depth is photograph over ground, and the chip over th
 - Don't use Inter, the deep blue, or the two-column pitch-plus-feed landing; that system is gone.
 - Don't render a lot without a photo in the tiles; it belongs in the table only.
 
-Not canonized: the hero PNG still carries a cream fringe from the flood-fill matte, visible against the dark ground. That is a defect awaiting a proper alpha matte, not a texture rule. Inner routes (`/roasters`, `/lots/$lotId`, `/feed`, `/activity`, signed-in home, `/next-bag`, and the rest) still run their scaffold-era layouts and inherit only the tokens; their composition is not yet part of this system.
+Not canonized: the hero PNG still carries a cream fringe from the flood-fill matte, visible against the dark ground. That is a defect awaiting a proper alpha matte, not a texture rule. The inline log form (`log-form.tsx`) still renders its card-era box inside the lot catalog's tinted row; it changes with the cards pass. Remaining inner routes (`/lots/$lotId`, `/feed`, `/activity`, signed-in home, `/next-bag`, `/watches`, `/saved`, `/profile/$userId`, `/roasters/submit`, `/settings/alerts`) still run their scaffold-era layouts and inherit only the tokens and the reworked shared controls; their composition is not yet part of this system.

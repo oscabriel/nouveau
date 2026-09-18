@@ -1,10 +1,14 @@
 import { api } from "@nouveau/backend/convex/_generated/api";
 import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
-import { BellOff, BellRing } from "lucide-react";
 import { useState } from "react";
 
-/** Watch/unwatch toggle with a local pending state while the mutation runs. */
+/**
+ * Watch/unwatch as a caps toggle in the LATEST / SHUFFLE vocabulary: a filled
+ * dot and ink when watching, a faded dot and grey when not. `aria-pressed`
+ * carries the state; the label names it. Local pending state while the
+ * mutation runs.
+ */
 export const WatchButton = ({ roasterId }: { roasterId: Id<"roasters"> }) => {
 	const watched = useQuery(api.watches.myWatchedRoasterIds);
 	const [busy, setBusy] = useState(false);
@@ -25,28 +29,26 @@ export const WatchButton = ({ roasterId }: { roasterId: Id<"roasters"> }) => {
 		setBusy(false);
 	};
 
-	if (isWatching) {
-		return (
-			<button
-				className="hover:bg-accent inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors disabled:opacity-50"
-				disabled={busy}
-				onClick={toggle}
-				type="button"
-			>
-				<BellRing aria-hidden className="size-4 text-emerald-500" />
-				Watching
-			</button>
-		);
-	}
 	return (
 		<button
-			className="bg-primary text-primary-foreground inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-opacity hover:opacity-90 disabled:opacity-50"
+			aria-pressed={isWatching}
+			className={`label-caps inline-flex min-h-11 items-center gap-2 whitespace-nowrap transition-colors disabled:cursor-default ${
+				isWatching
+					? "text-foreground"
+					: "text-muted-foreground hover:text-foreground"
+			}`}
 			disabled={busy}
 			onClick={toggle}
+			title={isWatching ? "Stop watching this roaster" : undefined}
 			type="button"
 		>
-			<BellOff aria-hidden className="size-4" />
-			Watch
+			<span
+				aria-hidden
+				className={`inline-block size-2 rounded-full bg-current transition-opacity ${
+					isWatching ? "opacity-100" : "opacity-30"
+				} ${busy ? "motion-safe:animate-pulse" : ""}`}
+			/>
+			{isWatching ? "Watching" : "Watch"}
 		</button>
 	);
 };
