@@ -59,7 +59,7 @@ export const isLotQuestion = (): {
 			coffee:
 				"One specific roasted coffee sold in a bag (any bag size, whole bean, ground, instant, or steeped bags).",
 			not_coffee:
-				"Anything else a shop sells: brewing equipment, merch, tea or other consumables, gift cards, subscriptions, bundles or samplers with several coffees, capsules or pods, canned or ready-to-drink coffee.",
+				"Anything else a shop sells: brewing equipment, merch, tea or other consumables, gift cards, subscriptions, bundles or samplers with several coffees, capsules or pods, canned or ready-to-drink coffee. A roaster's-choice subscription or coffee plan — including a one-bag or two-bag plan, a flexible plan where the shop picks the coffees later, and a signup or registration item for one — is not a specific roasted coffee in a bag.",
 		},
 		instructions:
 			"Is `item` one roasted coffee that a customer buys as a bag (any bag size, whole bean or ground)?",
@@ -281,7 +281,9 @@ export const store = internalMutation({
  * Agreement tally over the newest verdicts, for deciding when the shadow
  * graduates: how often Jev agreed with the regex's `default` rejection, how
  * often it saw a lot the regex rejected, and the disagreement titles to read
- * by hand. Read with `npx convex run lotClassifierShadow:agreement`.
+ * by hand. Read with `npx convex run lotClassifierShadow:agreement`. Existing
+ * rows keep their stored verdict; the criteria change affects new candidates
+ * only.
  */
 export const agreement = internalQuery({
 	args: {},
