@@ -7,6 +7,7 @@
 	"scripts": {
 		"dev": "convex dev",
 		"dev:setup": "convex dev --configure --until-success",
+		"check-types": "tsc -p convex",
 		"test": "vitest run"
 	},
 	"dependencies": {

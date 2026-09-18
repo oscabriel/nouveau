@@ -7,6 +7,7 @@ This project uses **Ultracite**, a zero-config preset that enforces strict code 
 - **Format code**: `bun x ultracite fix`
 - **Check for issues**: `bun x ultracite check`
 - **Diagnose setup**: `bun x ultracite doctor`
+- **Typecheck both packages**: `bun run check-types` from the repo root (runs `tsc -p convex` in `packages/backend` and `tsc --noEmit` in `apps/web`). Run it before every commit; vitest strips types and `vite build` does not typecheck, so neither catches a type error on its own.
 
 Oxlint + Oxfmt (the underlying engine) provides robust linting and formatting. Most issues are automatically fixable.
 
