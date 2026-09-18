@@ -25,6 +25,7 @@ import type * as jev from "../jev.js";
 import type * as logs from "../logs.js";
 import type * as lotClassifierShadow from "../lotClassifierShadow.js";
 import type * as lotFacts from "../lotFacts.js";
+import type * as lotStock from "../lotStock.js";
 import type * as lotUrl from "../lotUrl.js";
 import type * as lots from "../lots.js";
 import type * as notifications from "../notifications.js";
@@ -69,6 +70,7 @@ declare const fullApi: ApiFromModules<{
   logs: typeof logs;
   lotClassifierShadow: typeof lotClassifierShadow;
   lotFacts: typeof lotFacts;
+  lotStock: typeof lotStock;
   lotUrl: typeof lotUrl;
   lots: typeof lots;
   notifications: typeof notifications;
