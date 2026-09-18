@@ -10,10 +10,19 @@ import { bodyCell, headCell } from "@/components/drop-index";
 import Loader from "@/components/loader";
 import { LogForm } from "@/components/log-form";
 import { SearchField } from "@/components/search-field";
+import { displayPriceCents, formatGrams, formatPrice } from "@/lib/format";
 
-type LotRow = FunctionReturnType<typeof api.roasters.searchLots>[number];
+type LotRow = FunctionReturnType<typeof api.roasters.listLots>[number];
 
 const PAGE_SIZE = 20;
+
+/** The grid's filters, as the backend queries take them. */
+interface LotFilters {
+	availableOnly?: boolean;
+	grams?: number;
+	maxPriceCents?: number;
+	origin?: string;
+}
 
 const LotTableRow = ({
 	canLog,
@@ -31,10 +40,11 @@ const LotTableRow = ({
 	onOpen: () => void;
 }) => {
 	const archived = lot.status === "archived";
+	const soldOut = !archived && !lot.available;
 	return (
 		<>
 			<tr
-				className={`group hover:bg-muted focus-within:bg-muted transition-colors ${isOpen ? "bg-muted" : "border-b"}`}
+				className={`group hover:bg-muted focus-within:bg-muted transition-colors ${isOpen ? "bg-muted" : "border-b"} ${archived || !lot.available ? "opacity-50" : ""}`}
 			>
 				<td
 					className={`${bodyCell} text-muted-foreground tnum w-10 pr-2 text-xs md:w-28 md:pr-3`}
@@ -56,11 +66,28 @@ const LotTableRow = ({
 							Archived
 						</span>
 					)}
+					{soldOut && (
+						<span className="label-caps ml-3 align-middle opacity-70">
+							Sold out
+						</span>
+					)}
 				</td>
 				<td
 					className={`${bodyCell} text-muted-foreground hidden max-w-0 truncate pr-4 md:table-cell md:w-[40%]`}
 				>
 					{lot.roasterNotes ?? ""}
+				</td>
+				<td
+					className={`${bodyCell} text-muted-foreground hidden pr-4 lg:table-cell`}
+				>
+					{lot.origin ?? ""}
+				</td>
+				<td
+					className={`${bodyCell} text-muted-foreground tnum hidden pr-4 whitespace-nowrap sm:table-cell`}
+				>
+					{displayPriceCents(lot.minPriceCents) === null
+						? ""
+						: `from ${formatPrice(lot.minPriceCents)}`}
 				</td>
 				{canLog && (
 					<td className={`${bodyCell} w-12 py-0 text-right align-middle`}>
@@ -88,7 +115,7 @@ const LotTableRow = ({
 				<tr className="bg-muted border-b">
 					{/* Spans Lot, Notes and Log; the spacer sits under N° from md. */}
 					<td aria-hidden className="hidden md:table-cell" />
-					<td className="pr-4 pb-5" colSpan={3}>
+					<td className="pr-4 pb-5" colSpan={4}>
 						<LogForm
 							lotId={lot.id}
 							onDone={onClose}
@@ -132,7 +159,9 @@ const LotsBody = ({
 	if (visible.length === 0) {
 		return (
 			<p className="text-muted-foreground py-16 text-center text-[15px]">
-				{searching ? `No lots match "${term}".` : "No lots yet."}
+				{searching
+					? `No lots match "${term}".`
+					: "No lots match these filters."}
 			</p>
 		);
 	}
@@ -149,6 +178,15 @@ const LotsBody = ({
 						</th>
 						<th className={`${headCell} hidden md:table-cell`} scope="col">
 							Roaster notes
+						</th>
+						<th className={`${headCell} hidden lg:table-cell`} scope="col">
+							Origin
+						</th>
+						<th
+							className={`${headCell} hidden text-right sm:table-cell`}
+							scope="col"
+						>
+							Price
 						</th>
 						{isAuthenticated && (
 							<th className={headCell} scope="col">
@@ -195,32 +233,143 @@ const LotsBody = ({
 	);
 };
 
+/** The filter row: one hairline control per axis, no boxes. */
+const LotFilterRow = ({
+	origin,
+	onOrigin,
+	onSize,
+	onStock,
+	price,
+	size,
+	stock,
+	weightOptions,
+}: {
+	origin: string;
+	onOrigin: (next: string) => void;
+	onSize: (next: number | null) => void;
+	onStock: (next: boolean) => void;
+	price: string;
+	size: number | null;
+	stock: boolean;
+	weightOptions: number[];
+}) => (
+	<div className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-3">
+		<button
+			aria-pressed={stock}
+			className={`label-caps inline-flex min-h-11 items-center ${stock ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+			onClick={() => {
+				onStock(!stock);
+			}}
+			type="button"
+		>
+			In stock{stock ? " ✓" : ""}
+		</button>
+		<select
+			aria-label="Bag size"
+			className="text-muted-foreground h-11 max-w-40 border-b bg-transparent text-sm outline-none"
+			onChange={(event) => {
+				onSize(event.target.value === "" ? null : Number(event.target.value));
+			}}
+			value={size ?? ""}
+		>
+			<option value="">Any size</option>
+			{weightOptions.map((option) => (
+				<option key={option} value={option}>
+					{formatGrams(option)}
+				</option>
+			))}
+		</select>
+		<input
+			aria-label="Price at most, dollars"
+			autoComplete="off"
+			className="placeholder:text-muted-foreground focus-visible:border-foreground h-11 w-28 border-b bg-transparent text-sm outline-none"
+			min="0"
+			onChange={(event) => {
+				onPrice(event.target.value);
+			}}
+			placeholder="≤ $ price"
+			step="any"
+			type="number"
+			value={price}
+		/>
+		<input
+			aria-label="Origin contains"
+			autoComplete="off"
+			className="placeholder:text-muted-foreground focus-visible:border-foreground h-11 w-40 border-b bg-transparent text-sm outline-none [&::-webkit-search-cancel-button]:hidden"
+			onChange={(event) => {
+				onOrigin(event.target.value);
+			}}
+			placeholder="Origin"
+			type="search"
+			value={origin}
+		/>
+	</div>
+);
+
 /**
  * The roaster's lot catalog (screen inventory §11), the place a log starts:
  * find the lot you tried, hit Log, rate it, keep a note. Browsing pages the
- * full catalog; typing in the filter switches to a name search over the whole
- * catalog (Sey runs ~887 lots, so paging alone would never find anything).
- * Same hairline table as the index; the roaster's notes fill the wide column.
+ * full catalog; typing in the filter switches to a name search over the
+ * whole catalog (Sey runs ~887 lots, so paging alone would never find
+ * anything). Same hairline table as the index; the roaster's notes fill the
+ * wide column. The stock boundary is explicit: unavailable lots dim and say
+ * so, and filters (size, price, origin, in stock) run against the whole
+ * catalog.
  */
 export const Lots = ({ roasterId }: { roasterId: Id<"roasters"> }) => {
 	const { isAuthenticated } = useConvexAuth();
 	const [openLotId, setOpenLotId] = useState<Id<"products"> | null>(null);
 	const [search, setSearch] = useState("");
+	const [inStockOnly, setInStockOnly] = useState(false);
+	const [maxPriceDollars, setMaxPriceDollars] = useState("");
+	const [weight, setWeight] = useState<number | null>(null);
+	const [originTerm, setOriginTerm] = useState("");
 	const term = search.trim();
+
+	const priceCents = Number(maxPriceDollars);
+	const filters: LotFilters = {};
+	if (inStockOnly) {
+		filters.availableOnly = true;
+	}
+	if (!Number.isNaN(priceCents) && priceCents > 0) {
+		filters.maxPriceCents = Math.round(priceCents * 100);
+	}
+	if (weight !== null) {
+		filters.grams = weight;
+	}
+	const origin = originTerm.trim();
+	if (origin !== "") {
+		filters.origin = origin;
+	}
+	const filtered = Object.keys(filters).length > 0;
+	const searching = term !== "";
 
 	const pages = usePaginatedQuery(
 		api.roasters.listLots,
 		{ roasterId },
 		{ initialNumItems: PAGE_SIZE }
 	);
-	const hits = useQuery(
-		api.roasters.searchLots,
-		term === "" ? "skip" : { roasterId, term }
+	const filteredRows = useQuery(
+		filtered && !searching ? api.roasters.listLotsFiltered : "skip",
+		{ roasterId, ...filters }
 	);
+	const hits = useQuery(term === "" ? "skip" : api.roasters.searchLots, {
+		roasterId,
+		term,
+		...filters,
+	});
 
-	const searching = term !== "";
-	const visible = searching ? hits : pages.results;
-	const loading = visible === undefined || pages.status === "LoadingFirstPage";
+	const browsable = filtered ? filteredRows : pages.results;
+	const visible = searching ? hits : browsable;
+	const loading =
+		visible === undefined ||
+		(!searching && !filtered && pages.status === "LoadingFirstPage");
+
+	// The size filter's choices: the bag sizes the catalog carries, from the
+	// loaded browse pages (they cover what a visitor is likely to filter on).
+	const weightOptions = [
+		...new Set((pages.results ?? []).flatMap((lot) => lot.grams)),
+	].toSorted((a, b) => a - b);
 
 	return (
 		<section aria-labelledby="lots-heading">
@@ -236,6 +385,19 @@ export const Lots = ({ roasterId }: { roasterId: Id<"roasters"> }) => {
 					/>
 				</div>
 			</div>
+			<LotFilterRow
+				origin={originTerm}
+				onOrigin={setOriginTerm}
+				onPrice={setMaxPriceDollars}
+				onSize={(grams) => {
+					setWeight(grams);
+				}}
+				onStock={setInStockOnly}
+				price={maxPriceDollars}
+				size={weight}
+				stock={inStockOnly}
+				weightOptions={weightOptions}
+			/>
 			<LotsBody
 				isAuthenticated={isAuthenticated}
 				loading={loading}

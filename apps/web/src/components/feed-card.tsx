@@ -21,7 +21,9 @@ export interface FeedCardData {
 	roasterName: string;
 	roasterSlug: string;
 	type: "back_in_stock" | "new" | "price_drop";
+	// The headline size, then every moved size a collapsed burst cited.
 	variantName: string | null;
+	variantNames?: string[];
 	deliveryStatus?: DeliveryStatus | null;
 }
 
@@ -73,6 +75,29 @@ const DeliveryFooter = ({ status }: { status: DeliveryStatus }) => {
 	);
 };
 
+const SizeLine = ({
+	headline,
+	names,
+}: {
+	headline: string | null;
+	names?: string[];
+}) => {
+	const list = (names ?? (headline === null ? [] : [headline]))
+		.map(displayVariantName)
+		.filter((name): name is string => name !== null);
+	if (list.length === 0) {
+		return null;
+	}
+	const shown = list.slice(0, 3).join(" · ");
+	const more = list.length - 3;
+	return (
+		<span className="text-muted-foreground text-sm">
+			{shown}
+			{more > 0 && ` +${more}`}
+		</span>
+	);
+};
+
 /**
  * One drop-event row. Global-feed cards stay clean; personalized cards add
  * the delivery footer from the notifications ledger (build spec §8.1).
@@ -118,9 +143,7 @@ export const FeedCard = ({
 			<div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
 				<h3 className="leading-snug font-semibold">{card.productName}</h3>
 				<div className="flex items-baseline gap-3">
-					{variantName !== null && (
-						<span className="text-muted-foreground text-sm">{variantName}</span>
-					)}
+					<SizeLine headline={variantName} names={card.variantNames} />
 					{newPrice !== null && (
 						<span
 							className={`text-sm font-medium tabular-nums ${TYPE_TONE[card.type]}`}

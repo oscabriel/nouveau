@@ -7,11 +7,13 @@ import type { FunctionReturnType } from "convex/server";
 import { ArrowUpRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { headCell, bodyCell } from "@/components/drop-index";
 import Loader from "@/components/loader";
 import { LogCard } from "@/components/log-card";
 import { LogForm } from "@/components/log-form";
 import { SaveButton } from "@/components/save-button";
 import { SignInCta } from "@/components/sign-in-cta";
+import { formatGrams, formatPrice } from "@/lib/format";
 
 export type LotPageData = FunctionReturnType<typeof api.lots.get>;
 type LotData = NonNullable<LotPageData>["lot"];
@@ -51,6 +53,89 @@ const isReading = (lot: LotData, now: number): boolean =>
 	!lot.pageFactsKnown &&
 	lot.pageFactsAt !== null &&
 	now - lot.pageFactsAt < READING_WINDOW_MS;
+
+/** One row of the size table: size, grind, price, stock, shop link. */
+const VariantRow = ({
+	variant,
+}: {
+	variant: NonNullable<LotData>["variants"][number];
+}) => (
+	<tr
+		className={`group hover:bg-muted focus-within:bg-muted border-b transition-colors ${variant.available ? "" : "opacity-50"}`}
+	>
+		<td className={`${bodyCell} tnum whitespace-nowrap`}>
+			{formatGrams(variant.grams) ?? "—"}
+		</td>
+		<td
+			className={`${bodyCell} text-muted-foreground hidden pr-4 sm:table-cell`}
+		>
+			{variant.grind ?? ""}
+		</td>
+		<td className={`${bodyCell} tnum whitespace-nowrap`}>
+			{formatPrice(variant.priceCents)}
+		</td>
+		<td className={bodyCell}>
+			{variant.available ? (
+				""
+			) : (
+				<span className="label-caps opacity-70">Sold out</span>
+			)}
+		</td>
+		<td className={`${bodyCell} w-6 text-right md:w-8`}>
+			<a
+				aria-label={`Open ${variant.name} at the roaster's shop`}
+				className="inline-flex size-6 items-center justify-center"
+				href={variant.url}
+				rel="noreferrer"
+				target="_blank"
+			>
+				<span className="size-2.5 rounded-full border border-current transition-colors group-hover:bg-current" />
+			</a>
+		</td>
+	</tr>
+);
+
+/**
+ * The size table: every purchasable option the roaster publishes, one row
+ * per variant, same hairline table as the index. The grind option is its
+ * own axis; the circle links to the exact size on the roaster's shop when
+ * the source published a variant id.
+ */
+const SizeTable = ({
+	variants,
+}: {
+	variants: NonNullable<LotData>["variants"];
+}) => (
+	<section aria-label="Sizes and prices" className="mt-8">
+		<h2 className="label-caps mb-3 font-medium">Sizes</h2>
+		<table className="w-full border-collapse">
+			<thead>
+				<tr className="border-b">
+					<th className={headCell} scope="col">
+						Size
+					</th>
+					<th className={`${headCell} hidden sm:table-cell`} scope="col">
+						Grind
+					</th>
+					<th className={headCell} scope="col">
+						Price
+					</th>
+					<th className={headCell} scope="col">
+						<span className="sr-only">Stock</span>
+					</th>
+					<th className={headCell} scope="col">
+						<span className="sr-only">Shop</span>
+					</th>
+				</tr>
+			</thead>
+			<tbody>
+				{variants.map((variant) => (
+					<VariantRow key={variant.id} variant={variant} />
+				))}
+			</tbody>
+		</table>
+	</section>
+);
 
 const LotDetail = ({
 	lot,
@@ -122,8 +207,15 @@ const LotDetail = ({
 				{lot.description !== null && (
 					<p className="text-sm">{lot.description}</p>
 				)}
+				{/* Unknown stock (no rollup yet) shows nothing; known-sold-out states itself. */}
+				{lot.variants.length > 0 && !lot.available && (
+					<p className="label-caps mt-3 opacity-70">
+						Currently sold out at the roaster
+					</p>
+				)}
 			</div>
 		</div>
+		{lot.variants.length > 0 && <SizeTable variants={lot.variants} />}
 	</>
 );
 
