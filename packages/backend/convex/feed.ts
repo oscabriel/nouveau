@@ -86,9 +86,12 @@ const toCard = async (
 		return null;
 	}
 	const variant = event.variantId ? await ctx.db.get(event.variantId) : null;
+	// Headline first, then the rest of the burst. A collapsed event's
+	// variantIds already includes the headline, so it is filtered out of the
+	// tail rather than cited twice.
 	const cited = [
-		...(event.variantIds ?? []),
 		...(event.variantId === undefined ? [] : [event.variantId]),
+		...(event.variantIds ?? []).filter((id) => id !== event.variantId),
 	];
 	const moved = await Promise.all(
 		cited.map(async (id) => await ctx.db.get(id))

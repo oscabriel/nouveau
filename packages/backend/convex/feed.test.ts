@@ -141,6 +141,54 @@ describe("globalFeed", () => {
 		});
 	});
 
+	test("a collapsed event cites the headline size once, first", async () => {
+		const { roasterA, t } = await setup();
+		const productId = await addProduct(t, roasterA);
+		const addVariant = (name: string) =>
+			t.run((ctx) =>
+				ctx.db.insert("productVariants", {
+					available: true,
+					name,
+					priceCents: 2000,
+					productId,
+				})
+			);
+		const [small, medium, large] = await Promise.all([
+			addVariant("250g"),
+			addVariant("500g"),
+			addVariant("1kg"),
+		]);
+		await t.run(async (ctx) => {
+			// A three-size restock: the headline is also in the cited list, in
+			// crawl order, not first.
+			await ctx.db.insert("dropEvents", {
+				detectedAt: T0 + 1,
+				productId,
+				roasterId: roasterA,
+				type: "back_in_stock",
+				variantId: medium,
+				variantIds: [small, medium, large],
+			});
+			// Pre-collapse events carry only the headline.
+			await ctx.db.insert("dropEvents", {
+				detectedAt: T0 + 2,
+				productId,
+				roasterId: roasterA,
+				type: "back_in_stock",
+				variantId: large,
+			});
+		});
+		const [single, collapsed] = await t.query(api.feed.globalFeed, {});
+		expect(collapsed).toMatchObject({
+			variantName: "500g",
+			variantNames: ["500g", "250g", "1kg"],
+		});
+		expect(single).toMatchObject({
+			variantName: "1kg",
+			variantNames: ["1kg"],
+		});
+	});
+
 	test("carries the lot image, origin and process; null when the feed had none", async () => {
 		const { roasterA, t } = await setup();
 		const thin = await addProduct(t, roasterA);
