@@ -223,13 +223,26 @@ export const searchLots = query({
 		if (term === "") {
 			return [];
 		}
-		const lots = await ctx.db
+		// The filters run inside the scan, so a filtered search returns up to
+		// LOT_SEARCH_LIMIT matches instead of whatever survives filtering the
+		// first LOT_SEARCH_LIMIT name hits. The scan itself stops at the same
+		// bound as the filtered browse.
+		const rows: Infer<typeof lotRowValidator>[] = [];
+		let scanned = 0;
+		for await (const lot of ctx.db
 			.query("products")
 			.withSearchIndex("search_name", (q) =>
 				q.search("name", term).eq("roasterId", args.roasterId)
-			)
-			.take(LOT_SEARCH_LIMIT);
-		return lots.filter((lot) => matchesLotFilters(lot, args)).map(toLotRow);
+			)) {
+			scanned += 1;
+			if (matchesLotFilters(lot, args)) {
+				rows.push(toLotRow(lot));
+			}
+			if (rows.length >= LOT_SEARCH_LIMIT || scanned >= LOT_FILTER_SCAN) {
+				break;
+			}
+		}
+		return rows;
 	},
 	returns: v.array(lotRowValidator),
 });

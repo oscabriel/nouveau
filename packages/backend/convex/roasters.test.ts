@@ -4,6 +4,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 
 import { api } from "./_generated/api";
+import { LOT_SEARCH_LIMIT } from "./constants";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -251,6 +252,47 @@ describe("roasters", () => {
 			roasterId: active,
 		});
 		expect(quarterKilo.map((row) => row.id)).toEqual([lots.colombiaCheap]);
+	});
+
+	test("searchLots filters inside the scan, not after the result limit", async () => {
+		const { active, t } = await setup();
+		await t.run(async (ctx) => {
+			// More sold-out name matches than the result limit, then one in stock.
+			for (let i = 0; i < LOT_SEARCH_LIMIT + 5; i += 1) {
+				// eslint-disable-next-line no-await-in-loop -- fixture rows in a fixed order
+				await ctx.db.insert("products", {
+					anyAvailable: false,
+					externalId: `s${i}`,
+					firstSeenAt: 1000,
+					handle: `lot-s${i}`,
+					lastSeenAt: 1000,
+					name: `Colombia Lot ${i}`,
+					roasterId: active,
+					status: "current",
+				});
+			}
+			await ctx.db.insert("products", {
+				anyAvailable: true,
+				externalId: "s-last",
+				firstSeenAt: 1000,
+				handle: "lot-s-last",
+				lastSeenAt: 1000,
+				name: "Colombia Lot Last",
+				roasterId: active,
+				status: "current",
+			});
+		});
+		const inStock = await t.query(api.roasters.searchLots, {
+			availableOnly: true,
+			roasterId: active,
+			term: "colombia",
+		});
+		expect(inStock.map((row) => row.name)).toEqual(["Colombia Lot Last"]);
+		const all = await t.query(api.roasters.searchLots, {
+			roasterId: active,
+			term: "colombia",
+		});
+		expect(all).toHaveLength(LOT_SEARCH_LIMIT);
 	});
 
 	test("searchLots carries the same filters", async () => {
