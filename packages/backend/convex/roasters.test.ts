@@ -195,8 +195,10 @@ describe("roasters", () => {
 			availableOnly: true,
 			roasterId: active,
 		});
-		expect(inStock.map((row) => row.id).toSorted()).toEqual(
-			[lots.colombiaCheap, lots.colombiaRich].toSorted()
+		// eslint-disable-next-line unicorn/no-array-sort -- ES2021 backend; map copies first
+		expect(inStock.map((row) => row.id).sort()).toEqual(
+			// eslint-disable-next-line unicorn/no-array-sort -- ES2021 backend; literal is fresh
+			[lots.colombiaCheap, lots.colombiaRich].sort()
 		);
 		const cheap = await t.query(api.roasters.listLotsFiltered, {
 			maxPriceCents: 2000,
