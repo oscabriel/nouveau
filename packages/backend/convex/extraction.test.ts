@@ -1241,6 +1241,33 @@ describe("extractRoasterNotes", () => {
 		).toBeNull();
 	});
 
+	// Sey varies the lead-in per lot: "In this cup we find", "In this year's
+	// cup we find", "In this Red Gesha separation we find". 42 of its 181
+	// noteless lots on the live feed were this shape.
+	test("'we find' with a list after it is a lead-in whatever precedes it (Sey)", () => {
+		expect(
+			extractRoasterNotes(
+				"We look forward to visiting on our next trip to Huila. In this cup we find hibiscus, blueberry, and finger lime.",
+				[]
+			)
+		).toBe("hibiscus, blueberry, and finger lime");
+		expect(
+			extractRoasterNotes(
+				"In this year's cup we find lychee, mango, and orange.",
+				[]
+			)
+		).toBe("lychee, mango, and orange");
+	});
+
+	test("'we find' without a list after it is prose", () => {
+		expect(
+			extractRoasterNotes(
+				"Dwight continues to produce some of the best coffees we find anywhere in the world. This cup is remarkably complex.",
+				[]
+			)
+		).toBeNull();
+	});
+
 	test("falls back to the Flavor Profile tag", () => {
 		expect(
 			extractRoasterNotes("A comfortable daily brew.", [

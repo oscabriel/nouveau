@@ -857,6 +857,13 @@ const NOTES_PATTERNS: readonly { needsList: boolean; pattern: RegExp }[] = [
 		pattern:
 			/\bin\s+the\s+cup,?\s+we\s+(?:find|taste|get)\s+(?<clause>[^.!?\n]{5,200})/iu,
 	},
+	// Sey varies the subject ("In this cup we find", "In this year's cup we
+	// find", "In this Red Gesha separation we find"); "we find" is also
+	// prose ("the best coffees we find anywhere"), so a list is required.
+	{
+		needsList: true,
+		pattern: /\bwe\s+find\s+(?<clause>[^.!?\n]{5,200})/iu,
+	},
 	{
 		needsList: false,
 		pattern:
