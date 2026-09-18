@@ -350,6 +350,30 @@ describe("commit: variant burst collapse (#19 generalized)", () => {
 		expect(drop?.variantIds).toHaveLength(2);
 	});
 
+	test("a price-rise burst headlines the biggest rise, like a drop headlines the biggest drop", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [
+			product("a", [
+				{ available: true, grams: 250, name: "250g", priceCents: 1800 },
+				{ available: true, grams: 1000, name: "1kg", priceCents: 5600 },
+			]),
+		]);
+		await crawl(fx, T0 + CADENCE_MS, [
+			product("a", [
+				{ available: true, grams: 250, name: "250g", priceCents: 2000 },
+				{ available: true, grams: 1000, name: "1kg", priceCents: 6100 },
+			]),
+		]);
+		const state = await readAll(fx);
+		expect(state.events.map((e) => e.type)).toEqual(["price_rise"]);
+		expect(state.events[0]).toMatchObject({
+			newPriceCents: 6100,
+			oldPriceCents: 5600,
+			variantId: state.variants.find((v) => v.name === "1kg")?._id,
+		});
+		expect(state.events[0]?.variantIds).toHaveLength(2);
+	});
+
 	test("a sold-out burst stores one event citing every size that sold out", async () => {
 		const fx = await setup();
 		await crawl(fx, T0, [

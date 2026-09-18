@@ -198,12 +198,39 @@ interface ApplyVariantsInput {
 	roasterId: Id<"roasters">;
 }
 
-/** Positive when `a` is the bigger price move (ties: cheaper new price). */
-const isBiggerMove = (best: VariantMove, move: VariantMove): number =>
-	move.oldPriceCents -
-		move.newPriceCents -
-		(best.oldPriceCents - best.newPriceCents) ||
+/**
+ * A headline rule: positive when `move` outranks `best`. Ties keep `best`,
+ * so the first qualifying move in feed order wins.
+ */
+type Outranks = (best: VariantMove, move: VariantMove) => number;
+
+/** The bigger price move, up or down (ties: the cheaper new price). */
+const biggerMove: Outranks = (best, move) =>
+	Math.abs(move.oldPriceCents - move.newPriceCents) -
+		Math.abs(best.oldPriceCents - best.newPriceCents) ||
 	best.newPriceCents - move.newPriceCents;
+
+/** The cheaper size to buy now. */
+const cheaperNow: Outranks = (best, move) =>
+	best.newPriceCents - move.newPriceCents;
+
+/** The cheaper size before the move (what a sold-out size used to cost). */
+const cheaperBefore: Outranks = (best, move) =>
+	best.oldPriceCents - move.oldPriceCents;
+
+/** The move a burst's event names, under one rule; undefined for none. */
+const pickHeadline = (
+	moves: VariantMove[],
+	outranks: Outranks
+): VariantMove | undefined => {
+	let headline: VariantMove | undefined;
+	for (const move of moves) {
+		if (headline === undefined || outranks(headline, move) > 0) {
+			headline = move;
+		}
+	}
+	return headline;
+};
 
 /**
  * The variant rollup the lot page and the roaster-grid filters read, taken
@@ -258,62 +285,41 @@ const planBurstEvents = (moves: VariantMove[]): BurstEvent[] => {
 		moves.filter((move) => move.kind === kind);
 
 	const restocks = ofKind("back_in_stock");
-	let cheapestRestock: VariantMove | undefined;
-	for (const move of restocks) {
-		if (
-			cheapestRestock === undefined ||
-			move.newPriceCents < cheapestRestock.newPriceCents
-		) {
-			cheapestRestock = move;
-		}
-	}
-	if (cheapestRestock !== undefined) {
+	const restock = pickHeadline(restocks, cheaperNow);
+	if (restock !== undefined) {
 		burstEvents.push({
-			...(cheapestRestock.oldPriceCents === cheapestRestock.newPriceCents
+			...(restock.oldPriceCents === restock.newPriceCents
 				? {}
 				: {
-						newPriceCents: cheapestRestock.newPriceCents,
-						oldPriceCents: cheapestRestock.oldPriceCents,
+						newPriceCents: restock.newPriceCents,
+						oldPriceCents: restock.oldPriceCents,
 					}),
 			type: "back_in_stock",
-			variantId: cheapestRestock.variantId,
+			variantId: restock.variantId,
 			variantIds: restocks.map((move) => move.variantId),
 		});
 	}
 
 	for (const kind of ["price_drop", "price_rise"] as const) {
 		const priceMoves = ofKind(kind);
-		let headlineMove: VariantMove | undefined;
-		for (const move of priceMoves) {
-			if (headlineMove === undefined || isBiggerMove(headlineMove, move) > 0) {
-				headlineMove = move;
-			}
-		}
-		if (headlineMove !== undefined) {
+		const headline = pickHeadline(priceMoves, biggerMove);
+		if (headline !== undefined) {
 			burstEvents.push({
-				newPriceCents: headlineMove.newPriceCents,
-				oldPriceCents: headlineMove.oldPriceCents,
+				newPriceCents: headline.newPriceCents,
+				oldPriceCents: headline.oldPriceCents,
 				type: kind,
-				variantId: headlineMove.variantId,
+				variantId: headline.variantId,
 				variantIds: priceMoves.map((move) => move.variantId),
 			});
 		}
 	}
 
 	const soldOut = ofKind("sold_out");
-	let cheapestSoldOut: VariantMove | undefined;
-	for (const move of soldOut) {
-		if (
-			cheapestSoldOut === undefined ||
-			move.oldPriceCents < cheapestSoldOut.oldPriceCents
-		) {
-			cheapestSoldOut = move;
-		}
-	}
-	if (cheapestSoldOut !== undefined) {
+	const soldOutHeadline = pickHeadline(soldOut, cheaperBefore);
+	if (soldOutHeadline !== undefined) {
 		burstEvents.push({
 			type: "sold_out",
-			variantId: cheapestSoldOut.variantId,
+			variantId: soldOutHeadline.variantId,
 			variantIds: soldOut.map((move) => move.variantId),
 		});
 	}
