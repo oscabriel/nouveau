@@ -45,11 +45,13 @@ const LotTableRow = ({
 	onOpen: () => void;
 }) => {
 	const archived = lot.status === "archived";
-	const soldOut = !archived && !lot.available;
+	// Unknown stock (available null, no rollup yet) renders like in stock:
+	// neither dimmed nor labelled. Only a known sold-out lot says so.
+	const soldOut = !archived && lot.available === false;
 	return (
 		<>
 			<tr
-				className={`group hover:bg-muted focus-within:bg-muted transition-colors ${isOpen ? "bg-muted" : "border-b"} ${archived || !lot.available ? "opacity-50" : ""}`}
+				className={`group hover:bg-muted focus-within:bg-muted transition-colors ${isOpen ? "bg-muted" : "border-b"} ${archived || soldOut ? "opacity-50" : ""}`}
 			>
 				<td
 					className={`${bodyCell} text-muted-foreground tnum w-10 pr-2 text-xs md:w-28 md:pr-3`}

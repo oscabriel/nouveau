@@ -11,6 +11,7 @@ import { LOT_FILTER_SCAN, LOT_SEARCH_LIMIT } from "./constants";
 import { followerCounts } from "./followerCounts";
 import { crawlStatusValidator, getCrawlStatus } from "./health";
 import { joinNotes } from "./lotFacts";
+import { lotAvailability, lotAvailabilityValidator } from "./lotStock";
 
 /** Roaster fields every roaster surface renders (directory, watches, page). */
 export const roasterCardValidator = v.object({
@@ -80,11 +81,10 @@ export const getBySlug = query({
 });
 
 const lotRowValidator = v.object({
-	// The stock boundary (denormalized variant rollup, refreshed per crawl):
-	// status current AND at least one purchasable size. Absent rollup data
-	// reads as unknown, not sold out, so a lot the crawl has not priced yet
-	// is not wrongly marked unavailable.
-	available: v.boolean(),
+	// The stock boundary (lotStock.lotAvailability): true when current with a
+	// purchasable size, false when sold out or archived, null when the crawl
+	// has not written the rollup yet (unknown, never sold out).
+	available: lotAvailabilityValidator,
 	// The bag sizes the feed carries (grams ascending); the weight filter's
 	// choices derive from these.
 	grams: v.array(v.number()),
@@ -103,7 +103,7 @@ const lotRowValidator = v.object({
 });
 
 const toLotRow = (lot: Doc<"products">): Infer<typeof lotRowValidator> => ({
-	available: lot.status === "current" && (lot.anyAvailable ?? false),
+	available: lotAvailability(lot),
 	grams: lot.weightOptions ?? [],
 	handle: lot.handle,
 	id: lot._id,
@@ -141,10 +141,7 @@ const matchesLotFilters = (
 		origin?: string;
 	}
 ): boolean => {
-	if (
-		args.availableOnly === true &&
-		!(lot.status === "current" && (lot.anyAvailable ?? false))
-	) {
+	if (args.availableOnly === true && lotAvailability(lot) !== true) {
 		return false;
 	}
 	if (

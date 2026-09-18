@@ -207,8 +207,8 @@ const LotDetail = ({
 				{lot.description !== null && (
 					<p className="text-sm">{lot.description}</p>
 				)}
-				{/* Unknown stock (no rollup yet) shows nothing; known-sold-out states itself. */}
-				{lot.variants.length > 0 && !lot.available && (
+				{/* Unknown stock (available null, no rollup yet) shows nothing; known-sold-out states itself. */}
+				{lot.status === "current" && lot.available === false && (
 					<p className="label-caps mt-3 opacity-70">
 						Currently sold out at the roaster
 					</p>

@@ -11,6 +11,7 @@ import type { QueryCtx } from "./_generated/server";
 import { LOT_PAGE_LOGS_LIMIT } from "./constants";
 import { hydrateAll, logCardValidator } from "./logs";
 import { isThin, mergedFacts, variantGrind } from "./lotFacts";
+import { lotAvailability, lotAvailabilityValidator } from "./lotStock";
 import { lotShopUrl, variantShopUrl } from "./lotUrl";
 import { MAX_VARIANTS_PER_PRODUCT } from "./recommendationRules";
 
@@ -43,9 +44,10 @@ const variantRowValidator = v.object({
 });
 
 const lotValidator = v.object({
-	// The lot page's stock boundary: status current and at least one size in
-	// stock (denormalized variant rollup, refreshed per crawl).
-	available: v.boolean(),
+	// The lot page's stock boundary (lotStock.lotAvailability): true when a
+	// size is in stock, false when sold out or archived, null when the rollup
+	// is not written yet (unknown, never sold out).
+	available: lotAvailabilityValidator,
 	description: v.union(v.string(), v.null()),
 	// The roaster's facts, feed first with page facts filling gaps
 	// (ADR-0005, lotFacts.mergedFacts).
@@ -137,7 +139,7 @@ export const get = query({
 			logs: await hydrateAll(ctx, logs.slice(0, LOT_PAGE_LOGS_LIMIT)),
 			logsTruncated: logs.length > LOT_PAGE_LOGS_LIMIT,
 			lot: {
-				available: lot.status === "current" && (lot.anyAvailable ?? false),
+				available: lotAvailability(lot),
 				description: lot.description ?? null,
 				facts: mergedFacts(lot),
 				handle: lot.handle,

@@ -132,6 +132,33 @@ describe("roasters", () => {
 				priceCents: 2200,
 				productId: soldOut,
 			});
+			// Crawled before the rollup existed: variants, no anyAvailable.
+			const unrolled = await ctx.db.insert("products", {
+				externalId: "a3",
+				firstSeenAt: 1000,
+				handle: "lot-c",
+				lastSeenAt: 1000,
+				name: "Unrolled lot",
+				roasterId: active,
+				status: "current",
+			});
+			await ctx.db.insert("productVariants", {
+				available: true,
+				grams: 250,
+				name: "250g",
+				priceCents: 2000,
+				productId: unrolled,
+			});
+			await ctx.db.insert("products", {
+				anyAvailable: true,
+				externalId: "a4",
+				firstSeenAt: 1000,
+				handle: "lot-d",
+				lastSeenAt: 1000,
+				name: "Archived lot",
+				roasterId: active,
+				status: "archived",
+			});
 		});
 		const rows = await t.query(api.roasters.listLots, {
 			paginationOpts: { cursor: null, numItems: 10 },
@@ -143,6 +170,15 @@ describe("roasters", () => {
 			minPriceCents: 1800,
 		});
 		expect(byName["Sold-out lot"]).toMatchObject({ available: false });
+		// ADR-0007: an absent rollup is unknown, never sold out.
+		expect(byName["Unrolled lot"]).toMatchObject({ available: null });
+		expect(byName["Archived lot"]).toMatchObject({ available: false });
+		// Unknown stock is not "in stock" either.
+		const inStock = await t.query(api.roasters.listLotsFiltered, {
+			availableOnly: true,
+			roasterId: active,
+		});
+		expect(inStock.map((row) => row.name)).toEqual(["In-stock lot"]);
 	});
 
 	test("listLotsFiltered applies every filter axis", async () => {

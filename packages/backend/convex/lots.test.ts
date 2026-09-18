@@ -73,6 +73,22 @@ const addLog = (
 	);
 
 describe("lots.get", () => {
+	test("a lot without the rollup reads as unknown stock, not sold out", async () => {
+		const fx = await setup();
+		await fx.t.run(async (ctx) => {
+			await ctx.db.insert("productVariants", {
+				available: true,
+				grams: 250,
+				name: "250g",
+				priceCents: 1800,
+				productId: fx.lotId,
+			});
+		});
+		const page = await fx.t.query(api.lots.get, { lotId: fx.lotId });
+		expect(page?.lot.available).toBeNull();
+		expect(page?.lot.variants).toHaveLength(1);
+	});
+
 	test("returns the size table with deep links and the stock boundary", async () => {
 		const fx = await setup({ anyAvailable: true, minPriceCents: 1800 });
 		await fx.t.run(async (ctx) => {
