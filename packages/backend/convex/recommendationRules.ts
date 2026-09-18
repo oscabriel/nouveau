@@ -603,10 +603,18 @@ export const normalizeProse = (text: string): string =>
 		.trim();
 
 /**
+ * Description-sentence candidates a page read sends to Jev: one Noul per
+ * candidate decides whether it describes the coffee, so this over-finds and
+ * the model cuts. The regex path alone (slice(0, 3)) stays as the fallback
+ * when Jev is unavailable.
+ */
+export const SENTENCE_CANDIDATES = 12;
+
+/**
  * Regex fallback when structured extraction returns nothing. Keeps public
  * coffee prose only. These passages remain untrusted model input.
  */
-export const enrichmentPassages = (
+export const sentenceCandidates = (
 	markdown: string,
 	existing: string
 ): string[] => {
@@ -625,97 +633,31 @@ export const enrichmentPassages = (
 			const normalized = normalizeProse(line);
 			return normalized.length >= 20 && !known.includes(normalized);
 		});
-	return [...new Set(passages)].slice(0, 3);
+	return [...new Set(passages)].slice(0, SENTENCE_CANDIDATES);
 };
 
-// Firecrawl's own extraction reads the rendered page for this one coffee. It
-// selects values; it does not get to write them. Every value it returns must
-// appear on the page, letter for letter, or it is dropped below.
-export const ENRICHMENT_PROMPT =
-	"This page sells one coffee. Extract only what the roaster states about this specific coffee: its process, variety, region or origin, elevation, producer or farm, roast level, and tasting notes, plus up to five complete sentences from the product description that describe this coffee. Copy every value exactly as it appears on the page, including image captions that describe the coffee. Ignore navigation, shop-wide copy about the roaster, general coffee education, brewing guides, shipping, prices, reviews and other products. Omit a field when the page does not state it.";
-
-export const enrichmentSchema = {
-	properties: {
-		elevation: { type: "string" },
-		process: { type: "string" },
-		producer: { type: "string" },
-		region: { type: "string" },
-		roastLevel: { type: "string" },
-		sentences: { items: { type: "string" }, type: "array" },
-		tastingNotes: { items: { type: "string" }, type: "array" },
-		variety: { type: "string" },
-	},
-	type: "object",
-} as const;
-
-const MAX_SENTENCES = 10;
-
-// Tolerant readers: a field of the wrong shape is ignored, not fatal.
-const textField = (value: unknown, maxLength: number): string | null =>
-	typeof value === "string" && value.length <= maxLength ? value : null;
-const listField = (value: unknown, maxLength: number, max: number): string[] =>
-	Array.isArray(value)
-		? value
-				.map((item) => textField(item, maxLength))
-				.filter((item) => item !== null)
-				.slice(0, max)
-		: [];
-
-/**
- * Description sentences the page extraction selected, each verbatim on the
- * page, new relative to the feed, and free of shop noise. The page's facts
- * (process, variety, notes...) do not pass through here any more: they go
- * through extraction.verifyPageFacts into `products.pageFacts` (ADR-0005)
- * and reach the candidate as its fact passage.
- */
-const extractedPassages = (
-	json: unknown,
+/** Candidate sentences the regex alone trusts, for a run without Jev. */
+export const enrichmentPassages = (
 	markdown: string,
-	known: string
-): string[] => {
-	if (typeof json !== "object" || json === null) {
-		return [];
-	}
-	const fields = json as Record<string, unknown>;
-	const onPage = normalizeProse(markdown);
-	const inCatalog = normalizeProse(known);
-	const verified = (value: string): string | null => {
-		const text = stripMarkdown(value);
-		const normalized = normalizeProse(text);
-		if (
-			normalized.length < MIN_FACT_LETTERS ||
-			!onPage.includes(normalized) ||
-			inCatalog.includes(normalized) ||
-			MARKUP.test(text) ||
-			UNSUITABLE_PROSE.test(text)
-		) {
-			return null;
-		}
-		return text;
-	};
-	const passages: string[] = [];
-	for (const sentence of listField(fields.sentences, 1000, MAX_SENTENCES)) {
-		const text = verified(sentence);
-		if (text && readablePassage(text, 30) && !isFirstPerson(text)) {
-			passages.push(text);
-		}
-	}
-	return [...new Set(passages)].slice(0, 3);
-};
+	existing: string
+): string[] => sentenceCandidates(markdown, existing).slice(0, 3);
+
+const MAX_PAGE_SENTENCES = 3;
 
 /**
- * Structured page evidence: the description sentences the extraction picked,
- * verified. Falls back to the regex path when extraction yields nothing.
+ * Page evidence: the description sentences the page read's Jev questions
+ * approved (each was a regex candidate verbatim on the page, and the Noul
+ * cut the shop-wide copy). Falls back to the regex path when Jev was
+ * unavailable or approved nothing. Still untrusted model input downstream.
  */
 export const pagePassages = (
-	page: { json?: unknown; markdown?: string },
+	page: { markdown?: string; sentences?: string[] },
 	known: string
 ): string[] => {
-	const markdown = (page.markdown ?? "").slice(0, 30_000);
-	const structured = extractedPassages(page.json, markdown, known);
-	return structured.length > 0
-		? structured
-		: enrichmentPassages(markdown, known);
+	const sentences = (page.sentences ?? []).slice(0, MAX_PAGE_SENTENCES);
+	return sentences.length > 0
+		? sentences
+		: enrichmentPassages(page.markdown ?? "", known);
 };
 
 export const recommendationOutputSchema = {

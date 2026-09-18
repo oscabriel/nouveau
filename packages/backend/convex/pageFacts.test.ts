@@ -17,22 +17,71 @@ interface Fixture {
 }
 
 const PAGE_URL = "https://sey.example.com/products/mullugeta";
-const PAGE_MARKDOWN =
-	"# Mullugeta\n\nProcess: Natural\n\nVariety: Heirloom\n\nAltitude: 1,900 - 2,100 masl\n\nIn the cup we find peach, melon, and red tea.";
+const PAGE_MARKDOWN = [
+	"# Mullugeta",
+	"Process: Natural",
+	"Variety: Heirloom",
+	"Altitude: 1,900 - 2,100 masl",
+	"Tasting notes: peach, melon, red tea.",
+	"In the cup we find peach, melon, and red tea.",
+].join("\n\n");
 
-const stubFirecrawl = (json: unknown, statusCode = 200) => {
-	const fetchMock = vi.fn((url: string) => {
-		if (!url.includes("firecrawl")) {
-			throw new Error(`Unexpected fetch ${url}`);
+/**
+ * The two providers a read touches: Firecrawl returns the page markdown;
+ * Jev answers every question with its first real option (Choice) or a yes
+ * (Noul), so the stored facts follow from the fixture markdown.
+ */
+const stubProviders = ({
+	jev = true,
+	markdown = PAGE_MARKDOWN,
+	statusCode = 200,
+} = {}) => {
+	const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+		if (url.includes("firecrawl")) {
+			return Response.json({
+				data: {
+					markdown,
+					metadata: { sourceURL: PAGE_URL, statusCode },
+				},
+				success: true,
+			});
 		}
-		return Response.json({
-			data: {
-				json,
-				markdown: PAGE_MARKDOWN,
-				metadata: { sourceURL: PAGE_URL, statusCode },
-			},
-			success: true,
-		});
+		if (url.includes("typesafe")) {
+			if (!jev) {
+				return new Response("nope", { status: 500 });
+			}
+			const body = JSON.parse(String(init?.body)) as {
+				questions: Record<
+					string,
+					{
+						criteria?: Record<string, string | null>;
+						type: string;
+					}
+				>;
+			};
+			const answers: Record<string, unknown> = {};
+			for (const [key, question] of Object.entries(body.questions)) {
+				if (question.type === "choice") {
+					const choices = Object.keys(question.criteria ?? {}).find(
+						(option) => option !== "none"
+					);
+					answers[key] = {
+						choice: choices ?? "",
+						confidence: 0.9,
+						probabilities: {},
+						type: "choice",
+					};
+				} else {
+					answers[key] = { noul: 0.9, type: "noul" };
+				}
+			}
+			return Response.json({
+				answers,
+				model: "jev-1.13.0",
+				usage: { input_tokens: 900, output_tokens: 40 },
+			});
+		}
+		throw new Error(`Unexpected fetch ${url}`);
 	});
 	vi.stubGlobal("fetch", fetchMock);
 	return fetchMock;
@@ -41,6 +90,7 @@ const stubFirecrawl = (json: unknown, statusCode = 200) => {
 beforeEach(() => {
 	vi.useFakeTimers();
 	vi.stubEnv("FIRECRAWL_API_KEY", "test-key");
+	vi.stubEnv("TYPESAFE_API_KEY", "test-key");
 });
 afterEach(() => {
 	vi.useRealTimers();
@@ -224,21 +274,18 @@ describe("pageFacts.store and the lot page", () => {
 });
 
 describe("pageFacts.scrape", () => {
-	test("reads the page through Firecrawl's json extraction and stores what verifies", async () => {
+	test("one markdown scrape and one Jev request; the picks become facts", async () => {
 		const fx = await setup();
-		const fetchMock = stubFirecrawl({
-			elevation: "1,900 - 2,100 masl",
-			process: "Natural",
-			producer: "Not specified",
-			roastLevel: "Espresso",
-			tastingNotes: ["peach", "melon", "red tea", "Bergamot"],
-			variety: "Heirloom",
-		});
+		const fetchMock = stubProviders();
 		await fx.t.action(internal.pageFacts.scrape, {
 			productId: fx.lotId,
 			url: PAGE_URL,
 		});
-		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		const scrape = fetchMock.mock.calls.find(([url]) =>
+			String(url).includes("firecrawl")
+		);
+		expect(JSON.parse(String(scrape?.[1]?.body)).formats).toEqual(["markdown"]);
 		const read = await product(fx);
 		expect(read?.pageFacts).toEqual({
 			elevation: "1,900 - 2,100 masl",
@@ -248,9 +295,21 @@ describe("pageFacts.scrape", () => {
 		});
 	});
 
+	test("a Jev failure stores nothing and the lot retries after the window", async () => {
+		const fx = await setup();
+		stubProviders({ jev: false });
+		await fx.t.action(internal.pageFacts.scrape, {
+			productId: fx.lotId,
+			url: PAGE_URL,
+		});
+		const untouched = await product(fx);
+		expect(untouched?.pageFacts).toBeUndefined();
+		expect(untouched?.copyFetchedAt).toEqual(expect.any(Number));
+	});
+
 	test("an unavailable page stores nothing", async () => {
 		const fx = await setup();
-		stubFirecrawl({ process: "Natural" }, 404);
+		stubProviders({ statusCode: 404 });
 		await fx.t.action(internal.pageFacts.scrape, {
 			productId: fx.lotId,
 			url: PAGE_URL,

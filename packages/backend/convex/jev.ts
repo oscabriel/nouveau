@@ -1,0 +1,111 @@
+// Shared Jev (TypeSafe System One) client. The shadow check and the page
+// facts reader both ask /v1/systemone, so the request shape, the pin and
+// the failure posture live here once.
+//
+// The model is pinned, not `jev-latest`: a threshold tuned on one version
+// must not move under the alias. Every caller logs or stores the response's
+// own `model` string, so the records stay exact even if the pinned constant
+// drifts.
+//
+// askJev returns null on any failure and warns instead of throwing: a Jev
+// opinion is never worth breaking the calling pipeline. askJev sends one
+// request for a whole batch of independent questions; Jev evaluates them
+// against the state in parallel, so extra questions cost almost nothing.
+
+export const JEV_MODEL = "jev-1.13.0";
+const JEV_TIMEOUT_MS = 10_000;
+const JEV_URL = "https://api.typesafe.ai/v1/systemone";
+
+/** One question: a yes/no Noul or a Choice over a criteria map. */
+export interface JevQuestion {
+	criteria?: Record<string, string | null>;
+	instructions: string;
+	type: "noul" | "choice";
+}
+
+/** The answers map, keyed by the question ids the caller chose. */
+export type JevAnswers = Record<string, unknown>;
+
+/**
+ * One /v1/systemone request for a batch of questions. Null when the API is
+ * unreachable, answers an unexpected shape, or the question batch is empty.
+ */
+export const askJev = async (
+	apiKey: string,
+	label: string,
+	state: unknown,
+	questions: Record<string, JevQuestion>
+): Promise<{ answers: JevAnswers; model: string } | null> => {
+	if (Object.keys(questions).length === 0) {
+		return null;
+	}
+	let body: unknown;
+	try {
+		const response = await fetch(JEV_URL, {
+			body: JSON.stringify({ model: JEV_MODEL, questions, state }),
+			headers: {
+				authorization: `Bearer ${apiKey}`,
+				"content-type": "application/json",
+			},
+			method: "POST",
+			signal: AbortSignal.timeout(JEV_TIMEOUT_MS),
+		});
+		if (!response.ok) {
+			console.warn(`jev ${label}: ${response.status}`);
+			return null;
+		}
+		body = await response.json();
+	} catch (error) {
+		console.warn(
+			`jev ${label} request failed: ${
+				error instanceof Error ? error.message : String(error)
+			}`
+		);
+		return null;
+	}
+	if (typeof body !== "object" || body === null) {
+		return null;
+	}
+	const envelope = body as { answers?: unknown; model?: unknown };
+	if (typeof envelope.answers !== "object" || envelope.answers === null) {
+		return null;
+	}
+	return {
+		answers: envelope.answers as JevAnswers,
+		// The model that actually answered, which may differ from the pin.
+		model: typeof envelope.model === "string" ? envelope.model : JEV_MODEL,
+	};
+};
+
+/**
+ * Narrow one Choice answer. The choice must be in the set the caller sent;
+ * anything else is a protocol error, never a fallback.
+ */
+export const jevChoice = (
+	answer: unknown,
+	allowed: readonly string[]
+): { choice: string; confidence?: number } | null => {
+	if (typeof answer !== "object" || answer === null) {
+		return null;
+	}
+	const fields = answer as Record<string, unknown>;
+	const { choice } = fields;
+	if (typeof choice !== "string" || !allowed.includes(choice)) {
+		return null;
+	}
+	return {
+		...(typeof fields.confidence === "number"
+			? { confidence: fields.confidence }
+			: {}),
+		choice,
+	};
+};
+
+/** Narrow one Noul answer to its yes probability. */
+export const jevNoul = (answer: unknown): number | null => {
+	if (typeof answer !== "object" || answer === null) {
+		return null;
+	}
+	const { noul } = answer as Record<string, unknown>;
+	return typeof noul === "number" ? noul : null;
+};

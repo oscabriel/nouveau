@@ -104,7 +104,10 @@ const insertRoaster = (
 test("isLotQuestion is a Choice over the fixed lot vocabulary", () => {
 	const question = isLotQuestion();
 	expect(question.is_lot.type).toBe("choice");
-	expect(Object.keys(question.is_lot.criteria)).toEqual(["coffee", "not_coffee"]);
+	expect(Object.keys(question.is_lot.criteria)).toEqual([
+		"coffee",
+		"not_coffee",
+	]);
 	// The instructions name the state path Jev reads.
 	expect(question.is_lot.instructions).toContain("`item`");
 });

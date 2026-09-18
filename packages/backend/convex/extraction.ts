@@ -7,7 +7,7 @@ import { v } from "convex/values";
 
 import type { PageFacts } from "./lotFacts";
 import {
-	normalizeText,
+	NOTE_SEPARATOR,
 	splitNotes,
 	verifyElevation,
 	verifyNotes,
@@ -1534,60 +1534,248 @@ const parseLotCopy = (raw: ShopifyProduct): LotCopy =>
 		vendor: raw.vendor,
 	});
 
-/** Page extraction values longer than this are prose, not a fact. */
-const MAX_PAGE_FACT_LENGTH = 120;
-/** Only this much of the page markdown backs the verbatim check. */
-const PAGE_TEXT_LIMIT = 30_000;
+/** A page read yields at most this many Jev options per field. */
+const MAX_PAGE_CANDIDATES = 12;
 
 /**
- * Facts Firecrawl's json extraction returned for one product page, verified
- * two ways before any can be stored (ADR-0005): letter for letter on the
- * page (the extractor selects values, it does not get to write them), and
- * through the same per-field shape the feed path applies. So "Not specified"
- * fails the first check, Merit's `roastLevel: "Espresso"` (the page's
- * recommended use) and "Ultra Light" fail the second, and Sey's paragraph
- * under `process` yields only the process terms it names. An empty object
- * means the page said nothing usable.
+ * Over-find elevation spans anywhere on a page: the unanchored twin of the
+ * ELEVATION shape lotFacts verifies against. "1500-1730masl",
+ * "1,900 - 2,100 masl", "1900 to 2100 metres".
  */
-export const verifyPageFacts = (json: unknown, markdown: string): PageFacts => {
-	if (typeof json !== "object" || json === null) {
-		return {};
+const ELEVATION_SPAN =
+	/\b\d[\d,.]*(?:\s*(?:-|–|—|to)\s*\d[\d,.]*)?\s*(?:masl|mamsl|meters|metres|fasl|feet|ft|m)\b\.?/giu;
+
+/**
+ * The variety vocabulary for over-finding: the names a roaster writes in
+ * prose ("a SL28 and SL34 blend") where no label line helps. Deliberately
+ * without country-sized ambiguity ("Colombia" is also a country): the label
+ * lines and the Jev pick cover those.
+ */
+const VARIETY_TERM =
+	/\b(?:gesha|geisha|sl\s?\d\d|ruiru\s*11|batian|heirloom|landrace|74\d\d\d|(?:pink|red|yellow|orange)\s+bourbon|bourbon|typica|caturra|catuai|pacamara|pacas|maragogype|maragogipe|sidra|wush\s*wush|wolisho|dega|kurume|tekisic|villalobos|villa\s+sarchi|catimor|sarchimor|parainema|laurina|eugenioides|castillo|tabi|jackson|blue\s+mountain|mokka)\b/giu;
+
+/** The page labels each fact field answers to, beyond the feed's key set. */
+const PAGE_REGION_KEY =
+	/^(?:growing region|subregion|microregion|region|location|zone|district|woreda|appellation|origin)$/iu;
+const PAGE_PRODUCER_KEY =
+	/^(?:producer|farm|farmer|washing station|mill|cooperative|co-op|estate|grower|produced by)$/iu;
+const PAGE_NOTES_KEY =
+	/^(?:(?:tasting|flavou?r|cupping)\s+notes?|notes?|flavou?rs)$/iu;
+
+/** A candidate found in a page, per field. Jev picks one of these (or none). */
+export interface PageFactCandidates {
+	elevation: string[];
+	process: string[];
+	producer: string[];
+	region: string[];
+	roastLevel: string[];
+	tastingNotes: string[];
+	variety: string[];
+}
+
+/** A field of PageFactCandidates. */
+export type PageFactField = keyof PageFactCandidates;
+
+const emptyCandidates = (): PageFactCandidates => ({
+	elevation: [],
+	process: [],
+	producer: [],
+	region: [],
+	roastLevel: [],
+	tastingNotes: [],
+	variety: [],
+});
+
+const pushCandidate = (into: string[], value: string): void => {
+	if (
+		into.length < MAX_PAGE_CANDIDATES &&
+		!into.some((seen) => seen.toLowerCase() === value.toLowerCase())
+	) {
+		into.push(value);
 	}
-	const fields = json as Record<string, unknown>;
-	const onPage = normalizeText(markdown.slice(0, PAGE_TEXT_LIMIT));
-	const verbatim = (value: unknown): string | null => {
-		if (typeof value !== "string") {
-			return null;
+};
+
+/**
+ * "`Key: Value`" and "`| Key | Value |`" lines, in any case, with markdown
+ * junk tolerated ahead of the label. The value is cut at a pipe so a
+ * multi-cell table row does not glue its neighbours onto the fact.
+ */
+const PAGE_LABEL_LINE =
+	/^(?:[#>*_\s|~-]*)(?<label>[\p{L}][\p{L}' /-]*?)\s*[:|–—-]\s*(?<value>.+)$/u;
+/** An all-caps or bare label line ("TASTING NOTES", "Producer") whose value sits on the next line. */
+const PAGE_BARE_LABEL =
+	/^(?:[#>*_\s|~-]*)(?<label>process(?:ing)?(?:\s+method)?|roast(?:\s+level|\s+profile)?|variety|varietals?|varieties|cultivar|growing region|subregion|region|location|elevation|altitude|origin|producer|farm|farmer|washing station|mill|notes|tasting notes)\s*$/iu;
+/** A label line with nothing after the colon: the value sits on the next line. */
+const PAGE_LABEL_ONLY =
+	/^(?:[#>*_\s|~-]*)(?<label>[\p{L}][\p{L}' /-]*?)\s*:\s*$/u;
+/** A candidate value past this is prose, not a fact. */
+const MAX_PAGE_CANDIDATE_LENGTH = 80;
+/** A bare note list line ("Prunes • Fig Danish • Nutmeg") past this is prose. */
+const MAX_NOTE_LINE_LENGTH = 120;
+
+/** A line's captured value, cut at a pipe and trimmed. */
+const pageValue = (raw: string): string | null => {
+	const pipe = raw.indexOf("|");
+	const text = (pipe === -1 ? raw : raw.slice(0, pipe))
+		.trim()
+		.replaceAll(/\s+/gu, " ");
+	return text === "" || text.length > MAX_PAGE_CANDIDATE_LENGTH ? null : text;
+};
+
+/** Route one labelled value into its field's candidate list. */
+const pushLabelled = (
+	candidates: PageFactCandidates,
+	label: string,
+	value: string | null
+): void => {
+	if (value === null) {
+		return;
+	}
+	if (BODY_PROCESS_KEY.test(label)) {
+		for (const term of findProcesses(value)) {
+			pushCandidate(candidates.process, term);
 		}
-		const text = value.trim();
-		const normalized = normalizeText(text);
+	} else if (BODY_ROAST_KEY.test(label)) {
+		for (const level of roastFromValue(value)) {
+			pushCandidate(candidates.roastLevel, level);
+		}
+	} else if (BODY_VARIETY_KEY.test(label)) {
+		const variety = verifyVariety(value);
+		if (variety !== null) {
+			pushCandidate(candidates.variety, variety);
+		}
+	} else if (PAGE_REGION_KEY.test(label)) {
+		const region = verifyRegion(value);
+		// A country is an origin, not a region (Onyx returns "Kenya" here).
+		if (region !== null && !CANONICAL_COUNTRY.has(region.toLowerCase())) {
+			pushCandidate(candidates.region, region);
+		}
+	} else if (BODY_ELEVATION_KEY.test(label)) {
+		const elevation = verifyElevation(value);
+		if (elevation !== null) {
+			pushCandidate(candidates.elevation, elevation);
+		}
+	} else if (PAGE_PRODUCER_KEY.test(label)) {
+		const producer = verifyProducer(value);
+		if (producer !== null) {
+			pushCandidate(candidates.producer, producer);
+		}
+	} else if (PAGE_NOTES_KEY.test(label)) {
+		for (const note of splitNotes(value)) {
+			pushCandidate(candidates.tastingNotes, note);
+		}
+	}
+};
+
+/*
+ * Vocabulary and shape spans over the whole markdown, before the line
+ * router runs: process terms, elevation spans, variety names and roast
+ * phrases written anywhere on the page, label or no label.
+ */
+const pushSpanCandidates = (
+	candidates: PageFactCandidates,
+	markdown: string
+): void => {
+	for (const term of findProcesses(markdown)) {
+		pushCandidate(candidates.process, term);
+	}
+	for (const match of markdown.matchAll(ELEVATION_SPAN)) {
+		const elevation = verifyElevation(match[0]);
+		if (elevation !== null) {
+			pushCandidate(candidates.elevation, elevation);
+		}
+	}
+	for (const match of markdown.matchAll(VARIETY_TERM)) {
+		const variety = verifyVariety(match[0]);
+		if (variety !== null) {
+			pushCandidate(candidates.variety, variety);
+		}
+	}
+	for (const match of markdown.matchAll(
+		new RegExp(ROAST_IN_TITLE.source, "giu")
+	)) {
+		pushCandidate(candidates.roastLevel, match[0].trim());
+	}
+};
+
+/**
+ * Over-find candidate spans per field in the page markdown (ADR-0005): the
+ * recall shapes the feed verifiers share, plus label lines and a small
+ * vocabulary, tuned to find every mention and let Jev pick. Each candidate
+ * already passes its field's shape, so the pick needs no re-check for form,
+ * and is verbatim on the page by construction. Notes keep no Jev Choice of
+ * their own (a pick is one note): they arrive as one Noul per candidate.
+ */
+export const pageFactCandidates = (markdown: string): PageFactCandidates => {
+	const candidates = emptyCandidates();
+	pushSpanCandidates(candidates, markdown);
+	const lines = markdown.split(/\n+/u);
+	for (const [index, line] of lines.entries()) {
+		const labelled = PAGE_LABEL_LINE.exec(line)?.groups;
+		if (labelled !== undefined) {
+			pushLabelled(
+				candidates,
+				(labelled.label ?? "").trim(),
+				pageValue(labelled.value ?? "")
+			);
+			continue;
+		}
+		const labelOnly = PAGE_LABEL_ONLY.exec(line)?.groups;
+		const next = lines[index + 1] ?? "";
+		if (labelOnly !== undefined && next !== "") {
+			pushLabelled(candidates, (labelOnly.label ?? "").trim(), pageValue(next));
+			continue;
+		}
+		const bare = PAGE_BARE_LABEL.exec(line)?.groups;
+		if (bare !== undefined && next !== "") {
+			pushLabelled(candidates, (bare.label ?? "").trim(), pageValue(next));
+			continue;
+		}
+		// A bare list line is note candidates when its parts are note-shaped.
+		// Sentence punctuation marks prose, never a note list.
+		const bareLine = line.replace(/^[#>*_\s|~-]+/u, "").trim();
 		if (
-			text.length > MAX_PAGE_FACT_LENGTH ||
-			normalized === "" ||
-			!onPage.includes(normalized)
+			bareLine.length <= MAX_NOTE_LINE_LENGTH &&
+			!/[.!?]./u.test(bareLine) &&
+			NOTE_SEPARATOR.test(bareLine)
 		) {
-			return null;
+			for (const note of splitNotes(bareLine)) {
+				pushCandidate(candidates.tastingNotes, note);
+			}
 		}
-		return text;
-	};
+	}
+	return candidates;
+};
+
+/**
+ * The spans Jev picked for one product page, verified through the same
+ * per-field shapes the feed path applies (ADR-0005). Every pick is verbatim
+ * on the page by construction (it is a span pageFactCandidates found), so
+ * the letter-for-letter gate has no work left; what remains is shape. So
+ * "Not specified" fails a field's shape, Merit's `roastLevel: "Espresso"`
+ * (the page's recommended use) fails the roast shape, and a country under
+ * region is an origin, not a region. An empty object means the page said
+ * nothing usable.
+ */
+export const verifyPageFacts = (picks: PageFacts): PageFacts => {
 	const facts: PageFacts = {};
-	const process = verbatim(fields.process);
-	const processTerms = process === null ? [] : findProcesses(process);
+	const processTerms =
+		picks.process === undefined ? [] : findProcesses(picks.process);
 	if (processTerms.length > 0) {
 		facts.process = processTerms.join(", ");
 	}
-	const roast = verbatim(fields.roastLevel);
-	const [roastLevel] = roast === null ? [] : roastFromValue(roast);
+	const [roastLevel] =
+		picks.roastLevel === undefined ? [] : roastFromValue(picks.roastLevel);
 	if (roastLevel !== undefined) {
 		facts.roastLevel = roastLevel;
 	}
-	const variety = verbatim(fields.variety);
-	const verifiedVariety = variety === null ? null : verifyVariety(variety);
+	const verifiedVariety =
+		picks.variety === undefined ? null : verifyVariety(picks.variety);
 	if (verifiedVariety !== null) {
 		facts.variety = verifiedVariety;
 	}
-	const region = verbatim(fields.region);
-	const verifiedRegion = region === null ? null : verifyRegion(region);
+	const verifiedRegion =
+		picks.region === undefined ? null : verifyRegion(picks.region);
 	// A country is an origin, not a region (Onyx returns "Kenya" here).
 	if (
 		verifiedRegion !== null &&
@@ -1595,26 +1783,21 @@ export const verifyPageFacts = (json: unknown, markdown: string): PageFacts => {
 	) {
 		facts.region = verifiedRegion;
 	}
-	const elevation = verbatim(fields.elevation);
 	const verifiedElevation =
-		elevation === null ? null : verifyElevation(elevation);
+		picks.elevation === undefined ? null : verifyElevation(picks.elevation);
 	if (verifiedElevation !== null) {
 		facts.elevation = verifiedElevation;
 	}
-	const producer = verbatim(fields.producer);
-	const verifiedProducer = producer === null ? null : verifyProducer(producer);
+	const verifiedProducer =
+		picks.producer === undefined ? null : verifyProducer(picks.producer);
 	if (verifiedProducer !== null) {
 		facts.producer = verifiedProducer;
 	}
-	const notes = Array.isArray(fields.tastingNotes)
-		? verifyNotes(
-				fields.tastingNotes.filter(
-					(note): note is string => typeof note === "string"
-				)
-			).filter((note) => onPage.includes(normalizeText(note)))
-		: [];
-	if (notes.length > 0) {
-		facts.tastingNotes = notes;
+	if (picks.tastingNotes !== undefined) {
+		const notes = verifyNotes(picks.tastingNotes);
+		if (notes.length > 0) {
+			facts.tastingNotes = notes;
+		}
 	}
 	return facts;
 };

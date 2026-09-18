@@ -11,10 +11,7 @@
 // (untyped-shop rule), so their interesting tail is the accepted side, which
 // needs its own question.
 //
-// The model is pinned (jev-1.13.0), not `jev-latest`: a threshold tuned on
-// one version must not move under the alias. The response's own `model`
-// string is stored with every verdict, so the log stays exact even if the
-// pinned constant drifts.
+// The request, the pin and the failure posture live in jev.ts.
 
 import { v } from "convex/values";
 
@@ -26,13 +23,10 @@ import {
 	internalQuery,
 } from "./_generated/server";
 import type { ShadowCandidate } from "./extraction";
+import { askJev } from "./jev";
 
 /** One Jev request per candidate, so a huge ambiguous tail is bounded. */
 export const CANDIDATES_PER_CRAWL = 25;
-/** The request's pinned model. See the module docstring on why not jev-latest. */
-export const JEV_MODEL = "jev-1.13.0";
-const JEV_TIMEOUT_MS = 10_000;
-const JEV_URL = "https://api.typesafe.ai/v1/systemone";
 /** The only options the question offers; anything else is a protocol error. */
 const CHOICES = ["coffee", "not_coffee"] as const;
 
@@ -82,19 +76,18 @@ export interface JevVerdict {
 }
 
 /**
- * Narrow the /v1/systemone response body to the `is_lot` Choice answer.
+ * Narrow the /v1/systemone answers map to the `is_lot` Choice answer.
  * Everything is treated as unknown and checked: a field of the wrong shape
  * makes the whole answer null, never a default.
  */
-export const parseJevAnswer = (body: unknown): JevVerdict | null => {
-	if (typeof body !== "object" || body === null) {
+export const parseJevAnswer = (
+	answers: unknown,
+	model: string
+): JevVerdict | null => {
+	if (typeof answers !== "object" || answers === null) {
 		return null;
 	}
-	const envelope = body as { answers?: unknown; model?: unknown };
-	if (typeof envelope.answers !== "object" || envelope.answers === null) {
-		return null;
-	}
-	const isLot = (envelope.answers as Record<string, unknown>).is_lot;
+	const isLot = (answers as Record<string, unknown>).is_lot;
 	if (typeof isLot !== "object" || isLot === null) {
 		return null;
 	}
@@ -119,7 +112,7 @@ export const parseJevAnswer = (body: unknown): JevVerdict | null => {
 			: {}),
 		coffeeProbability,
 		jevChoice: choice,
-		model: typeof envelope.model === "string" ? envelope.model : JEV_MODEL,
+		model,
 	};
 };
 
@@ -144,37 +137,13 @@ export const judge = async (
 	if (candidate.description !== undefined) {
 		item.description = candidate.description;
 	}
-	let body: unknown;
-	try {
-		const response = await fetch(JEV_URL, {
-			body: JSON.stringify({
-				model: JEV_MODEL,
-				questions: isLotQuestion(),
-				state: { item },
-			}),
-			headers: {
-				authorization: `Bearer ${apiKey}`,
-				"content-type": "application/json",
-			},
-			method: "POST",
-			signal: AbortSignal.timeout(JEV_TIMEOUT_MS),
-		});
-		if (!response.ok) {
-			console.warn(
-				`jev shadow: ${response.status} for ${candidate.externalId}`
-			);
-			return null;
-		}
-		body = await response.json();
-	} catch (error) {
-		console.warn(
-			`jev shadow request failed for ${candidate.externalId}: ${
-				error instanceof Error ? error.message : String(error)
-			}`
-		);
-		return null;
-	}
-	return parseJevAnswer(body);
+	const answer = await askJev(
+		apiKey,
+		`shadow ${candidate.externalId}`,
+		{ item },
+		isLotQuestion()
+	);
+	return answer === null ? null : parseJevAnswer(answer.answers, answer.model);
 };
 
 /** ExternalIds of this roaster's candidates that already have a verdict. */

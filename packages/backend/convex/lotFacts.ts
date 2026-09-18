@@ -56,7 +56,7 @@ const cleanFact = (raw: string): string | null => {
 		: text;
 };
 
-const NOTE_SEPARATOR =
+export const NOTE_SEPARATOR =
 	/\s*(?:,|;|•|·|\||\/|\s[-–—]\s|\s\+\s|\s&\s|\band\b)\s*/iu;
 const NOTE_LEAD_IN =
 	/^(?:(?:with\s+)?(?:notes?|flavou?rs?|hints?|aromas?)\s+of|tastes?\s+(?:of|like)|(?:a|an|the)\s+)+/iu;

@@ -15,7 +15,6 @@ import {
 	CANDIDATE_LIMIT,
 	catalogPassages,
 	EMPTY_EVIDENCE_TTL_MS,
-	ENRICHMENT_PROMPT,
 	enrichmentPassages,
 	filterReason,
 	FRESHNESS_MS,
@@ -25,6 +24,7 @@ import {
 	OPENAI_REASONING_EFFORT,
 	pagePassages,
 	PRODUCTS_PER_ROASTER,
+	sentenceCandidates,
 	validateSelections,
 } from "./recommendationRules";
 import type { Candidate, RecommendationInput } from "./recommendationRules";
@@ -47,6 +47,7 @@ beforeEach(() => {
 	vi.setSystemTime(NOW);
 	vi.stubEnv("OPENAI_API_KEY", "test-key");
 	vi.stubEnv("FIRECRAWL_API_KEY", "fc-test-key");
+	vi.stubEnv("TYPESAFE_API_KEY", "test-key");
 });
 afterEach(() => {
 	vi.clearAllTimers();
@@ -234,7 +235,7 @@ const installProviders = (
 	options: {
 		badModel?: boolean;
 		firecrawlFails?: boolean;
-		firecrawlJson?: unknown;
+		jevFails?: boolean;
 		modelFails?: boolean;
 	} = {}
 ) => {
@@ -248,9 +249,6 @@ const installProviders = (
 			}
 			return Response.json({
 				data: {
-					...(options.firecrawlJson === undefined
-						? {}
-						: { json: options.firecrawlJson }),
 					markdown:
 						"This coffee was grown at an elevation of 2100 metres by a small producer.",
 					metadata: {
@@ -259,6 +257,41 @@ const installProviders = (
 					},
 				},
 				success: true,
+			});
+		}
+		if (url.includes("typesafe")) {
+			if (options.jevFails) {
+				return new Response("nope", { status: 500 });
+			}
+			const body = JSON.parse(String(init?.body)) as {
+				questions: Record<
+					string,
+					{
+						criteria?: Record<string, string | null>;
+						type: string;
+					}
+				>;
+			};
+			const answers: Record<string, unknown> = {};
+			for (const [key, question] of Object.entries(body.questions)) {
+				if (question.type === "choice") {
+					const span = Object.keys(question.criteria ?? {}).find(
+						(option) => option !== "none"
+					);
+					answers[key] = {
+						choice: span ?? "",
+						confidence: 0.9,
+						probabilities: {},
+						type: "choice",
+					};
+				} else {
+					answers[key] = { noul: 0.9, type: "noul" };
+				}
+			}
+			return Response.json({
+				answers,
+				model: "jev-1.13.0",
+				usage: { input_tokens: 900, output_tokens: 40 },
 			});
 		}
 		if (url === "https://api.openai.com/v1/responses") {
@@ -986,18 +1019,9 @@ test("enrichment reservations are shared and capped across a request's retries",
 	).toBeNull();
 });
 
-test("the scrape asks Firecrawl for structured extraction and verified values become evidence", async () => {
+test("the scrape asks Firecrawl for markdown only and the Jev picks become evidence", async () => {
 	const f = await setup();
-	const fetchMock = installProviders({
-		firecrawlJson: {
-			elevation: "2100 metres",
-			process: "Washed",
-			producer: "a small producer",
-			sentences: ["Nothing on the page says this sentence."],
-			tastingNotes: ["Bergamot", "jasmine"],
-			variety: "Heirloom",
-		},
-	});
+	const fetchMock = installProviders();
 	const id = await request(f);
 	await f.t.action(internal.recommendationWorker.run, {
 		attempt: 1,
@@ -1006,21 +1030,17 @@ test("the scrape asks Firecrawl for structured extraction and verified values be
 	const scrape = fetchMock.mock.calls.find(([url]) =>
 		url.includes("firecrawl")
 	);
-	const body = JSON.parse(String(scrape?.[1]?.body));
-	expect(body.formats).toContainEqual(
-		expect.objectContaining({ prompt: ENRICHMENT_PROMPT, type: "json" })
-	);
+	expect(JSON.parse(String(scrape?.[1]?.body)).formats).toEqual(["markdown"]);
 	const cache = await f.t.run((ctx) =>
 		ctx.db.query("recommendationEvidence").collect()
 	);
-	// The invented sentence is not on the page, so the structured path yields
-	// nothing and the regex fallback keeps the page's own sentence.
+	// The page's own sentence is the one description candidate, the Noul
+	// approves it, and it becomes the run's page evidence.
 	expect(cache[0]?.passages).toEqual([
 		"This coffee was grown at an elevation of 2100 metres by a small producer.",
 	]);
 	// The facts land on the product through the shared verifier (ADR-0005):
-	// elevation is on the page and shaped; Washed, jasmine, Bergamot and
-	// Heirloom are not on the page; "a small producer" is prose, not a name.
+	// the elevation span Jev picked over the page's own words.
 	const product = await f.t.run((ctx) => ctx.db.get(f.productId));
 	expect(product?.pageFacts).toEqual({ elevation: "2100 metres" });
 	expect(product?.copyFetchedAt).toEqual(expect.any(Number));
@@ -1333,10 +1353,9 @@ test("customer reviews on the product page are not roaster passages", () => {
 	const description =
 		"A natural process lot from Sidama dried slowly on raised beds, with tasting notes of blueberry and cocoa.";
 	const markdown = [review, description].join("\n\n");
-	expect(
-		pagePassages({ json: { sentences: [review, description] }, markdown }, "")
-	).toEqual([description]);
-	// The regex fallback has the same gap and the same fix.
+	// The regex candidates a page read sends to Jev keep the review out; the
+	// Noul cut on top can only narrow them.
+	expect(sentenceCandidates(markdown, "")).toEqual([description]);
 	expect(
 		enrichmentPassages(
 			`${markdown}\n\nI roast this natural lot light so the blueberry shows.`,
@@ -1353,7 +1372,7 @@ test("customer reviews on the product page are not roaster passages", () => {
 	]);
 });
 
-test("page passages label verified facts, keep verbatim sentences and skip everything else", () => {
+test("page passages carry the approved sentences and fall back to the regex path", () => {
 	const markdown = [
 		"![Verve Coffee Roasters - Chelchele - 12oz - Single Origin - Yirgacheffe, Ethiopia - Process: Washed - Variety: Heirloom - Tasting Notes: Jasmine, Toffee, Lemon Custard](https://cdn.example/bag.jpg)",
 		"![Verve Coffee Roasters - Chelchele - Producer Image](https://cdn.example/producer.jpg)",
@@ -1361,33 +1380,22 @@ test("page passages label verified facts, keep verbatim sentences and skip every
 		"Grown by smallholders around Chelchele and dried on raised beds, this lot leans floral with a custard-like finish.",
 		"Ground Agtron: #137 Roast Level: Ultra Light",
 	].join("\n\n");
-	const json = {
-		elevation: "1,900 to 2,200 masl",
-		process: "Washed",
-		roastLevel: "Ultra Light",
-		sentences: [
-			"Grown by smallholders around Chelchele and dried on raised beds, this lot leans floral with a custard-like finish.",
-			"We source this lot every season from producers around Chelchele and beyond.",
-			"This lot was dried on raised beds for a full month by the producers.",
-		],
-		tastingNotes: ["Jasmine", "Toffee", "Lemon Custard", "Blueberry"],
-		variety: "Heirloom",
-	};
-	// Facts no longer ride in the passages (they go through verifyPageFacts
-	// into pageFacts, ADR-0005); the verified sentence does.
+	const approved =
+		"Grown by smallholders around Chelchele and dried on raised beds, this lot leans floral with a custard-like finish.";
+	// The sentences a read approved (each was a page candidate and the Noul
+	// passed it) become the evidence verbatim, already new against `known`.
 	expect(
-		pagePassages({ json, markdown }, "A washed Ethiopian coffee.")
-	).toEqual([
-		"Grown by smallholders around Chelchele and dried on raised beds, this lot leans floral with a custard-like finish.",
-	]);
-	// Without extraction the regex path runs. Image captions are no longer
-	// prose; general text and label lines still pass, which is why it is the fallback.
+		pagePassages({ sentences: [approved] }, "A washed Ethiopian coffee.")
+	).toEqual([approved]);
+	// Without approved sentences (Jev unavailable or all-no) the regex path
+	// runs. Image captions are no longer prose; general text and label lines
+	// still pass, which is why it is the fallback.
 	expect(pagePassages({ markdown }, "")).toEqual([
 		"Elevation influences coffee cultivation, impacting flavor and quality. Higher elevations offer cooler temperatures.",
 		"Grown by smallholders around Chelchele and dried on raised beds, this lot leans floral with a custard-like finish.",
 		"Ground Agtron: #137 Roast Level: Ultra Light",
 	]);
-	expect(pagePassages({ json: { process: "Washed" }, markdown }, "")).toEqual(
+	expect(pagePassages({ markdown, sentences: [] }, "")).toEqual(
 		pagePassages({ markdown }, "")
 	);
 });

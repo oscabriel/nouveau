@@ -9,6 +9,7 @@ import {
 	parseLotAttributes,
 	parseProductsJson,
 	parseVariantGrams,
+	pageFactCandidates,
 	PRODUCTS_JSON_PAGE_SIZE,
 	SHOPIFY_FETCH_HEADERS,
 	shopifyProductsUrl,
@@ -1660,7 +1661,7 @@ describe("walkFeedPages", () => {
 	});
 });
 
-describe("verifyPageFacts (ADR-0005)", () => {
+describe("pageFactCandidates (ADR-0005)", () => {
 	// Merit "Ojo de Agua" and Sey "Huila Decaffeinated" as the determinism
 	// runs returned them (audit §4), on a page that says what they say.
 	const markdown = [
@@ -1676,20 +1677,65 @@ describe("verifyPageFacts (ADR-0005)", () => {
 		"Hand-picked at peak ripeness. Floated to remove defects, then fully washed and dried on raised beds over three weeks.",
 	].join("\n\n");
 
-	test("a value must be on the page letter for letter and pass its field's shape", () => {
+	test("label lines, vocabulary spans and bare note lists become candidates", () => {
+		expect(pageFactCandidates(markdown)).toEqual({
+			elevation: ["1500-1730masl"],
+			process: ["Washed", "fully washed"],
+			producer: ["Finca Ojo de Agua"],
+			region: ["Huila"],
+			roastLevel: [],
+			tastingNotes: ["Prunes", "Fig Danish", "Nutmeg"],
+			variety: ["Caturra", "Caturra, Colombia"],
+		});
+	});
+
+	test("a roast label only yields a candidate when the value is a level", () => {
+		expect(pageFactCandidates("Roast: Ultra Light").roastLevel).toEqual([]);
+		expect(pageFactCandidates("Roast Level: Medium-Light").roastLevel).toEqual([
+			"Medium-Light",
+		]);
 		expect(
-			verifyPageFacts(
-				{
-					elevation: "1500-1730masl",
-					process: "Washed",
-					producer: "Finca Ojo de Agua",
-					region: "Huila",
-					roastLevel: "Espresso",
-					tastingNotes: ["Prunes", "Fig Danish", "Nutmeg", "Bergamot"],
-					variety: "Caturra, Colombia",
-				},
-				markdown
-			)
+			pageFactCandidates("a bright light roast for filter").roastLevel
+		).toEqual(["light roast"]);
+	});
+
+	test("table rows, next-line values and a country under region", () => {
+		const tabled = [
+			"| Process | Washed | 250g |",
+			"Producer",
+			"Finca Ojo de Agua",
+			"Origin: Colombia",
+		].join("\n");
+		const candidates = pageFactCandidates(tabled);
+		expect(candidates.process).toEqual(["Washed"]);
+		expect(candidates.producer).toEqual(["Finca Ojo de Agua"]);
+		// "Colombia" is a country: it is an origin, not a region candidate.
+		expect(candidates.region).toEqual([]);
+	});
+
+	test("variety prose is found by the vocabulary, elevation by its span", () => {
+		const candidates = pageFactCandidates(
+			"A washed SL28 and SL34 blend grown at 1,900 - 2,100 masl."
+		);
+		expect(candidates.variety).toEqual(["SL28", "SL34"]);
+		expect(candidates.elevation).toEqual(["1,900 - 2,100 masl"]);
+	});
+});
+
+describe("verifyPageFacts (ADR-0005)", () => {
+	// Merit "Ojo de Agua" and Sey "Huila Decaffeinated" as the determinism
+	// runs returned them (audit §4): the picks Jev returns over that page.
+	test("picks pass their field's shape into the stored facts", () => {
+		expect(
+			verifyPageFacts({
+				elevation: "1500-1730masl",
+				process: "Washed",
+				producer: "Finca Ojo de Agua",
+				region: "Huila",
+				roastLevel: "Espresso",
+				tastingNotes: ["Prunes", "Fig Danish", "Nutmeg"],
+				variety: "Caturra, Colombia",
+			})
 		).toEqual({
 			elevation: "1500-1730masl",
 			process: "Washed",
@@ -1700,47 +1746,38 @@ describe("verifyPageFacts (ADR-0005)", () => {
 		});
 	});
 
-	test("wrong-field values on the page still fail: Espresso is not a roast, Ultra Light is not a level", () => {
-		expect(verifyPageFacts({ roastLevel: "Espresso" }, markdown)).toEqual({});
-		expect(verifyPageFacts({ roastLevel: "Ultra Light" }, markdown)).toEqual(
-			{}
-		);
-		expect(verifyPageFacts({ roastLevel: "Light" }, "Roast: Light")).toEqual({
+	test("wrong-field picks still fail: Espresso is not a roast, Ultra Light is not a level", () => {
+		expect(verifyPageFacts({ roastLevel: "Espresso" })).toEqual({});
+		expect(verifyPageFacts({ roastLevel: "Ultra Light" })).toEqual({});
+		expect(verifyPageFacts({ roastLevel: "Light" })).toEqual({
 			roastLevel: "Light",
 		});
 	});
 
-	test("a paragraph under process yields only the process terms it names", () => {
+	test("a paragraph pick yields only the process terms it names", () => {
 		expect(
-			verifyPageFacts(
-				{
-					process:
-						"Hand-picked at peak ripeness. Floated to remove defects, then fully washed and dried on raised beds over three weeks.",
-				},
-				markdown
-			)
+			verifyPageFacts({
+				process:
+					"Hand-picked at peak ripeness. Floated to remove defects, then fully washed and dried on raised beds over three weeks.",
+			})
 		).toEqual({ process: "fully washed" });
 	});
 
-	test("placeholders, paraphrases and a country under region are dropped", () => {
+	test("placeholders, prose and a country under region are dropped", () => {
 		expect(
-			verifyPageFacts(
-				{
-					elevation: "Not specified",
-					producer: "the Ojo de Agua farm",
-					region: "Colombia",
-					variety: "Caturra",
-				},
-				markdown
-			)
+			verifyPageFacts({
+				elevation: "Not specified",
+				producer: "the Ojo de Agua farm",
+				region: "Colombia",
+				variety: "Caturra",
+			})
 		).toEqual({ variety: "Caturra" });
-		expect(verifyPageFacts(null, markdown)).toEqual({});
-		expect(verifyPageFacts("Washed", markdown)).toEqual({});
+		expect(verifyPageFacts({})).toEqual({});
 	});
 
-	test("a note's lead-in is stripped before the page check", () => {
-		expect(
-			verifyPageFacts({ tastingNotes: ["Notes of Cherry"] }, "Notes of Cherry")
-		).toEqual({ tastingNotes: ["Cherry"] });
+	test("a note's lead-in is stripped", () => {
+		expect(verifyPageFacts({ tastingNotes: ["Notes of Cherry"] })).toEqual({
+			tastingNotes: ["Cherry"],
+		});
 	});
 });

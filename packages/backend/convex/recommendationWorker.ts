@@ -104,12 +104,13 @@ const enrich = async (
 		}
 		try {
 			// Only a server-resolved catalog URL is fetched. User notes never reach
-			// Firecrawl. Its extraction picks values off this page; every value is
-			// verified against the page text before it can become evidence, and
-			// the verified facts land on the product too (ADR-0005), so the lot
-			// page shows them and the next run skips the read.
+			// Firecrawl. Its markdown is scanned for candidate spans; Jev picks one
+			// per field; every pick is a span of the page and is verified through
+			// the shared per-field shapes before it can become evidence, and the
+			// verified facts land on the product too (ADR-0005), so the lot page
+			// shows them and the next run skips the read.
 			// oxlint-disable-next-line no-await-in-loop -- bound concurrent scrapes
-			const page = await readPageFacts(ctx, candidate.url);
+			const page = await readPageFacts(ctx, candidate.url, reserved.known);
 			// oxlint-disable-next-line no-await-in-loop -- one settled fact set per lot
 			await ctx.runMutation(internal.pageFacts.store, {
 				facts: page.facts,
