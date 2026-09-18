@@ -725,6 +725,18 @@ const NON_WORD_TAIL = /[^\p{L}\p{N})]+$/u;
  * "Footnotes of the harvest" is not a `notes of` match.
  */
 const NOTES_PATTERNS: readonly { needsList: boolean; pattern: RegExp }[] = [
+	// A labelled field line ("Tasting Notes: a, b, & c", "Notes: a, b, c") at
+	// the start of a block, the way Proud Mary and PT's write every product.
+	// It is the roaster's structured field, so it comes before the prose
+	// lead-ins: the same copy often mentions "notes of" later in the story.
+	// "Brewing notes:" is guidance, not descriptors; the label must open the
+	// line. The value may sit on the next line (a <br> inside the label), but
+	// a next line that is itself a "Label:" field means the notes are empty.
+	{
+		needsList: false,
+		pattern:
+			/^(?:(?:tasting|flavou?r|cup(?:ping)?) )?notes?[^\S\n]*:[^\S\n]*\n?[^\S\n]*(?<clause>(?![^\n]{0,40}:)[^\n]{3,200})/imu,
+	},
 	// Ruby lists descriptors dash-separated in their own block; the newline
 	// (not the boilerplate that follows) ends the capture. Blossom writes the
 	// same lead-in as prose, which boundProse() cuts at the sentence end.

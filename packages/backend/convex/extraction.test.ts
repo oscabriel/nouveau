@@ -1181,6 +1181,65 @@ describe("extractRoasterNotes", () => {
 		).toBe("cherry, chocolate");
 	});
 
+	// A labelled line ("Tasting Notes: a, b, & c") is the roaster's own
+	// structured field, so it wins over any descriptor prose that follows.
+	// Proud Mary and PT's write every product this way; 320 of their 955
+	// feed products carried one and none were read.
+	test("reads a labelled Tasting Notes line (Proud Mary)", () => {
+		expect(
+			extractRoasterNotes(
+				"Tasting Notes: Chocolate, floral, blackberry, peach, & winey\nProducer: Javier Fernandez\nFarm: Los Tanques\nVarietal: Catuai",
+				[]
+			)
+		).toBe("Chocolate, floral, blackberry, peach, & winey");
+	});
+
+	test("a labelled Notes line wins over later notes-of prose (PT's)", () => {
+		expect(
+			extractRoasterNotes(
+				"Region: Loja Province\nRoast: Light-Medium\nNotes: Black Cherry, Cocoa Powder, Kumquat\nThe Story\nWe found notes of kumquat, dragonfruit, and nutmeg in the cup, alongside black cherry acidity.",
+				[]
+			)
+		).toBe("Black Cherry, Cocoa Powder, Kumquat");
+	});
+
+	test("a labelled line keeps a comma-free tail for the store boundary to drop", () => {
+		expect(
+			extractRoasterNotes(
+				"Notes: Chocolate fudge, caramel, date, with a big syrupy body\nHumbler is a coffee made by the people, for the people!",
+				[]
+			)
+		).toBe("Chocolate fudge, caramel, date, with a big syrupy body");
+	});
+
+	test("a labelled line that is prose stops at the sentence end", () => {
+		expect(
+			extractRoasterNotes(
+				"Tasting Notes: Fragrance and aroma of cherry and bergamot orange. In the cup powerful floral and citrus notes to be expected from a washed geisha.",
+				[]
+			)
+		).toBe("Fragrance and aroma of cherry and bergamot orange");
+	});
+
+	test("a labelled value on the next line (a <br> inside the label) is read", () => {
+		expect(
+			extractRoasterNotes(
+				"Tasting Notes:\nMelon, tropical, milk chocolate, floral and complex\nProcessing: Natural Anaerobic 48hrs",
+				[]
+			)
+		).toBe("Melon, tropical, milk chocolate, floral and complex");
+	});
+
+	test("the label must start its line and be a notes label", () => {
+		// "Brewing notes:" is guidance, and an empty label carries nothing.
+		expect(
+			extractRoasterNotes("Brewing notes: 15g to 250g of water.", [])
+		).toBeNull();
+		expect(
+			extractRoasterNotes("Notes:\nProducer: Hartmann Family", [])
+		).toBeNull();
+	});
+
 	test("falls back to the Flavor Profile tag", () => {
 		expect(
 			extractRoasterNotes("A comfortable daily brew.", [
