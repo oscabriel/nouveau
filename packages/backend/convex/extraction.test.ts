@@ -15,6 +15,7 @@ import {
 	SHOPIFY_FETCH_HEADERS,
 	shopifyProductsUrl,
 	stripHtml,
+	themeNotesFromHtml,
 	verifyPageFacts,
 	walkFeedPages,
 } from "./extraction";
@@ -1241,6 +1242,63 @@ describe("extractRoasterNotes", () => {
 		).toBeNull();
 	});
 
+	// A4: a same-line value keeps a colon inside it; the "next line is itself
+	// a Label:" rule applies only when the value sits on the next line.
+	test("a same-line labelled value keeps a colon inside a list item", () => {
+		expect(
+			extractRoasterNotes(
+				"Notes: Milk chocolate, orange & caramel (12 oz: whole bean)",
+				[]
+			)
+		).toBe("Milk chocolate, orange & caramel (12 oz: whole bean)");
+	});
+
+	test("a same-line value that opens with its own Label: is not the notes", () => {
+		expect(extractRoasterNotes("Notes: Espresso: 1:2.5", [])).toBeNull();
+	});
+
+	test("a next-line value is read unless it is itself a label line", () => {
+		expect(extractRoasterNotes("Tasting Notes:\nCherry, Cocoa", [])).toBe(
+			"Cherry, Cocoa"
+		);
+		expect(
+			extractRoasterNotes("Tasting Notes:\nProducer: Hartmann Family", [])
+		).toBeNull();
+	});
+
+	test("a cupping score under a notes label is not a note", () => {
+		expect(extractRoasterNotes("Cupping Notes: 86 points", [])).toBeNull();
+	});
+
+	// A5: "we find" opening a that/this/it clause is narrative, and a later
+	// "notes of" list beats an earlier "we find" list.
+	test("'we find that ...' prose is not a descriptor list", () => {
+		expect(
+			extractRoasterNotes(
+				"Each season we find that this coffee, grown at 1900m, is a great choice for espresso.",
+				[]
+			)
+		).toBeNull();
+	});
+
+	test("a 'notes of' list wins over an earlier 'we find' list", () => {
+		expect(
+			extractRoasterNotes(
+				"Every year we find new lots, new friends and new stories in Huila. Expect notes of plum, cacao and jasmine.",
+				[]
+			)
+		).toBe("plum, cacao and jasmine");
+	});
+
+	test("'we find' after a varied subject still reads the list (Sey)", () => {
+		expect(
+			extractRoasterNotes(
+				"In this Red Gesha separation we find raspberry, lime and hibiscus.",
+				[]
+			)
+		).toBe("raspberry, lime and hibiscus");
+	});
+
 	// Sey varies the lead-in per lot: "In this cup we find", "In this year's
 	// cup we find", "In this Red Gesha separation we find". 42 of its 181
 	// noteless lots on the live feed were this shape.
@@ -1918,5 +1976,136 @@ describe("pageTextFromHtml", () => {
 		);
 		expect(text).not.toContain("Holiday");
 		expect(text).not.toContain("Privacy");
+	});
+
+	// A1: six ordinary notes run past the 80-character fact cap; the
+	// labelled notes line has its own cap and still leads the candidates.
+	test("a six-note theme element leads the candidates whole (A1)", () => {
+		const text = pageTextFromHtml(
+			`<html><body>${chrome}<main id="MainContent"><h1>Colombia El Diviso</h1><div class="tasting-notes"><span class="note">Blueberry Muffin</span><span class="note">Milk Chocolate</span><span class="note">Candied Orange Peel</span><span class="note">Brown Sugar</span><span class="note">Vanilla Bean</span><span class="note">Toasted Hazelnut</span></div>${story}</main></body></html>`
+		);
+		expect(pageFactCandidates(text ?? "").tastingNotes.slice(0, 6)).toEqual([
+			"Blueberry Muffin",
+			"Milk Chocolate",
+			"Candied Orange Peel",
+			"Brown Sugar",
+			"Vanilla Bean",
+			"Toasted Hazelnut",
+		]);
+	});
+
+	test("a labelled notes line longer than the fact cap is still split into notes (A1)", () => {
+		const candidates = pageFactCandidates(
+			"Tasting notes: Blueberry Muffin, Milk Chocolate, Candied Orange Peel, Brown Sugar, Vanilla Bean, Toasted Hazelnut\nRoast: Light"
+		);
+		expect(candidates.tastingNotes).toEqual([
+			"Blueberry Muffin",
+			"Milk Chocolate",
+			"Candied Orange Peel",
+			"Brown Sugar",
+			"Vanilla Bean",
+			"Toasted Hazelnut",
+		]);
+	});
+
+	// A2: another product's block is cut before the notes scan and before
+	// the text is read, ancestors included.
+	const upsell =
+		'<section class="related-products"><h2>You may also like</h2><div class="card"><a>Kenya Gatomboya</a><span class="tasting-notes"><span>Blackcurrant</span><span>Tomato Leaf</span></span></div></section>';
+
+	test("a notes element inside a related-products section is not this coffee's (A2)", () => {
+		const html = `<html><body>${chrome}<main>${story}${upsell}</main></body></html>`;
+		expect(themeNotesFromHtml(html)).toEqual([]);
+		const text = pageTextFromHtml(html);
+		expect(text).not.toBeNull();
+		expect(text).not.toContain("Blackcurrant");
+		expect(text).not.toContain("Kenya Gatomboya");
+		expect(text).toContain("Fredy Perez");
+	});
+
+	test("an upsell ancestor marked by id alone is cut too (A2)", () => {
+		const html = `<html><body>${chrome}<main>${story}<div id="related-products"><div><p class="tasting-notes">Jasmine, Lemon</p></div></div></main></body></html>`;
+		expect(themeNotesFromHtml(html)).toEqual([]);
+		expect(pageTextFromHtml(html)).not.toContain("Jasmine");
+	});
+
+	test("the real notes element before an upsell section still leads (A2)", () => {
+		const text = pageTextFromHtml(
+			`<html><body>${chrome}<main><p class="tasting-notes"><span>Tart Apple</span><span>Pecan</span></p>${story}${upsell}</main></body></html>`
+		);
+		expect(text?.startsWith("Tasting notes: Tart Apple, Pecan")).toBe(true);
+		expect(text).not.toContain("Blackcurrant");
+	});
+
+	// A3: the text is main's when the page has one; a mega-menu in divs
+	// outside it never reaches the window.
+	const megaMenu = `<div class="mega-menu" role="navigation"><div>Coffee</div>${"<div><a>Ethiopia Guji Natural</a> Notes of peach, bergamot and honey</div>".repeat(20)}</div>`;
+
+	test("main is read instead of the whole document when the page has one (A3)", () => {
+		const text = pageTextFromHtml(
+			`<html><body>${chrome}${megaMenu}<div class="drawer">${"Nothing but menu copy that runs on and on. ".repeat(10)}</div><main id="MainContent">${story}</main><div role="dialog">Added to cart</div></body></html>`
+		);
+		expect(text).not.toBeNull();
+		expect(text).toContain("Fredy Perez");
+		expect(text).not.toContain("Ethiopia Guji Natural");
+		expect(text).not.toContain("menu copy");
+		expect(text).not.toContain("Added to cart");
+	});
+
+	test("the whole document is read when there is no main (A3)", () => {
+		const text = pageTextFromHtml(
+			`<html><body>${chrome}<div class="product">${story}</div></body></html>`
+		);
+		expect(text).toContain("Fredy Perez");
+	});
+
+	test("the whole document is read when main is a shell (A3)", () => {
+		const text = pageTextFromHtml(
+			`<html><body>${chrome}<main id="MainContent"><div id="app"></div></main><div class="product">${story}</div></body></html>`
+		);
+		expect(text).toContain("Fredy Perez");
+	});
+
+	test("template, noscript, svg and role dialog or navigation elements are dropped (A3)", () => {
+		const text = pageTextFromHtml(
+			`<html><body><template><p>Template copy</p></template><noscript>Enable JavaScript</noscript><svg><title>Icon title</title></svg><div role="navigation"><a>Menu link</a></div><div role="dialog"><p>Dialog copy</p></div>${story}</body></html>`
+		);
+		expect(text).toContain("Fredy Perez");
+		for (const dropped of [
+			"Template copy",
+			"Enable JavaScript",
+			"Icon title",
+			"Menu link",
+			"Dialog copy",
+		]) {
+			expect(text).not.toContain(dropped);
+		}
+	});
+
+	// A8: class tokens, not substrings, and either quote style.
+	test("a grid-layout notes class is a notes element and 'discard' is not an upsell class (A8)", () => {
+		expect(
+			themeNotesFromHtml(
+				'<div class="product-grid__tasting-notes"><span>Cherry</span><span>Cocoa</span></div>'
+			)
+		).toEqual(["Cherry", "Cocoa"]);
+		expect(
+			themeNotesFromHtml(
+				'<div class="discard tasting-notes"><span>Cherry</span><span>Cocoa</span></div>'
+			)
+		).toEqual(["Cherry", "Cocoa"]);
+		expect(
+			themeNotesFromHtml(
+				'<div class="card tasting-notes"><span>Cherry</span><span>Cocoa</span></div>'
+			)
+		).toEqual([]);
+	});
+
+	test("a single-quoted class attribute is found (A8)", () => {
+		expect(
+			themeNotesFromHtml(
+				"<div class='tasting-notes'><span>Cherry</span><span>Cocoa</span></div>"
+			)
+		).toEqual(["Cherry", "Cocoa"]);
 	});
 });

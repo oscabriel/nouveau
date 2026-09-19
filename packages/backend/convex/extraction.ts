@@ -7,6 +7,7 @@ import { v } from "convex/values";
 
 import type { PageFacts } from "./lotFacts";
 import {
+	MAX_NOTES,
 	NOTE_SEPARATOR,
 	splitNotes,
 	verifyElevation,
@@ -125,6 +126,9 @@ const NAMED_ENTITIES: Record<string, string> = {
 const BLOCK_TAG =
 	/<\/?\s*(?:p|div|br|li|ul|ol|h[1-6]|blockquote|table|tr|td|th)\b[^>]*>/giu;
 
+/** Any tag, for stripping or turning into a line break. */
+const ANY_TAG = /<[^>]*>/gu;
+
 /** Elements whose text content is code, not prose; dropped whole. */
 const DROPPED_ELEMENT =
 	/<(?<tag>script|style)\b[^>]*>[\s\S]*?<\/\k<tag>\s*>/giu;
@@ -139,7 +143,7 @@ export const stripHtml = (html: string): string =>
 	html
 		.replaceAll(DROPPED_ELEMENT, "\n")
 		.replaceAll(BLOCK_TAG, "\n")
-		.replaceAll(/<[^>]*>/gu, " ")
+		.replaceAll(ANY_TAG, " ")
 		.replaceAll(
 			/&(?:amp|apos|gt|lt|nbsp|quot|#\d+|#x[0-9a-f]+);/giu,
 			(entity) => {
@@ -160,9 +164,13 @@ export const stripHtml = (html: string): string =>
 		.replaceAll(/\s*\n\s*/gu, "\n")
 		.trim();
 
-/** Page chrome whose text is never a fact about the coffee: dropped whole. */
+/**
+ * Page chrome whose text is never a fact about the coffee, plus the
+ * elements that carry no prose (template, noscript, svg): dropped whole.
+ * Script and style are stripHtml's own DROPPED_ELEMENT.
+ */
 const CHROME_ELEMENT =
-	/<(?<tag>header|nav|footer|aside)\b[^>]*>[\s\S]*?<\/\k<tag>\s*>/giu;
+	/<(?<tag>header|nav|footer|aside|template|noscript|svg)\b[^>]*>[\s\S]*?<\/\k<tag>\s*>/giu;
 
 /**
  * A page below this much text is a script shell (the theme renders
@@ -174,72 +182,154 @@ export const MIN_PAGE_TEXT_LENGTH = 200;
  * The opening tag of an element a theme dedicates to the coffee's notes
  * (Onyx `tasting-notes`, Counter Culture `tasting-notes--wrapper`,
  * Stumptown `product-flavor-profile__tasting-notes`, Intelligentsia
- * `pv-gallery__flavors`). A class that also says upsell, related or card is
- * another product's block and is skipped.
+ * `pv-gallery__flavors`), the class attribute in either quote style.
  */
 const NOTES_ELEMENT =
-	/<(?<tag>[a-z][a-z0-9]*)\b[^>]*\bclass="(?<classes>[^"]*(?:tast(?:e|ing)[-_]?notes?|flavou?r[-_]?(?:notes?|profile|s)\b)[^"]*)"[^>]*>/giu;
-const OTHER_PRODUCT_CLASS = /upsell|related|recommend|card|collection|grid/iu;
+	/<(?<tag>[a-z][a-z0-9-]*)\b[^>]*\bclass=(?<quote>["'])(?<classes>[^"']*(?:tast(?:e|ing)[-_]?notes?|flavou?r[-_]?(?:notes?|profile|s)\b)[^"']*)\k<quote>[^>]*>/giu;
+/**
+ * A class token (bounded by the start, the end, a space, a hyphen or an
+ * underscore) that says the element is another product's block, so a notes
+ * element carrying it is skipped: "card__tasting-notes" is an upsell card's,
+ * "discard" and "product-grid__tasting-notes" are not.
+ */
+const OTHER_PRODUCT_CLASS =
+	/(?:^|[\s_-])(?:upsells?|related|recommendations?|recommended|cross[-_]?sells?|cards?|collections?)(?=$|[\s_-])/iu;
+/**
+ * The class tokens (or custom element names) that mark a whole block as
+ * other products: the block is cut from the page before anything reads it.
+ * Only the tokens that always mean upsell qualify. "card", "grid" and
+ * "collection" stay out: Dawn wraps the product itself in `grid`, so cutting
+ * on those would drop the page's own description.
+ */
+const OTHER_PRODUCT_BLOCK =
+	/(?:^|[\s_-])(?:upsells?|related|recommendations?|recommended|cross[-_]?sells?|also[-_]?like|complementary)(?=$|[\s_-])/iu;
+/** A role that marks a menu or a modal: text a viewer opens, never the lot's. */
+const DROPPED_ROLE = /\brole\s*=\s*["']?(?:navigation|dialog)\b/iu;
+/** The class attribute of an opening tag, in either quote style. */
+const CLASS_ATTRIBUTE =
+	/\bclass\s*=\s*(?<quote>["'])(?<classes>[^"']*)\k<quote>/iu;
+/** The id attribute of an opening tag: a theme can mark its upsell section by id alone. */
+const ID_ATTRIBUTE = /\bid\s*=\s*(?<quote>["'])(?<id>[^"']*)\k<quote>/iu;
+/** An opening tag that carries a class, an id or a role: the only tags a block cut can start at. */
+const ATTRIBUTED_OPEN_TAG =
+	/<(?<tag>[a-z][a-z0-9-]*)\b(?<attributes>[^>]*\b(?:class|id|role)\s*=[^>]*)>/giu;
+/** The opening tag of the page's main element (Shopify: `<main id="MainContent">`). */
+const MAIN_OPEN_TAG = /<main\b[^>]*>/iu;
+const MAIN_CLOSE_TAG = /<\/main\s*>/giu;
 const NOTES_LABEL = /^(?:tast(?:e|ing)|flavou?r)\s*notes?$/iu;
-const ANY_TAG = /<\/?(?<name>[a-z][a-z0-9-]*)\b[^>]*>/giu;
+/** Every tag, opening or closing, with its name: the depth scanner. Reset lastIndex before use. */
+const TAG_SCANNER = /<\/?(?<name>[a-z][a-z0-9-]*)\b[^>]*>/giu;
 /** An element longer than this is a section, not a notes block. */
 const MAX_NOTES_ELEMENT_LENGTH = 4000;
+/** A dropped block (an upsell section, a menu drawer) is scanned for its close this far; unclosed within it, it stays. */
+const MAX_DROPPED_BLOCK_LENGTH = 200_000;
 /** Notes elements tried before giving up (an upsell block can sit first). */
 const MAX_NOTES_ELEMENTS = 3;
 
-/** The inner HTML of the element whose opening tag starts at `start`. */
-const elementInnerHtml = (
+/** Where an element's body starts and where the element ends, or null when the close is not within `maxLength`. */
+interface ElementSpan {
+	bodyEnd: number;
+	bodyStart: number;
+	end: number;
+}
+
+/**
+ * The span of the element whose opening tag `open` matched (its `tag`
+ * group, index and length), found by depth over same-named tags.
+ */
+const elementSpan = (
 	html: string,
-	tag: string,
-	start: number,
-	openLength: number
-): string => {
-	const scanner = new RegExp(ANY_TAG.source, "giu");
-	scanner.lastIndex = start + openLength;
-	const bodyStart = scanner.lastIndex;
+	open: RegExpExecArray,
+	maxLength: number
+): ElementSpan | null => {
+	const tag = (open.groups?.tag ?? "").toLowerCase();
+	const bodyStart = open.index + open[0].length;
+	TAG_SCANNER.lastIndex = bodyStart;
 	let depth = 1;
 	for (
-		let match = scanner.exec(html);
-		match !== null && match.index - bodyStart < MAX_NOTES_ELEMENT_LENGTH;
-		match = scanner.exec(html)
+		let match = TAG_SCANNER.exec(html);
+		match !== null && match.index - bodyStart < maxLength;
+		match = TAG_SCANNER.exec(html)
 	) {
 		if (match.groups?.name?.toLowerCase() !== tag) {
 			continue;
 		}
 		depth += match[0].startsWith("</") ? -1 : 1;
 		if (depth === 0) {
-			return html.slice(bodyStart, match.index);
+			return {
+				bodyEnd: match.index,
+				bodyStart,
+				end: match.index + match[0].length,
+			};
 		}
 	}
+	return null;
+};
+
+/** The inner HTML of the element `open` starts; the first cap's worth when it never closes. */
+const elementInnerHtml = (html: string, open: RegExpExecArray): string => {
+	const span = elementSpan(html, open, MAX_NOTES_ELEMENT_LENGTH);
+	if (span !== null) {
+		return html.slice(span.bodyStart, span.bodyEnd);
+	}
+	const bodyStart = open.index + open[0].length;
 	return html.slice(bodyStart, bodyStart + MAX_NOTES_ELEMENT_LENGTH);
 };
 
+/** Whether an opening tag starts a block the page read never sees. */
+const isDroppedBlock = (open: RegExpExecArray): boolean => {
+	const { attributes = "", tag = "" } = open.groups ?? {};
+	if (DROPPED_ROLE.test(attributes)) {
+		return true;
+	}
+	const classes = CLASS_ATTRIBUTE.exec(attributes)?.groups?.classes ?? "";
+	const id = ID_ATTRIBUTE.exec(attributes)?.groups?.id ?? "";
+	return (
+		OTHER_PRODUCT_BLOCK.test(classes) ||
+		OTHER_PRODUCT_BLOCK.test(id) ||
+		OTHER_PRODUCT_BLOCK.test(tag)
+	);
+};
+
 /**
- * The notes a theme's dedicated element carries, one per child element or
- * separator-split item, each through verifyNote; the block's own label
- * ("Tasting Notes") is not a note. Empty when the page has no such element.
+ * The HTML with every other-product block (an upsell or related-products
+ * section, ancestors included) and every menu or modal cut out whole, so
+ * neither the notes scan nor the page text sees another coffee's copy.
  */
-export const themeNotesFromHtml = (html: string): string[] => {
+const dropBlocks = (html: string): string => {
+	const kept: string[] = [];
+	let cursor = 0;
+	for (const open of html.matchAll(ATTRIBUTED_OPEN_TAG)) {
+		if (open.index < cursor || !isDroppedBlock(open)) {
+			continue;
+		}
+		const span = elementSpan(html, open, MAX_DROPPED_BLOCK_LENGTH);
+		if (span === null) {
+			continue;
+		}
+		kept.push(html.slice(cursor, open.index), "\n");
+		cursor = span.end;
+	}
+	kept.push(html.slice(cursor));
+	return kept.join("");
+};
+
+/** The notes of the first real notes element in HTML that dropBlocks has already reduced. */
+const themeNotesFromReducedHtml = (html: string): string[] => {
 	let tried = 0;
 	for (const match of html.matchAll(NOTES_ELEMENT)) {
-		const { classes = "", tag = "" } = match.groups ?? {};
-		if (OTHER_PRODUCT_CLASS.test(classes)) {
+		if (OTHER_PRODUCT_CLASS.test(match.groups?.classes ?? "")) {
 			continue;
 		}
 		tried += 1;
 		if (tried > MAX_NOTES_ELEMENTS) {
 			break;
 		}
-		const inner = elementInnerHtml(
-			html,
-			tag.toLowerCase(),
-			match.index,
-			match[0].length
-		);
+		const inner = elementInnerHtml(html, match);
 		// Every child element is its own line: a theme renders one note per
 		// span or div, and stripHtml would run inline spans together.
 		const notes = splitNotes(
-			stripHtml(inner.replaceAll(/<[^>]*>/gu, "\n")).replaceAll("\n", ", ")
+			stripHtml(inner.replaceAll(ANY_TAG, "\n")).replaceAll("\n", ", ")
 		).filter((note) => !NOTES_LABEL.test(note));
 		if (notes.length > 0) {
 			return notes;
@@ -249,20 +339,74 @@ export const themeNotesFromHtml = (html: string): string[] => {
 };
 
 /**
+ * The notes a theme's dedicated element carries, one per child element or
+ * separator-split item, each through verifyNote; the block's own label
+ * ("Tasting Notes") is not a note. An element inside an upsell or
+ * related-products block is another coffee's and is never read. Empty when
+ * the page has no such element.
+ */
+export const themeNotesFromHtml = (html: string): string[] =>
+	themeNotesFromReducedHtml(dropBlocks(html));
+
+/** The inner HTML of the document's main element, or null when it has none. */
+const mainInnerHtml = (html: string): string | null => {
+	const open = MAIN_OPEN_TAG.exec(html);
+	if (open === null) {
+		return null;
+	}
+	let close: RegExpExecArray | null = null;
+	for (const match of html.matchAll(MAIN_CLOSE_TAG)) {
+		close = match;
+	}
+	const bodyStart = open.index + open[0].length;
+	return close === null || close.index < bodyStart
+		? html.slice(bodyStart)
+		: html.slice(bodyStart, close.index);
+};
+
+/** Chrome, upsell blocks and menus cut out: the HTML the page read sees. */
+const reduceHtml = (html: string): string =>
+	dropBlocks(html.replaceAll(CHROME_ELEMENT, "\n"));
+
+/** The reduced HTML a page read scans and the block text it yields. */
+interface ReducedPage {
+	html: string;
+	text: string;
+}
+
+/** Main's reduced HTML and text when main carries a page's worth, else the whole document's. */
+const reducePage = (html: string): ReducedPage => {
+	const main = mainInnerHtml(html);
+	if (main !== null) {
+		const reduced = reduceHtml(main);
+		const text = stripHtml(reduced);
+		if (text.length >= MIN_PAGE_TEXT_LENGTH) {
+			return { html: reduced, text };
+		}
+	}
+	const reduced = reduceHtml(html);
+	return { html: reduced, text: stripHtml(reduced) };
+};
+
+/**
  * A product page as the shop serves it, reduced to the block text the page
- * candidate finder reads: chrome (header, nav, footer, aside) dropped, then
- * stripHtml. Every roaster checked (ADR-0008) renders its notes server-side,
- * so this is the same text Firecrawl's markdown carries, without the credit.
- * When the theme marks its notes element, those notes open the text as a
- * labelled line, so they lead the candidates instead of trailing the nav
- * lines that fill the cap. Null for a shell page.
+ * candidate finder reads. The main element is read when the page has one
+ * (Shopify themes wrap the product in `<main id="MainContent">`), so a
+ * mega-menu built from divs never pushes the description out of Jev's
+ * window; the whole document is read when there is no main or main is a
+ * shell. Chrome, other-product blocks and menus are cut, then stripHtml.
+ * Every roaster checked (ADR-0008) renders its notes server-side, so this
+ * is the same text Firecrawl's markdown carries, without the credit. When
+ * the theme marks its notes element, those notes open the text as a
+ * labelled line, so they lead the candidates instead of trailing the lines
+ * that fill the cap. Null for a shell page.
  */
 export const pageTextFromHtml = (html: string): string | null => {
-	const text = stripHtml(html.replaceAll(CHROME_ELEMENT, "\n"));
+	const { html: reduced, text } = reducePage(html);
 	if (text.length < MIN_PAGE_TEXT_LENGTH) {
 		return null;
 	}
-	const themeNotes = themeNotesFromHtml(html);
+	const themeNotes = themeNotesFromReducedHtml(reduced);
 	return themeNotes.length === 0
 		? text
 		: `Tasting notes: ${themeNotes.join(", ")}\n${text}`;
@@ -840,10 +984,13 @@ const NOTES_PATTERNS: readonly { needsList: boolean; pattern: RegExp }[] = [
 	// "Brewing notes:" is guidance, not descriptors; the label must open the
 	// line. The value may sit on the next line (a <br> inside the label), but
 	// a next line that is itself a "Label:" field means the notes are empty.
+	// A same-line value keeps a colon inside it ("caramel (12 oz: whole
+	// bean)"); only a value that opens with its own "Label:" ("Espresso:
+	// 1:2.5") is rejected. A number with a unit ("86 points") is a score.
 	{
 		needsList: false,
 		pattern:
-			/^(?:(?:tasting|flavou?r|cup(?:ping)?) )?notes?[^\S\n]*:[^\S\n]*\n?[^\S\n]*(?<clause>(?![^\n]{0,40}:)[^\n]{3,200})/imu,
+			/^(?:(?:tasting|flavou?r|cup(?:ping)?) )?notes?[^\S\n]*:[^\S\n]*(?:\n[^\S\n]*(?![^\n]{0,40}:)|(?!\p{L}[\p{L} '’/-]{0,30}:))(?<clause>(?!\s)(?!\d[\d.,]*\s*\p{L}+[^\S\n]*$)[^\n]{3,200})/imu,
 	},
 	// Ruby lists descriptors dash-separated in their own block; the newline
 	// (not the boilerplate that follows) ends the capture. Blossom writes the
@@ -857,13 +1004,6 @@ const NOTES_PATTERNS: readonly { needsList: boolean; pattern: RegExp }[] = [
 		pattern:
 			/\bin\s+the\s+cup,?\s+we\s+(?:find|taste|get)\s+(?<clause>[^.!?\n]{5,200})/iu,
 	},
-	// Sey varies the subject ("In this cup we find", "In this year's cup we
-	// find", "In this Red Gesha separation we find"); "we find" is also
-	// prose ("the best coffees we find anywhere"), so a list is required.
-	{
-		needsList: true,
-		pattern: /\bwe\s+find\s+(?<clause>[^.!?\n]{5,200})/iu,
-	},
 	{
 		needsList: false,
 		pattern:
@@ -872,6 +1012,17 @@ const NOTES_PATTERNS: readonly { needsList: boolean; pattern: RegExp }[] = [
 	{
 		needsList: false,
 		pattern: /\bflavors\s+of\s+(?<clause>[^\u2014\u2013.!?\n]{5,160})/iu,
+	},
+	// Sey varies the subject ("In this cup we find", "In this year's cup we
+	// find", "In this Red Gesha separation we find"); "we find" is also
+	// prose ("the best coffees we find anywhere"), so a list is required and
+	// a clause that opens with a function word ("we find that this coffee,
+	// grown at 1900m, is") is narrative. It sits after the "notes of" family
+	// so a real "notes of" list later in the same copy wins.
+	{
+		needsList: true,
+		pattern:
+			/\bwe\s+find\s+(?!(?:that|this|it|the|these|those|our|ourselves)\b)(?<clause>[^.!?\n]{5,200})/iu,
 	},
 ];
 
@@ -1747,14 +1898,24 @@ const PAGE_LABEL_ONLY =
 const MAX_PAGE_CANDIDATE_LENGTH = 80;
 /** A bare note list line ("Prunes • Fig Danish • Nutmeg") past this is prose. */
 const MAX_NOTE_LINE_LENGTH = 120;
+/** A note with its separator runs about this long ("Candied Orange Peel, " is 21). */
+const NOTE_ITEM_LENGTH = 25;
+/** A notes-labelled value past this is prose, not a list of up to MAX_NOTES notes. */
+const MAX_LABELLED_NOTES_LENGTH = MAX_NOTES * NOTE_ITEM_LENGTH;
 
-/** A line's captured value, cut at a pipe and trimmed. */
-const pageValue = (raw: string): string | null => {
+/** The value cap a label allows: a notes list runs past the fact cap. */
+const labelCap = (label: string): number =>
+	PAGE_NOTES_KEY.test(label)
+		? MAX_LABELLED_NOTES_LENGTH
+		: MAX_PAGE_CANDIDATE_LENGTH;
+
+/** A line's captured value, cut at a pipe and trimmed; null past the cap. */
+const pageValue = (raw: string, maxLength: number): string | null => {
 	const pipe = raw.indexOf("|");
 	const text = (pipe === -1 ? raw : raw.slice(0, pipe))
 		.trim()
 		.replaceAll(/\s+/gu, " ");
-	return text === "" || text.length > MAX_PAGE_CANDIDATE_LENGTH ? null : text;
+	return text === "" || text.length > maxLength ? null : text;
 };
 
 /** Route one labelled value into its field's candidate list. */
@@ -1848,22 +2009,25 @@ export const pageFactCandidates = (markdown: string): PageFactCandidates => {
 	for (const [index, line] of lines.entries()) {
 		const labelled = PAGE_LABEL_LINE.exec(line)?.groups;
 		if (labelled !== undefined) {
+			const label = (labelled.label ?? "").trim();
 			pushLabelled(
 				candidates,
-				(labelled.label ?? "").trim(),
-				pageValue(labelled.value ?? "")
+				label,
+				pageValue(labelled.value ?? "", labelCap(label))
 			);
 			continue;
 		}
 		const labelOnly = PAGE_LABEL_ONLY.exec(line)?.groups;
 		const next = lines[index + 1] ?? "";
 		if (labelOnly !== undefined && next !== "") {
-			pushLabelled(candidates, (labelOnly.label ?? "").trim(), pageValue(next));
+			const label = (labelOnly.label ?? "").trim();
+			pushLabelled(candidates, label, pageValue(next, labelCap(label)));
 			continue;
 		}
 		const bare = PAGE_BARE_LABEL.exec(line)?.groups;
 		if (bare !== undefined && next !== "") {
-			pushLabelled(candidates, (bare.label ?? "").trim(), pageValue(next));
+			const label = (bare.label ?? "").trim();
+			pushLabelled(candidates, label, pageValue(next, labelCap(label)));
 			continue;
 		}
 		// A bare list line is note candidates when its parts are note-shaped.
