@@ -1909,8 +1909,11 @@ const MAX_NOTE_LINE_LENGTH = 120;
  * Fruit, Citrus", "Flavor Notes - Cherry". A bare header ("Tasting Notes",
  * "NOTES") has no list and is not a note line.
  */
-const NOTES_LEAD =
-	/^(?:(?:tasting|flavou?r|cupping)\s+notes?|notes?|flavou?rs)\b\s*(?:[:|–—-]|of\b)\s*(?=\S)/iu;
+const NOTES_WORD = "(?:tasting|flavou?r|cupping)\\s+notes?|notes?|flavou?rs";
+const NOTES_LEAD = new RegExp(
+	`^(?:${NOTES_WORD})\\b\\s*(?:[:|–—-]|of\\b)\\s*(?=\\S)`,
+	"iu"
+);
 /**
  * The label vocabulary a page line can lead with, in any case, with or
  * without a colon (Regalia writes "Process Washed"; La Colombe "COOP/FARM :
@@ -1919,9 +1922,18 @@ const NOTES_LEAD =
 const PAGE_LABEL_WORD =
 	"process(?:ing)?(?:\\s+method)?|roast(?:\\s+level|\\s+profile)?|variet(?:y|al|ies|als)|cultivar|growing\\s+region|sub-?region|micro-?region|region|location|zone|district|woreda|appellation|origins?|elevation|altitude?|producers?|farms?|farmers?|washing\\s+station|mill|co-?op(?:erative)?|estate|growers?|produced\\s+by";
 const PAGE_LABEL_LEAD = new RegExp(
-	`^(?:(?:${PAGE_LABEL_WORD})\\b\\s*[/&]?\\s*)+(?:[:|–—-]\\s*)?(?=\\S)`,
+	`^[#>*_\\s|~-]*(?:${PAGE_LABEL_WORD})\\b\\s*(?:[/&]\\s*(?:${PAGE_LABEL_WORD})\\b\\s*)*(?:[:|–—-]\\s*)?(?=\\S)`,
 	"iu"
 );
+/**
+ * Markdown junk ahead of a line and a table row's trailing cells, tolerated
+ * while Firecrawl's markdown is still the fallback source (ADR-0010 piece 3
+ * makes it HTML): "**Region:** Huila", "| Producer | Finca Ojo de Agua |".
+ */
+const MARKDOWN_LEAD = /^[#>*_\s|~-]+/u;
+const MARKDOWN_TAIL = /\s*\*+\s*$/u;
+/** A markdown table row opens with a pipe; an inline pipe ("Single-Origin | Marcala") is the roaster's separator. */
+const TABLE_ROW = /^\s*\|/u;
 /** Sentence punctuation with more text after it marks prose, never a note list. */
 const SENTENCE_PUNCTUATION = /[.!?]./u;
 
@@ -1990,9 +2002,17 @@ const VARIETY_TERM =
 /** A notes lead mid-line: "look for notes of red plum, brown sugar" (Coava). */
 const NOTES_LEAD_ANYWHERE = /\b(?:notes?|flavou?rs?|hints?|aromas?)\s+of\s+/iu;
 
-/** The picked line without its label lead. */
-const stripLabel = (line: string): string =>
-	line.replace(PAGE_LABEL_LEAD, "").trim();
+/** The picked line without its label lead, markdown emphasis or a table row's other cells. */
+const stripLabel = (line: string): string => {
+	const value = line
+		.replace(PAGE_LABEL_LEAD, "")
+		.replace(MARKDOWN_LEAD, "")
+		.trim();
+	const pipe = TABLE_ROW.test(line) ? value.indexOf("|") : -1;
+	return (pipe === -1 ? value : value.slice(0, pipe))
+		.replace(MARKDOWN_TAIL, "")
+		.trim();
+};
 
 /** The roast level on the line: a labelled or bare level, else "light roast" in prose. */
 const cutRoast = (line: string): string | undefined => {
@@ -2042,8 +2062,7 @@ const cutProducer = (line: string): string | undefined => {
 };
 
 /** A notes header with nothing after it ("Tasting Notes", "NOTES"). */
-const NOTES_HEADER =
-	/^(?:(?:tasting|flavou?r|cupping)\s+notes?|notes?|flavou?rs)$/iu;
+const NOTES_HEADER = new RegExp(`^(?:${NOTES_WORD})$`, "iu");
 
 /** The notes on the line: the list after its lead, split; a bare header has none. */
 const cutNotes = (line: string): string[] => {
@@ -2118,12 +2137,8 @@ export const verifyPageFacts = (picks: PageFacts): PageFacts => {
  * locates, code cuts, the verifier decides; a line is never stored whole.
  */
 export const pageFactsFromPicks = (picks: PageFacts): PageFacts => {
-	const cut: PageFacts = {};
-	const processTerms =
-		picks.process === undefined ? [] : findProcesses(picks.process);
-	if (processTerms.length > 0) {
-		cut.process = processTerms.join(", ");
-	}
+	// Process needs no cut of its own: the verifier keeps every term on the line.
+	const cut: PageFacts = { process: picks.process };
 	const roastLevel =
 		picks.roastLevel === undefined ? undefined : cutRoast(picks.roastLevel);
 	if (roastLevel !== undefined) {

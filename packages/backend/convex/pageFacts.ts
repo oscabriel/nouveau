@@ -93,7 +93,7 @@ const firecrawl = new FirecrawlClient(components.firecrawl);
  * tokens for state; this stays far below it. The options are lines of the
  * same head, so the cap bounds them too (ADR-0010).
  */
-export const JEV_STATE_LIMIT = 12_000;
+const JEV_STATE_LIMIT = 12_000;
 /** The escape-hatch option on every field Choice. */
 const NONE_OPTION = "none";
 /** A Noul at or above this is a yes. */
@@ -167,9 +167,25 @@ const coffeePhrase = (name: string): string =>
 const coffeeLine = (name: string): string =>
 	name === "" ? "" : `Coffee: ${name}\n`;
 
-/** The head of the page text that fits Jev's state beside the lot's name: the lines Jev can pick from. */
-export const pageHead = (pageText: string, name: string): string =>
-	pageText.slice(0, JEV_STATE_LIMIT - coffeeLine(name).length);
+/**
+ * The head of the page text that fits Jev's state beside the lot's name:
+ * the lines Jev can pick from. A cut that lands mid-line drops the
+ * fragment, so no option is part of a line.
+ */
+export const pageHead = (pageText: string, name: string): string => {
+	const limit = JEV_STATE_LIMIT - coffeeLine(name).length;
+	if (pageText.length <= limit) {
+		return pageText;
+	}
+	const head = pageText.slice(0, limit);
+	return head.slice(0, Math.max(0, head.lastIndexOf("\n")));
+};
+
+/** The Choice options: the page's lines, minus one that spells the hatch, then the hatch. */
+const choiceOptions = (elements: PageElements): string[] => [
+	...elements.lines.filter((line) => line !== NONE_OPTION),
+	NONE_OPTION,
+];
 
 /** The state Jev reads: the lot's name first, then the head of the page text. */
 export const pageJevState = (pageText: string, name: string): string =>
@@ -190,9 +206,10 @@ export const pageJevQuestions = (
 ): Record<string, JevQuestion> => {
 	const coffee = coffeePhrase(name);
 	const questions: Record<string, JevQuestion> = {};
-	if (elements.lines.length > 0) {
+	const lines = choiceOptions(elements);
+	if (lines.length > 1) {
 		const options = {
-			...Object.fromEntries(elements.lines.map((line) => [line, null])),
+			...Object.fromEntries(lines.map((line) => [line, null])),
 			[NONE_OPTION]: "The page does not state this about this specific coffee.",
 		};
 		for (const [field, instructions] of CHOICE_FIELDS) {
@@ -232,10 +249,10 @@ const picksFromAnswers = (
 	sentences: readonly string[]
 ): { facts: PageFacts; sentences: string[] } => {
 	const picks: PageFacts = {};
-	const options = [...elements.lines, NONE_OPTION];
+	const options = choiceOptions(elements);
 	for (const [field] of CHOICE_FIELDS) {
 		const chosen =
-			elements.lines.length === 0 ? null : jevChoice(answers[field], options);
+			options.length === 1 ? null : jevChoice(answers[field], options);
 		if (chosen === null || chosen.choice === NONE_OPTION) {
 			continue;
 		}

@@ -22,7 +22,7 @@ import {
 } from "./extraction";
 import probePagesJson from "./fixtures/probePages.json";
 import type { PageFacts } from "./lotFacts";
-import { JEV_STATE_LIMIT } from "./pageFacts";
+import { pageHead } from "./pageFacts";
 
 interface FeedProduct {
 	body_html?: string;
@@ -1978,6 +1978,22 @@ describe("pageFactsFromPicks (ADR-0010)", () => {
 		expect(pageFactsFromPicks({ producer: "Farmhouse Collective" })).toEqual({
 			producer: "Farmhouse Collective",
 		});
+		// Labels repeat only through a slash or ampersand: "Farmers" is one lead.
+		expect(
+			pageFactsFromPicks({ producer: "Farmers Cooperative Kata Muduga" })
+		).toEqual({ producer: "Cooperative Kata Muduga" });
+	});
+
+	test("markdown from the Firecrawl fallback: emphasis and table cells stay out of the value", () => {
+		expect(pageFactsFromPicks({ region: "**Region:** Huila" })).toEqual({
+			region: "Huila",
+		});
+		expect(
+			pageFactsFromPicks({ producer: "| Producer | Finca Ojo de Agua |" })
+		).toEqual({ producer: "Finca Ojo de Agua" });
+		expect(pageFactsFromPicks({ roastLevel: "- Roast: Light" })).toEqual({
+			roastLevel: "Light",
+		});
 	});
 
 	test("a note line is split after its lead, at the start (Merit, Passenger) or mid-line (Coava); a header is never a note", () => {
@@ -2156,12 +2172,20 @@ describe("the probe pages, line in and fact out (ADR-0010)", () => {
 		).toEqual(expected[key]);
 	});
 
-	test("the pages fit Jev's state, and no pick lies past the state cap", () => {
+	test("every pick is a line of the head Jev reads, so the state cap loses nothing", () => {
 		for (const page of Object.values(probePages)) {
+			const head = pageElements(pageHead(page.text, page.name)).lines;
 			for (const line of Object.values(page.picks)) {
-				expect(page.text.indexOf(line)).toBeLessThan(JEV_STATE_LIMIT - 200);
+				expect(head).toContain(line);
 			}
 		}
+	});
+
+	test("a page cut by the state cap ends on a whole line", () => {
+		const long = `${"a spec line\n".repeat(2000)}tail`;
+		const head = pageHead(long, "");
+		expect(head.endsWith("a spec line")).toBe(true);
+		expect(head.length).toBeLessThan(long.length);
 	});
 });
 
