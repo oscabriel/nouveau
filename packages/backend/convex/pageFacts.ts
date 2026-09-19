@@ -111,12 +111,13 @@ const NONE_OPTION = "none";
 const YES = 0.5;
 /** A page read contributes at most this many description sentences. */
 const MAX_PAGE_SENTENCES = 3;
-/** Firecrawl's rate limit: the page was never asked, so the try is not a read (see scrape). */
+/** Firecrawl's rate limit: the page was never asked, so the shop is tried and the read is deferred, not counted (see readPage). */
 const RATE_LIMITED_STATUS = 429;
 /**
- * Times a scheduled read puts itself off before it gives up to the lot's
- * next window. The budget defers once (the read reserves its slot); each
- * Firecrawl 429 past that (the crawler shares the team's limit) costs one.
+ * Times a scheduled read is put off before the lot waits for its next
+ * window instead. The budget costs one deferral (the read reserves its
+ * slot); each Firecrawl 429 (the crawler shares the team's limit) costs
+ * one more, and a reserved read keeps its slot through them.
  */
 export const MAX_READ_DEFERRALS = 5;
 /** Whether Firecrawl answered with its rate limit rather than with the page. */
@@ -591,9 +592,12 @@ export interface BudgetOptions {
 
 /**
  * The page text within the deployment's Firecrawl budget. When the minute's
- * budget is spent the shop's own page still costs nothing, so it is tried
- * before the read is deferred; a deferral says when the budget has room,
- * holding that slot when asked to.
+ * budget is spent, the read tries the shop's own page, which costs nothing,
+ * and only then defers; the deferral says when the budget has room. A read
+ * asked to reserve holds that slot, taken in a second limiter call so a
+ * page the shop covered never spends one. A read holding a slot spends no
+ * token and keeps the slot through a Firecrawl 429, since the page was not
+ * asked.
  */
 const readPageWithinBudget = async (
 	ctx: ActionCtx,
@@ -601,7 +605,13 @@ const readPageWithinBudget = async (
 	{ reserve = false, reserved = false }: BudgetOptions
 ): Promise<string> => {
 	if (reserved) {
-		return await readPage(ctx, url);
+		try {
+			return await readPage(ctx, url);
+		} catch (error) {
+			throw error instanceof ReadDeferredError
+				? new ReadDeferredError(error.retryAfter, true)
+				: error;
+		}
 	}
 	const budget = await limiter.limit(ctx, "firecrawlReads");
 	if (budget.ok) {
@@ -681,9 +691,12 @@ export const scrape = internalAction({
 	},
 	handler: async (ctx, args) => {
 		let facts: PageFacts = {};
+		const deferrals = args.deferrals ?? 0;
+		// A read at the cap must not hold a slot it will never run in.
+		const mayDefer = deferrals < MAX_READ_DEFERRALS;
 		try {
 			({ facts } = await readPageFacts(ctx, args.url, "", args.name ?? "", {
-				reserve: true,
+				reserve: mayDefer,
 				reserved: args.reserved,
 			}));
 		} catch (error) {
@@ -692,8 +705,7 @@ export const scrape = internalAction({
 			// MAX_PAGE_READS. It runs again when the limiter says it can, a
 			// bounded number of times; past that the lot waits for its window.
 			if (error instanceof ReadDeferredError) {
-				const deferrals = args.deferrals ?? 0;
-				if (deferrals < MAX_READ_DEFERRALS) {
+				if (mayDefer) {
 					await ctx.scheduler.runAfter(
 						error.retryAfter,
 						internal.pageFacts.scrape,

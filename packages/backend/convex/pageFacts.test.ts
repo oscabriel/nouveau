@@ -790,6 +790,21 @@ describe("pageFacts.scrape", () => {
 		expect(await scheduledReads(fx)).toHaveLength(0);
 	});
 
+	test("a reserved rerun that meets Firecrawl's rate limit keeps its slot for the next try", async () => {
+		const fx = await setup();
+		stubProviders({ firecrawlStatus: 429, html: null });
+		await fx.t.action(internal.pageFacts.scrape, {
+			deferrals: 1,
+			productId: fx.lotId,
+			reserved: true,
+			url: PAGE_URL,
+		});
+		const [retry] = await scheduledReads(fx);
+		expect(retry?.args[0]).toEqual(
+			expect.objectContaining({ deferrals: 2, reserved: true })
+		);
+	});
+
 	/** A read that could not reach the page: no facts, no count, one retry scheduled. */
 	const expectDeferred = async (fx: Fixture) => {
 		const read = await product(fx);
