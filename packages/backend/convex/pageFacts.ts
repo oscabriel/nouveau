@@ -2,7 +2,7 @@
 // rendered product page is read while a page fact is still missing after
 // the merge: the crawl-end sweep asks for the roaster's lots, the lot page
 // asks through `request`, the recommendation worker asks for a candidate.
-// One page text (the shop's own page, else a Firecrawl markdown scrape),
+// One page text (Firecrawl's rendered page, else the shop's own page),
 // split into lines, then ONE Jev request picks one line per field (or
 // none) and passes or fails each note-shaped line (ADR-0010). Code cuts the
 // value from the picked line with the field's own cutter and the shared
@@ -38,19 +38,19 @@ import { sentenceCandidates } from "./recommendationRules";
 /** Anyone can open a lot page, so the spend is capped deployment-wide. */
 export const PAGE_FACTS_PER_HOUR = 20;
 /**
- * Firecrawl fallbacks a minute, deployment-wide, across every sweep and the
- * recommendation worker. One cron tick crawls every source, and a shop that
- * needs the fallback for every lot (Sey renders client-side) would otherwise
- * send nineteen roasters' worth of scrapes at once into Firecrawl's
- * per-minute limit. A read the budget defers keeps its schedule stamp and is
- * not a counted attempt.
+ * The deployment's Firecrawl read budget: page reads a minute across every
+ * sweep and the recommendation worker (ADR-0010). One cron tick crawls
+ * every source, and twenty roasters' sweeps at once would otherwise send
+ * hundreds of reads into Firecrawl's per-minute limit. A read the budget
+ * defers keeps its schedule stamp, is not a counted attempt, and reserves
+ * the slot it runs in (see scrape).
  *
  * The figure is the Free plan's /scrape limit (10 a minute, 2 concurrent),
  * which the prod key is on; the limit counts per team, so the crawler's own
  * scrapes (collection pages, product pages, bot-protected feeds) draw from
  * the same 10 without passing through this bucket. Raise it with the plan.
  */
-export const FIRECRAWL_FALLBACK_PER_MINUTE = 10;
+export const FIRECRAWL_READS_PER_MINUTE = 10;
 /**
  * Lots one crawl's sweep reads (ADR-0008). The first sweeps of a catalog
  * are a backfill spread over crawls; after that a crawl finds only its new
@@ -71,18 +71,29 @@ const PAGE_SWEEP_SCAN_LIMIT = 1000;
 export const PAGE_FACTS_MAX_AGE_MS = 24 * 60 * 60_000;
 
 const limiter = new RateLimiter(components.rateLimiter, {
-	firecrawlFallback: {
-		capacity: FIRECRAWL_FALLBACK_PER_MINUTE,
+	firecrawlReads: {
+		capacity: FIRECRAWL_READS_PER_MINUTE,
 		kind: "token bucket",
 		period: MINUTE,
-		rate: FIRECRAWL_FALLBACK_PER_MINUTE,
+		rate: FIRECRAWL_READS_PER_MINUTE,
 	},
 	pageFacts: { kind: "fixed window", period: HOUR, rate: PAGE_FACTS_PER_HOUR },
 });
 
-/** The fallback budget had no room: the page was never asked, so the lot waits for its next window. */
+/**
+ * The page was never asked (no budget, or Firecrawl's own limit): the read
+ * can run again after `retryAfter` ms. `reserved` says the budget already
+ * holds a slot for it then, so the rerun must not take another.
+ */
 class ReadDeferredError extends Error {
 	override name = "ReadDeferredError";
+	readonly retryAfter: number;
+	readonly reserved: boolean;
+	constructor(retryAfter: number, reserved = false) {
+		super(`page read deferred ${retryAfter}ms`);
+		this.retryAfter = retryAfter;
+		this.reserved = reserved;
+	}
 }
 const firecrawl = new FirecrawlClient(components.firecrawl);
 
@@ -102,7 +113,13 @@ const YES = 0.5;
 const MAX_PAGE_SENTENCES = 3;
 /** Firecrawl's rate limit: the page was never asked, so the try is not a read (see scrape). */
 const RATE_LIMITED_STATUS = 429;
-/** Whether the fallback failed on Firecrawl's rate limit rather than on the page. */
+/**
+ * Times a scheduled read puts itself off before it gives up to the lot's
+ * next window. The budget defers once (the read reserves its slot); each
+ * Firecrawl 429 past that (the crawler shares the team's limit) costs one.
+ */
+export const MAX_READ_DEFERRALS = 5;
+/** Whether Firecrawl answered with its rate limit rather than with the page. */
 const isRateLimited = (error: unknown): boolean =>
 	error instanceof ConvexError &&
 	typeof error.data === "object" &&
@@ -443,7 +460,7 @@ export const resetReads = internalMutation({
 /** What one page read yields: facts for the product, sentences for evidence. */
 export interface PageRead {
 	facts: PageFacts;
-	/** The page as block text: the shop's HTML stripped, or Firecrawl's markdown. */
+	/** The page as block text: the rendered or the served HTML, reduced. */
 	pageText: string;
 	/** Description sentences Jev approved, in page order. */
 	sentences: string[];
@@ -484,10 +501,10 @@ export const samePage = (requested: string, answered: string): boolean => {
 };
 
 /**
- * The product page's text from the shop itself: one plain request, no
- * credit. Null when the shop errors, times out, redirects to another page,
- * serves something other than HTML, fails mid-body, or serves a script
- * shell; the caller falls back to Firecrawl.
+ * The product page's text from the shop itself, the fallback when
+ * Firecrawl cannot answer: one plain request, no credit. Null when the
+ * shop errors, times out, redirects to another page, serves something
+ * other than HTML, fails mid-body, or serves a script shell.
  */
 const fetchPageText = async (url: string): Promise<string | null> => {
 	try {
@@ -511,43 +528,115 @@ const fetchPageText = async (url: string): Promise<string | null> => {
 	}
 };
 
-/** The page through Firecrawl's markdown scrape (one credit, cached a day). */
-const scrapePageText = async (ctx: ActionCtx, url: string): Promise<string> => {
-	const budget = await limiter.limit(ctx, "firecrawlFallback");
-	if (!budget.ok) {
-		throw new ReadDeferredError("Firecrawl fallback budget spent this minute");
-	}
+/**
+ * The page as Firecrawl renders it, reduced by the same reducer as the
+ * shop's own page (one credit, cached a day). Null when Firecrawl saw
+ * another page or a non-200 answer, or when the rendered page is a shell.
+ * Throws Firecrawl's own errors, its 429 among them.
+ */
+const scrapePageText = async (
+	ctx: ActionCtx,
+	url: string
+): Promise<string | null> => {
 	const page = await firecrawl.scrape(ctx, url, {
-		formats: ["markdown"],
+		formats: ["html"],
 		maxAge: PAGE_FACTS_MAX_AGE_MS,
 		onlyMainContent: true,
 		timeout: 30_000,
 	});
 	const { metadata } = page;
 	if (metadata?.statusCode !== 200 || metadata.sourceURL !== url) {
-		throw new Error("Source page unavailable");
+		return null;
 	}
-	return page.markdown ?? "";
+	return pageTextFromHtml(page.html ?? "");
 };
 
 /**
- * One product page and one Jev request, verified. The page comes from the
- * shop itself when a plain fetch yields content (ADR-0008), else through a
- * markdown-only Firecrawl scrape. Shared by the scheduled scrape and the
- * recommendation worker so both write the same thing. `known` is the
- * catalog copy the evidence must be new against (empty for the lot-page
- * ask). Throws when the page is unavailable both ways; the caller decides
- * what a failure means for it. `name` is the lot's name as the catalog
- * has it; every Jev question names the coffee with it.
+ * The page text: Firecrawl's rendered page first (ADR-0010), the shop's
+ * own page when Firecrawl cannot answer. A Firecrawl 429 the shop cannot
+ * cover is a deferral, retried after Firecrawl's minute: the page was never
+ * asked. Throws when the page is unavailable both ways.
+ */
+const readPage = async (ctx: ActionCtx, url: string): Promise<string> => {
+	let rendered: string | null;
+	try {
+		rendered = await scrapePageText(ctx, url);
+	} catch (error) {
+		const plain = await fetchPageText(url);
+		if (plain !== null) {
+			return plain;
+		}
+		if (isRateLimited(error)) {
+			throw new ReadDeferredError(MINUTE);
+		}
+		throw error;
+	}
+	if (rendered !== null) {
+		return rendered;
+	}
+	const plain = await fetchPageText(url);
+	if (plain === null) {
+		throw new Error("Source page unavailable");
+	}
+	return plain;
+};
+
+/** How a read takes its slot in the deployment's Firecrawl budget. */
+export interface BudgetOptions {
+	/** Reserve the next free slot when the budget is spent, so the deferral runs there. */
+	reserve?: boolean;
+	/** The slot is already held (an earlier deferral reserved it): read without taking another. */
+	reserved?: boolean;
+}
+
+/**
+ * The page text within the deployment's Firecrawl budget. When the minute's
+ * budget is spent the shop's own page still costs nothing, so it is tried
+ * before the read is deferred; a deferral says when the budget has room,
+ * holding that slot when asked to.
+ */
+const readPageWithinBudget = async (
+	ctx: ActionCtx,
+	url: string,
+	{ reserve = false, reserved = false }: BudgetOptions
+): Promise<string> => {
+	if (reserved) {
+		return await readPage(ctx, url);
+	}
+	const budget = await limiter.limit(ctx, "firecrawlReads");
+	if (budget.ok) {
+		return await readPage(ctx, url);
+	}
+	const plain = await fetchPageText(url);
+	if (plain !== null) {
+		return plain;
+	}
+	if (!reserve) {
+		throw new ReadDeferredError(budget.retryAfter);
+	}
+	const slot = await limiter.limit(ctx, "firecrawlReads", { reserve: true });
+	throw new ReadDeferredError(slot.retryAfter ?? budget.retryAfter, true);
+};
+
+/**
+ * One product page and one Jev request, verified. The page is Firecrawl's
+ * rendered page (ADR-0010), else the shop's own when Firecrawl cannot
+ * answer, within the deployment's read budget. Shared by the scheduled
+ * scrape and the recommendation worker so both write the same thing.
+ * `known` is the catalog copy the evidence must be new against (empty for
+ * the lot-page ask). Throws when the page is unavailable both ways, and a
+ * ReadDeferredError when it was never asked; the caller decides what each
+ * means for it. `name` is the lot's name as the catalog has it; every Jev
+ * question names the coffee with it.
  */
 export const readPageFacts = async (
 	ctx: ActionCtx,
 	url: string,
 	known = "",
-	name = ""
+	name = "",
+	budget: BudgetOptions = {}
 ): Promise<PageRead> => {
-	const pageText =
-		(await fetchPageText(url)) ?? (await scrapePageText(ctx, url));
+	const pageText = await readPageWithinBudget(ctx, url, budget);
 	const empty: PageRead = { facts: {}, pageText, sentences: [] };
 	const apiKey = env.TYPESAFE_API_KEY;
 	// Without the key the read still succeeds: the lot keeps its attempt
@@ -579,21 +668,38 @@ export const readPageFacts = async (
 };
 
 export const scrape = internalAction({
-	// `name` is optional so reads scheduled before it existed still run.
+	// `name`, `deferrals` and `reserved` are optional so reads scheduled
+	// before they existed still run.
 	args: {
+		/** Times this read has already been put off; bounds the deferrals. */
+		deferrals: v.optional(v.number()),
 		name: v.optional(v.string()),
 		productId: v.id("products"),
+		/** An earlier deferral reserved this read's budget slot. */
+		reserved: v.optional(v.boolean()),
 		url: v.string(),
 	},
 	handler: async (ctx, args) => {
 		let facts: PageFacts = {};
 		try {
-			({ facts } = await readPageFacts(ctx, args.url, "", args.name ?? ""));
+			({ facts } = await readPageFacts(ctx, args.url, "", args.name ?? "", {
+				reserve: true,
+				reserved: args.reserved,
+			}));
 		} catch (error) {
-			// A deferred or rate-limited fallback never reached the page: the
-			// stamp from the schedule stands, so the lot is retried after the
-			// window, but the try does not spend one of its MAX_PAGE_READS.
-			if (error instanceof ReadDeferredError || isRateLimited(error)) {
+			// A deferred read never reached the page: the stamp from the
+			// schedule stands and the try does not spend one of the lot's
+			// MAX_PAGE_READS. It runs again when the limiter says it can, a
+			// bounded number of times; past that the lot waits for its window.
+			if (error instanceof ReadDeferredError) {
+				const deferrals = args.deferrals ?? 0;
+				if (deferrals < MAX_READ_DEFERRALS) {
+					await ctx.scheduler.runAfter(
+						error.retryAfter,
+						internal.pageFacts.scrape,
+						{ ...args, deferrals: deferrals + 1, reserved: error.reserved }
+					);
+				}
 				return null;
 			}
 			// Nothing is stored for a page that could not be read, but the

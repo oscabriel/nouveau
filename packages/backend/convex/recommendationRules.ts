@@ -616,13 +616,15 @@ export const SENTENCE_CANDIDATES = 12;
  * coffee prose only. These passages remain untrusted model input.
  */
 export const sentenceCandidates = (
-	markdown: string,
+	pageText: string,
 	existing: string
 ): string[] => {
 	const known = normalizeProse(existing);
-	const passages = markdown
+	// One block per line: the reducer's block text (pageTextFromHtml), and
+	// markdown paragraphs separated by a blank line split the same way.
+	const passages = pageText
 		.slice(0, 30_000)
-		.split(/\n\s*\n/gu)
+		.split(/\n+/gu)
 		.map((line) => stripMarkdown(line))
 		.filter((line) => {
 			if (

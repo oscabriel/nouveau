@@ -105,11 +105,13 @@ const enrich = async (
 		}
 		try {
 			// Only a server-resolved catalog URL is fetched. User notes never reach
-			// Firecrawl. Its markdown is scanned for candidate spans; Jev picks one
-			// per field; every pick is a span of the page and is verified through
-			// the shared per-field shapes before it can become evidence, and the
-			// verified facts land on the product too (ADR-0005), so the lot page
-			// shows them and the next run skips the read.
+			// Firecrawl. The rendered page's lines are Jev's options; Jev picks
+			// one per field; the field's cutter takes the value from the picked
+			// line and the shared per-field shapes verify it before it can become
+			// evidence, and the verified facts land on the product too
+			// (ADR-0005), so the lot page shows them and the next run skips the
+			// read. A read the Firecrawl budget defers throws like a failure: the
+			// worker cannot wait for a slot, and the hourly retry below covers it.
 			// oxlint-disable-next-line no-await-in-loop -- bound concurrent scrapes
 			const page = await readPageFacts(
 				ctx,

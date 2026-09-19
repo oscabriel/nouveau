@@ -231,6 +231,12 @@ const addRoaster = (f: Fixture, slug: string, count: number) =>
 		return roasterId;
 	});
 
+/** The one description sentence the rendered product page adds to the catalog. */
+const PAGE_SENTENCE =
+	"This coffee was grown at an elevation of 2100 metres by a small producer.";
+/** The product page as Firecrawl renders it: the sentence, then shop copy that is neither prose nor a fact. */
+const PRODUCT_PAGE_HTML = `<html><body><main><p>${PAGE_SENTENCE}</p><ul><li>Whole bean or ground to order</li><li>Ships on Mondays within the week</li><li>Free delivery on orders over fifty dollars</li><li>Returns accepted within thirty days for unopened bags</li></ul></main></body></html>`;
+
 const installProviders = (
 	options: {
 		badModel?: boolean;
@@ -249,8 +255,7 @@ const installProviders = (
 			}
 			return Response.json({
 				data: {
-					markdown:
-						"This coffee was grown at an elevation of 2100 metres by a small producer.",
+					html: PRODUCT_PAGE_HTML,
 					metadata: {
 						sourceURL: "https://coffee.example.com/products/coffee",
 						statusCode: 200,
@@ -1024,7 +1029,7 @@ test("enrichment reservations are shared and capped across a request's retries",
 	).toBeNull();
 });
 
-test("the scrape asks Firecrawl for markdown only and the Jev picks become evidence", async () => {
+test("the scrape asks Firecrawl for the rendered html only and the Jev picks become evidence", async () => {
 	const f = await setup();
 	const fetchMock = installProviders();
 	const id = await request(f);
@@ -1035,15 +1040,13 @@ test("the scrape asks Firecrawl for markdown only and the Jev picks become evide
 	const scrape = fetchMock.mock.calls.find(([url]) =>
 		url.includes("firecrawl")
 	);
-	expect(JSON.parse(String(scrape?.[1]?.body)).formats).toEqual(["markdown"]);
+	expect(JSON.parse(String(scrape?.[1]?.body)).formats).toEqual(["html"]);
 	const cache = await f.t.run((ctx) =>
 		ctx.db.query("recommendationEvidence").collect()
 	);
 	// The page's own sentence is the one description candidate, the Noul
 	// approves it, and it becomes the run's page evidence.
-	expect(cache[0]?.passages).toEqual([
-		"This coffee was grown at an elevation of 2100 metres by a small producer.",
-	]);
+	expect(cache[0]?.passages).toEqual([PAGE_SENTENCE]);
 	// The facts land on the product through the shared verifier (ADR-0005):
 	// the elevation span Jev picked over the page's own words.
 	const product = await f.t.run((ctx) => ctx.db.get(f.productId));

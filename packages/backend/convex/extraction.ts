@@ -467,8 +467,8 @@ const altFactLines = (html: string): string[] => {
  * mega-menu built from divs never pushes the description out of Jev's
  * window; the whole document is read when there is no main or main is a
  * shell. Chrome, other-product blocks and menus are cut, then stripHtml.
- * Every roaster checked (ADR-0008) renders its notes server-side, so this
- * is the same text Firecrawl's markdown carries, without the credit. When
+ * The same reducer reads Firecrawl's rendered page and the shop's own
+ * (ADR-0010), so both sources yield the same block text. When
  * the theme marks its notes element, those notes open the text as a
  * labelled line, and the labelled facts in the images' alt text follow
  * (ADR-0009), so both lead the candidates instead of trailing the lines
@@ -1926,9 +1926,10 @@ const PAGE_LABEL_LEAD = new RegExp(
 	"iu"
 );
 /**
- * Markdown junk ahead of a line and a table row's trailing cells, tolerated
- * while Firecrawl's markdown is still the fallback source (ADR-0010 piece 3
- * makes it HTML): "**Region:** Huila", "| Producer | Finca Ojo de Agua |".
+ * Markdown junk ahead of a line and a table row's trailing cells:
+ * "**Region:** Huila", "| Producer | Finca Ojo de Agua |". No page source
+ * is markdown since ADR-0010 piece 3; the tolerance costs nothing on block
+ * text and can go with the next reader cleanup.
  */
 const MARKDOWN_LEAD = /^[#>*_\s|~-]+/u;
 const MARKDOWN_TAIL = /\s*\*+\s*$/u;

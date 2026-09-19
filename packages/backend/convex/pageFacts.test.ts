@@ -1,3 +1,4 @@
+import { MINUTE } from "@convex-dev/rate-limiter";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { register as registerFirecrawl } from "@firecrawl/firecrawl-convex/test";
 import { convexTest } from "convex-test";
@@ -7,7 +8,8 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { MAX_PAGE_READS, PAGE_FACTS_RETRY_MS } from "./lotFacts";
 import {
-	FIRECRAWL_FALLBACK_PER_MINUTE,
+	FIRECRAWL_READS_PER_MINUTE,
+	MAX_READ_DEFERRALS,
 	PAGE_FACTS_PER_HOUR,
 	PAGE_SWEEP_PER_CRAWL,
 	PAGE_SWEEP_SPACING_MS,
@@ -36,15 +38,6 @@ const COMPLETE_FEED = {
 	roasterNotes: ["peach"],
 	variety: "Heirloom",
 };
-const PAGE_MARKDOWN = [
-	"# Mullugeta",
-	"Process: Natural",
-	"Variety: Heirloom",
-	"Altitude: 1,900 - 2,100 masl",
-	"Tasting notes: peach, melon, red tea.",
-	"In the cup we find peach, melon, and red tea.",
-].join("\n\n");
-
 /** The same page as the shop serves it: theme chrome around the facts. */
 const PAGE_HTML = [
 	"<html><body><header><nav><a href='/'>Home</a> | <a href='/shop'>Shop</a></nav></header>",
@@ -63,7 +56,8 @@ interface ProviderOptions {
 	/** The shop's page body; null means the shop answered with an error. */
 	html?: string | null;
 	jev?: boolean;
-	markdown?: string;
+	/** The page as Firecrawl renders it. */
+	rendered?: string;
 	statusCode?: number;
 	/** The shop never answers: the plain fetch aborts on its timeout. */
 	timeout?: boolean;
@@ -79,9 +73,10 @@ const STUB_PICKS: Record<string, RegExp> = {
 };
 
 /**
- * The providers a read touches. The shop serves the product page itself
- * (`html`; null means the shop answered with an error); Firecrawl is the
- * fallback and returns the page markdown; Jev picks the fixture's spec line
+ * The providers a read touches. Firecrawl renders the product page
+ * (`rendered`) and is asked first; the shop serves the page itself
+ * (`html`; null means the shop answered with an error) and is the fallback
+ * when Firecrawl cannot answer; Jev picks the fixture's spec line
  * for each field it states (Choice) and passes a note line or a sentence
  * that mentions peach (Noul), so the stored facts follow from the page.
  */
@@ -90,7 +85,7 @@ const stubProviders = ({
 	firecrawlStatus = 200,
 	html = PAGE_HTML,
 	jev = true,
-	markdown = PAGE_MARKDOWN,
+	rendered = PAGE_HTML,
 	statusCode = 200,
 	timeout = false,
 }: ProviderOptions = {}) => {
@@ -118,7 +113,7 @@ const stubProviders = ({
 			}
 			return Response.json({
 				data: {
-					markdown,
+					html: rendered,
 					metadata: { sourceURL: PAGE_URL, statusCode },
 				},
 				success: true,
@@ -675,38 +670,18 @@ describe("pageFacts.scrape", () => {
 		);
 	});
 
-	test("the shop's own page and one Jev request; no Firecrawl credit when the page has content", async () => {
-		const fx = await setup();
-		const fetchMock = stubProviders();
-		await fx.t.action(internal.pageFacts.scrape, {
-			productId: fx.lotId,
-			url: PAGE_URL,
-		});
-		expect(fetchMock).toHaveBeenCalledTimes(2);
-		expect(
-			fetchMock.mock.calls.some(([url]) => String(url).includes("firecrawl"))
-		).toBe(false);
-		const read = await product(fx);
-		expect(read?.pageFacts).toEqual({
-			elevation: "1,900 - 2,100 masl",
-			process: "Natural",
-			tastingNotes: ["peach", "melon", "red tea"],
-			variety: "Heirloom",
-		});
-	});
-
-	test("a shop that answers with an error falls back to one markdown scrape", async () => {
+	test("Firecrawl's rendered page first, html format only, then one Jev request; the shop itself is not asked", async () => {
 		const fx = await setup();
 		const fetchMock = stubProviders({ html: null });
 		await fx.t.action(internal.pageFacts.scrape, {
 			productId: fx.lotId,
 			url: PAGE_URL,
 		});
-		expect(fetchMock).toHaveBeenCalledTimes(3);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
 		const scrape = fetchMock.mock.calls.find(([url]) =>
 			String(url).includes("firecrawl")
 		);
-		expect(JSON.parse(String(scrape?.[1]?.body)).formats).toEqual(["markdown"]);
+		expect(JSON.parse(String(scrape?.[1]?.body)).formats).toEqual(["html"]);
 		const read = await product(fx);
 		expect(read?.pageFacts).toEqual({
 			elevation: "1,900 - 2,100 masl",
@@ -716,12 +691,35 @@ describe("pageFacts.scrape", () => {
 		});
 	});
 
-	test("a rate-limited fallback keeps the stamp but is not a counted read", async () => {
+	test("Firecrawl's rate limit falls back to the shop's own page at no credit; the read counts", async () => {
+		const fx = await setup();
+		const fetchMock = stubProviders({ firecrawlStatus: 429 });
+		await fx.t.action(internal.pageFacts.scrape, {
+			productId: fx.lotId,
+			url: PAGE_URL,
+		});
+		// The component retries the 429 on its own before giving up.
+		const asked = fetchMock.mock.calls.map(([url]) => String(url));
+		expect(asked.filter((url) => url.startsWith(PAGE_URL))).toHaveLength(1);
+		expect(asked.filter((url) => url.includes("typesafe"))).toHaveLength(1);
+		const read = await product(fx);
+		expect(read?.pageFacts).toEqual({
+			elevation: "1,900 - 2,100 masl",
+			process: "Natural",
+			tastingNotes: ["peach", "melon", "red tea"],
+			variety: "Heirloom",
+		});
+		expect(read?.pageReads).toBe(1);
+		expect(await scheduledReads(fx)).toHaveLength(0);
+	});
+
+	test("a rate-limited read the shop cannot cover keeps the stamp, is not counted, and runs again after Firecrawl's minute", async () => {
 		const fx = await setup();
 		stubProviders({ firecrawlStatus: 429, html: null });
 		const before = Date.now();
 		await fx.t.run((ctx) => ctx.db.patch(fx.lotId, { copyFetchedAt: before }));
 		await fx.t.action(internal.pageFacts.scrape, {
+			name: "Ethiopia Mullugeta Muntasha",
 			productId: fx.lotId,
 			url: PAGE_URL,
 		});
@@ -729,86 +727,120 @@ describe("pageFacts.scrape", () => {
 		expect(read?.pageFacts).toBeUndefined();
 		expect(read?.pageReads).toBeUndefined();
 		expect(read?.copyFetchedAt).toBe(before);
+		const [retry] = await scheduledReads(fx);
+		expect(retry?.scheduledTime).toBe(before + MINUTE);
+		expect(retry?.args[0]).toEqual(
+			expect.objectContaining({
+				deferrals: 1,
+				name: "Ethiopia Mullugeta Muntasha",
+				productId: fx.lotId,
+				url: PAGE_URL,
+			})
+		);
 	});
 
-	test("the Firecrawl fallback has a deployment-wide budget a minute; a deferred read is not counted", async () => {
+	test("reads share a deployment-wide Firecrawl budget a minute; a read past it is not counted, reserves its slot and runs there", async () => {
 		const fx = await setup();
 		const fetchMock = stubProviders({ html: null });
-		for (let index = 0; index < FIRECRAWL_FALLBACK_PER_MINUTE + 1; index += 1) {
+		const stamp = Date.now();
+		await fx.t.run((ctx) => ctx.db.patch(fx.lotId, { copyFetchedAt: stamp }));
+		for (let index = 0; index < FIRECRAWL_READS_PER_MINUTE + 1; index += 1) {
 			// oxlint-disable-next-line no-await-in-loop -- reads in sequence, the last one over budget
 			await fx.t.action(internal.pageFacts.scrape, {
 				productId: fx.lotId,
 				url: PAGE_URL,
 			});
 		}
-		const scrapes = fetchMock.mock.calls.filter(([url]) =>
-			String(url).includes("firecrawl")
+		const scrapes = () =>
+			fetchMock.mock.calls.filter(([url]) => String(url).includes("firecrawl"));
+		expect(scrapes()).toHaveLength(FIRECRAWL_READS_PER_MINUTE);
+		const deferred = await product(fx);
+		expect(deferred?.pageReads).toBe(FIRECRAWL_READS_PER_MINUTE);
+		expect(deferred?.copyFetchedAt).toBe(stamp);
+		// The shop was asked once for the deferred read, at no credit.
+		expect(
+			fetchMock.mock.calls.filter(([url]) => String(url).startsWith(PAGE_URL))
+		).toHaveLength(1);
+		const [retry] = await scheduledReads(fx);
+		expect(retry?.scheduledTime).toBeGreaterThan(stamp);
+		expect(retry?.scheduledTime).toBeLessThanOrEqual(stamp + MINUTE);
+		expect(retry?.args[0]).toEqual(
+			expect.objectContaining({ deferrals: 1, reserved: true })
 		);
-		expect(scrapes).toHaveLength(FIRECRAWL_FALLBACK_PER_MINUTE);
+		await fx.t.finishAllScheduledFunctions(vi.runAllTimers);
+		expect(scrapes()).toHaveLength(FIRECRAWL_READS_PER_MINUTE + 1);
 		const read = await product(fx);
-		expect(read?.pageReads).toBe(FIRECRAWL_FALLBACK_PER_MINUTE);
+		expect(read?.pageReads).toBe(FIRECRAWL_READS_PER_MINUTE + 1);
+		expect(read?.pageFacts?.process).toBe("Natural");
 	});
 
-	test("a page that is only a script shell falls back to Firecrawl", async () => {
+	test("a read put off MAX_READ_DEFERRALS times gives up to the lot's next window: stamp kept, nothing scheduled", async () => {
 		const fx = await setup();
-		const fetchMock = stubProviders({
+		stubProviders({ firecrawlStatus: 429, html: null });
+		const before = Date.now();
+		await fx.t.run((ctx) => ctx.db.patch(fx.lotId, { copyFetchedAt: before }));
+		await fx.t.action(internal.pageFacts.scrape, {
+			deferrals: MAX_READ_DEFERRALS,
+			productId: fx.lotId,
+			url: PAGE_URL,
+		});
+		const read = await product(fx);
+		expect(read?.pageReads).toBeUndefined();
+		expect(read?.copyFetchedAt).toBe(before);
+		expect(await scheduledReads(fx)).toHaveLength(0);
+	});
+
+	/** A read that could not reach the page: no facts, no count, one retry scheduled. */
+	const expectDeferred = async (fx: Fixture) => {
+		const read = await product(fx);
+		expect(read?.pageFacts).toBeUndefined();
+		expect(read?.pageReads).toBeUndefined();
+		expect(await scheduledReads(fx)).toHaveLength(1);
+	};
+
+	test("with Firecrawl rate-limited, a shop page that is only a script shell defers the read", async () => {
+		const fx = await setup();
+		stubProviders({
+			firecrawlStatus: 429,
 			html: "<html><body><div id='app'></div><script>render()</script></body></html>",
 		});
 		await fx.t.action(internal.pageFacts.scrape, {
 			productId: fx.lotId,
 			url: PAGE_URL,
 		});
-		expect(
-			fetchMock.mock.calls.some(([url]) => String(url).includes("firecrawl"))
-		).toBe(true);
-		const read = await product(fx);
-		expect(read?.pageFacts?.tastingNotes).toEqual([
-			"peach",
-			"melon",
-			"red tea",
-		]);
+		await expectDeferred(fx);
 	});
 
-	test("a shop that redirects the handle to another page is not read as the lot's page; Firecrawl decides", async () => {
+	test("with Firecrawl rate-limited, a shop that redirects the handle to another page is not read as the lot's page", async () => {
 		const fx = await setup();
-		const fetchMock = stubProviders({ answeredUrl: COLLECTION_URL });
+		stubProviders({ answeredUrl: COLLECTION_URL, firecrawlStatus: 429 });
 		await fx.t.action(internal.pageFacts.scrape, {
 			productId: fx.lotId,
 			url: PAGE_URL,
 		});
-		expect(
-			fetchMock.mock.calls.some(([url]) => String(url).includes("firecrawl"))
-		).toBe(true);
-		const read = await product(fx);
-		expect(read?.pageFacts?.process).toBe("Natural");
+		await expectDeferred(fx);
 	});
 
-	test("a shop that never answers falls back to Firecrawl instead of failing the read", async () => {
+	test("with Firecrawl rate-limited, a shop that never answers defers the read instead of failing it", async () => {
 		const fx = await setup();
-		const fetchMock = stubProviders({ timeout: true });
+		stubProviders({ firecrawlStatus: 429, timeout: true });
 		await fx.t.action(internal.pageFacts.scrape, {
 			productId: fx.lotId,
 			url: PAGE_URL,
 		});
-		expect(
-			fetchMock.mock.calls.some(([url]) => String(url).includes("firecrawl"))
-		).toBe(true);
-		const read = await product(fx);
-		expect(read?.pageFacts?.process).toBe("Natural");
+		await expectDeferred(fx);
 	});
 
 	test("the same path with a query string dropped is the page that was asked for", async () => {
 		const fx = await setup();
-		const fetchMock = stubProviders({ answeredUrl: PAGE_URL });
+		stubProviders({ answeredUrl: PAGE_URL, firecrawlStatus: 429 });
 		await fx.t.action(internal.pageFacts.scrape, {
 			productId: fx.lotId,
 			url: `${PAGE_URL}?variant=1`,
 		});
-		expect(
-			fetchMock.mock.calls.some(([url]) => String(url).includes("firecrawl"))
-		).toBe(false);
 		const read = await product(fx);
 		expect(read?.pageFacts?.process).toBe("Natural");
+		expect(read?.pageReads).toBe(1);
 	});
 
 	test("samePage allows a trailing slash, an https upgrade, the www host and a renamed handle, and nothing else", () => {
@@ -827,24 +859,23 @@ describe("pageFacts.scrape", () => {
 		expect(samePage(PAGE_URL, "not a url")).toBe(false);
 	});
 
-	test("a shop that answers a renamed handle from its www host is read directly, no Firecrawl credit", async () => {
+	test("a shop that answers a renamed handle from its www host is read as the lot's page", async () => {
 		const fx = await setup();
-		const fetchMock = stubProviders({
+		stubProviders({
 			answeredUrl: "https://www.sey.example.com/products/mullugeta-2026",
+			firecrawlStatus: 429,
 		});
 		await fx.t.action(internal.pageFacts.scrape, {
 			productId: fx.lotId,
 			url: PAGE_URL,
 		});
-		expect(
-			fetchMock.mock.calls.some(([url]) => String(url).includes("firecrawl"))
-		).toBe(false);
 		const read = await product(fx);
 		expect(read?.pageFacts?.tastingNotes).toEqual([
 			"peach",
 			"melon",
 			"red tea",
 		]);
+		expect(read?.pageReads).toBe(1);
 	});
 
 	test("a Jev failure stores nothing, counts the read and the lot retries after the window", async () => {
