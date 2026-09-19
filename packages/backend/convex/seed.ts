@@ -181,6 +181,14 @@ const cadenceOf = (roaster: SeedRoaster): number =>
 		? roaster.cadenceMinutes
 		: DEFAULT_CADENCE_MINUTES;
 
+const urlsOf = (
+	roaster: SeedRoaster
+): { productPageUrl: string; websiteUrl: string } => {
+	const websiteUrl =
+		"website" in roaster ? roaster.website : `https://${roaster.domain}`;
+	return { productPageUrl: `${websiteUrl}${roaster.productPath}`, websiteUrl };
+};
+
 // Idempotent: re-running skips roasters whose slug already exists.
 // Roasters enter as `pending` and flip to `active` when their baseline crawl
 // lands (data-driven, per the locked behavioral rules).
@@ -196,14 +204,13 @@ export const seedCuratedRoasters = internalMutation({
 
 		const roasterIds = await Promise.all(
 			fresh.map((roaster) => {
-				const websiteUrl =
-					"website" in roaster ? roaster.website : `https://${roaster.domain}`;
+				const { productPageUrl, websiteUrl } = urlsOf(roaster);
 				return ctx.db.insert("roasters", {
 					city: roaster.city,
 					claimed: false,
 					domain: roaster.domain,
 					name: roaster.name,
-					productPageUrl: `${websiteUrl}${roaster.productPath}`,
+					productPageUrl,
 					slug: slugOf(roaster.domain),
 					source: "curated",
 					state: roaster.state,
@@ -261,6 +268,43 @@ export const applySeedCadence = internalMutation({
 					return "unchanged";
 				}
 				await ctx.db.patch(source._id, { cadenceMinutes });
+				return "patched";
+			})
+		);
+		return {
+			patched: results.filter((result) => result === "patched").length,
+			unchanged: results.filter((result) => result === "unchanged").length,
+		};
+	},
+	returns: v.object({ patched: v.number(), unchanged: v.number() }),
+});
+
+/**
+ * Operator tool: bring an existing deployment's roaster shop URLs onto the
+ * seed table (a table fix such as the 17abf56 paste that gave La Colombe
+ * Passenger's www host). Matches roasters by slug; a roaster not in the
+ * table keeps its URLs. Idempotent.
+ */
+export const applySeedUrls = internalMutation({
+	args: {},
+	handler: async (ctx) => {
+		const results = await Promise.all(
+			SEED_ROASTERS.map(async (seed) => {
+				const roaster = await ctx.db
+					.query("roasters")
+					.withIndex("by_slug", (q) => q.eq("slug", slugOf(seed.domain)))
+					.unique();
+				if (roaster === null) {
+					return "missing";
+				}
+				const urls = urlsOf(seed);
+				if (
+					roaster.websiteUrl === urls.websiteUrl &&
+					roaster.productPageUrl === urls.productPageUrl
+				) {
+					return "unchanged";
+				}
+				await ctx.db.patch(roaster._id, urls);
 				return "patched";
 			})
 		);

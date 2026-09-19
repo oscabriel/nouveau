@@ -82,4 +82,45 @@ describe("seed cadence table (#33)", () => {
 		const other = await t.run((ctx) => ctx.db.get(otherSource));
 		expect(other?.cadenceMinutes).toBe(45);
 	});
+
+	test("applySeedUrls repoints a roaster whose shop URLs drifted from the table and leaves the rest", async () => {
+		const t = convexTest(schema, modules);
+		await t.mutation(internal.seed.seedCuratedRoasters, {});
+		// The 17abf56 paste: La Colombe carried Passenger's www host.
+		await t.run(async (ctx) => {
+			const roaster = await ctx.db
+				.query("roasters")
+				.withIndex("by_slug", (q) => q.eq("slug", "lacolombe"))
+				.unique();
+			if (roaster === null) {
+				throw new Error("seed missing");
+			}
+			await ctx.db.patch(roaster._id, {
+				productPageUrl: "https://www.drinkpassenger.com/collections/coffee",
+				websiteUrl: "https://www.drinkpassenger.com",
+			});
+		});
+
+		const result = await t.mutation(internal.seed.applySeedUrls, {});
+
+		expect(result).toEqual({ patched: 1, unchanged: 19 });
+		const urls = await t.run(async (ctx) => {
+			const rows = await ctx.db.query("roasters").collect();
+			return Object.fromEntries(
+				rows.map((row) => [row.slug, [row.websiteUrl, row.productPageUrl]])
+			);
+		});
+		expect(urls.lacolombe).toEqual([
+			"https://lacolombe.com",
+			"https://lacolombe.com/collections/coffee",
+		]);
+		expect(urls.drinkpassenger).toEqual([
+			"https://www.drinkpassenger.com",
+			"https://www.drinkpassenger.com/collections/coffee",
+		]);
+		expect(urls.coavacoffee).toEqual([
+			"https://shop.coavacoffee.com",
+			"https://shop.coavacoffee.com/collections/all",
+		]);
+	});
 });
