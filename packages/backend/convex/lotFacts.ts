@@ -33,8 +33,15 @@ const MAX_VARIETY_WORDS = 6;
 const MAX_REGION_WORDS = 5;
 const MAX_PRODUCER_WORDS = 8;
 
-/** A failed or empty page read is retried no sooner than this. */
+/** A page read that left facts missing is repeated no sooner than this. */
 export const PAGE_FACTS_RETRY_MS = 24 * 60 * 60 * 1000;
+/**
+ * Reads one lot gets before it is left as it is (ADR-0008 amendment). A
+ * page that stated nothing three times apart will not state it on the
+ * fourth; the cap is what stops a noteless catalog (Heart, East Pole) from
+ * costing one Jev request per lot per day forever.
+ */
+export const MAX_PAGE_READS = 3;
 
 /** Lower-case letters and digits with single spaces: the verbatim-check form. */
 export const normalizeText = (text: string): string =>
@@ -197,6 +204,7 @@ export interface FactSource {
 	elevation?: string;
 	origin?: string;
 	pageFacts?: PageFacts;
+	pageReads?: number;
 	process?: string;
 	producer?: string;
 	region?: string;
@@ -298,11 +306,32 @@ export const isThin = (product: FactSource): boolean => {
 };
 
 /**
- * Whether a look at this lot should read its page (ADR-0005, option C): thin
- * after the merge, no page facts yet, and no attempt inside the retry window.
+ * Whether the page could still add a fact: any field pageFactsValidator
+ * carries is empty after the merge. This is the read rule; isThin is the
+ * narrower card badge.
+ */
+export const hasMissingPageFacts = (product: FactSource): boolean => {
+	const facts = mergedFacts(product);
+	return (
+		facts.elevation === null ||
+		facts.process === null ||
+		facts.producer === null ||
+		facts.region === null ||
+		facts.roastLevel === null ||
+		facts.notes.length === 0 ||
+		facts.variety === null
+	);
+};
+
+/**
+ * Whether a look at this lot should read its page (ADR-0005 option C, as
+ * ADR-0008's amendment states it): a page fact is still missing after the
+ * merge, the lot has been read fewer than MAX_PAGE_READS times, and no
+ * attempt sits inside the retry window. Page facts already stored do not
+ * settle the lot while another field is still empty.
  */
 export const needsPageFacts = (product: FactSource, now: number): boolean => {
-	if (product.pageFacts !== undefined) {
+	if ((product.pageReads ?? 0) >= MAX_PAGE_READS) {
 		return false;
 	}
 	if (
@@ -311,5 +340,5 @@ export const needsPageFacts = (product: FactSource, now: number): boolean => {
 	) {
 		return false;
 	}
-	return isThin(product);
+	return hasMissingPageFacts(product);
 };

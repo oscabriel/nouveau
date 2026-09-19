@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { MAX_PAGE_READS, PAGE_FACTS_RETRY_MS } from "./lotFacts";
 import {
 	PAGE_FACTS_PER_HOUR,
 	PAGE_SWEEP_PER_CRAWL,
 	PAGE_SWEEP_SPACING_MS,
+	samePage,
 } from "./pageFacts";
 import schema from "./schema";
 
@@ -21,6 +23,18 @@ interface Fixture {
 }
 
 const PAGE_URL = "https://sey.example.com/products/mullugeta";
+/** Where a shop sends a dead handle: a collection page, 200 and HTML. */
+const COLLECTION_URL = "https://sey.example.com/collections/all";
+/** Every field the page validator carries, as a full feed would state them. */
+const COMPLETE_FEED = {
+	elevation: "1,900 masl",
+	process: "Washed",
+	producer: "Mullugeta Muntasha",
+	region: "Yirgacheffe",
+	roastLevel: "Light",
+	roasterNotes: ["peach"],
+	variety: "Heirloom",
+};
 const PAGE_MARKDOWN = [
 	"# Mullugeta",
 	"Process: Natural",
@@ -42,6 +56,18 @@ const PAGE_HTML = [
 	"<footer>Subscribe | Terms</footer></body></html>",
 ].join("\n");
 
+interface ProviderOptions {
+	/** The URL the shop's response reports; differs from the ask on a redirect. */
+	answeredUrl?: string;
+	/** The shop's page body; null means the shop answered with an error. */
+	html?: string | null;
+	jev?: boolean;
+	markdown?: string;
+	statusCode?: number;
+	/** The shop never answers: the plain fetch aborts on its timeout. */
+	timeout?: boolean;
+}
+
 /**
  * The providers a read touches. The shop serves the product page itself
  * (`html`; null means the shop answered with an error); Firecrawl is the
@@ -50,19 +76,27 @@ const PAGE_HTML = [
  * follow from the fixture page.
  */
 const stubProviders = ({
-	html = PAGE_HTML as string | null,
+	answeredUrl,
+	html = PAGE_HTML,
 	jev = true,
 	markdown = PAGE_MARKDOWN,
 	statusCode = 200,
-} = {}) => {
+	timeout = false,
+}: ProviderOptions = {}) => {
 	const fetchMock = vi.fn((url: string, init?: RequestInit) => {
-		if (url === PAGE_URL) {
-			return html === null
-				? new Response("shop down", { status: 500 })
-				: new Response(html, {
-						headers: { "content-type": "text/html; charset=utf-8" },
-						status: statusCode,
-					});
+		if (url.startsWith(PAGE_URL)) {
+			if (timeout) {
+				throw new DOMException("The operation timed out", "TimeoutError");
+			}
+			const response =
+				html === null
+					? new Response("shop down", { status: 500 })
+					: new Response(html, {
+							headers: { "content-type": "text/html; charset=utf-8" },
+							status: statusCode,
+						});
+			Object.defineProperty(response, "url", { value: answeredUrl ?? url });
+			return response;
 		}
 		if (url.includes("firecrawl")) {
 			return Response.json({
@@ -182,12 +216,31 @@ describe("pageFacts.request", () => {
 		expect(scheduled).toHaveLength(1);
 	});
 
-	test("a settled lot, an archived lot and a bad id never schedule", async () => {
-		const settled = await setup({
-			process: "Washed",
-			roasterNotes: ["peach"],
-			variety: "Heirloom",
+	test("a lot with page facts but a field still missing gets another read; a lot at the read cap does not", async () => {
+		const partial = await setup({
+			copyFetchedAt: Date.now() - PAGE_FACTS_RETRY_MS - 1,
+			pageFacts: { process: "Washed" },
+			pageReads: 1,
 		});
+		expect(
+			await partial.t.mutation(api.pageFacts.request, { lotId: partial.lotId })
+		).toBe("started");
+		const capped = await setup({
+			copyFetchedAt: Date.now() - PAGE_FACTS_RETRY_MS - 1,
+			pageFacts: { process: "Washed" },
+			pageReads: MAX_PAGE_READS,
+		});
+		expect(
+			await capped.t.mutation(api.pageFacts.request, { lotId: capped.lotId })
+		).toBe("known");
+		const scheduled = await capped.t.run((ctx) =>
+			ctx.db.system.query("_scheduled_functions").collect()
+		);
+		expect(scheduled).toHaveLength(0);
+	});
+
+	test("a complete lot, an archived lot and a bad id never schedule", async () => {
+		const settled = await setup(COMPLETE_FEED);
 		expect(
 			await settled.t.mutation(api.pageFacts.request, { lotId: settled.lotId })
 		).toBe("known");
@@ -262,16 +315,16 @@ const scheduledReads = (fx: Fixture) =>
 	});
 
 describe("pageFacts.sweep", () => {
-	test("after a crawl, every thin current lot is stamped and gets one read; settled, tried and archived lots are left alone", async () => {
+	test("after a crawl, every current lot missing a page fact is stamped and gets one read; complete, tried, capped and archived lots are left alone", async () => {
 		const fx = await setup();
-		const settled = await insertLot(fx, 1, {
-			process: "Washed",
-			roasterNotes: ["peach"],
-			variety: "Heirloom",
-		});
+		const settled = await insertLot(fx, 1, COMPLETE_FEED);
 		const triedToday = await insertLot(fx, 2, { copyFetchedAt: Date.now() });
 		const archived = await insertLot(fx, 3, { status: "archived" });
 		const thin = await insertLot(fx, 4);
+		const capped = await insertLot(fx, 5, {
+			copyFetchedAt: Date.now() - PAGE_FACTS_RETRY_MS - 1,
+			pageReads: MAX_PAGE_READS,
+		});
 		const count = await fx.t.mutation(internal.pageFacts.sweep, {
 			roasterId: fx.roasterId,
 		});
@@ -286,12 +339,17 @@ describe("pageFacts.sweep", () => {
 		expect(reads).toHaveLength(2);
 		const rows = await fx.t.run((ctx) =>
 			Promise.all(
-				[settled, triedToday, archived, thin].map((id) => ctx.db.get(id))
+				[settled, triedToday, archived, thin, capped].map((id) =>
+					ctx.db.get(id)
+				)
 			)
 		);
 		expect(rows[0]?.copyFetchedAt).toBeUndefined();
 		expect(rows[2]?.copyFetchedAt).toBeUndefined();
 		expect(rows[3]?.copyFetchedAt).toEqual(expect.any(Number));
+		expect(rows[4]?.copyFetchedAt).toBeLessThan(
+			Date.now() - PAGE_FACTS_RETRY_MS
+		);
 		// The next sweep in the same day finds nothing to do.
 		expect(
 			await fx.t.mutation(internal.pageFacts.sweep, { roasterId: fx.roasterId })
@@ -300,7 +358,9 @@ describe("pageFacts.sweep", () => {
 
 	test("a sweep reads at most PAGE_SWEEP_PER_CRAWL lots, spaced apart, and the rest wait for the next crawl", async () => {
 		const fx = await setup();
-		for (let index = 0; index < PAGE_SWEEP_PER_CRAWL + 5; index += 1) {
+		/** Lots past the cap, besides the fixture lot. */
+		const extraLots = 5;
+		for (let index = 0; index < PAGE_SWEEP_PER_CRAWL + extraLots; index += 1) {
 			// oxlint-disable-next-line no-await-in-loop -- sequential inserts
 			await insertLot(fx, 10 + index);
 		}
@@ -314,9 +374,26 @@ describe("pageFacts.sweep", () => {
 			(PAGE_SWEEP_PER_CRAWL - 1) * PAGE_SWEEP_SPACING_MS
 		);
 		// The lots left over are unstamped, so the next crawl's sweep takes them.
+		const leftOver = extraLots + 1;
 		expect(
 			await fx.t.mutation(internal.pageFacts.sweep, { roasterId: fx.roasterId })
-		).toBe(6);
+		).toBe(leftOver);
+	});
+
+	test("a lot without a shop URL never holds one of the sweep's slots", async () => {
+		const fx = await setup();
+		// productUrl refuses a handle with spaces, and the lot stores no url.
+		for (let index = 0; index < PAGE_SWEEP_PER_CRAWL; index += 1) {
+			// oxlint-disable-next-line no-await-in-loop -- sequential inserts
+			await insertLot(fx, 100 + index, { handle: `no handle ${index}` });
+		}
+		expect(
+			await fx.t.mutation(internal.pageFacts.sweep, { roasterId: fx.roasterId })
+		).toBe(1);
+		const reads = await scheduledReads(fx);
+		expect(reads.map((row) => row.args[0])).toEqual([
+			expect.objectContaining({ productId: fx.lotId }),
+		]);
 	});
 });
 
@@ -351,13 +428,38 @@ describe("pageFacts.store and the lot page", () => {
 			pageFactsKnown: true,
 			thin: false,
 		});
-		// The lot is settled: no further reads.
+		// The read is counted and inside the retry window; producer, region
+		// and roast level are still missing, so the window's end brings
+		// another read.
+		expect(stored?.pageReads).toBe(1);
 		expect(
 			await fx.t.mutation(api.pageFacts.request, { lotId: fx.lotId })
 		).toBe("known");
+		vi.setSystemTime(Date.now() + PAGE_FACTS_RETRY_MS + 1);
+		expect(
+			await fx.t.mutation(api.pageFacts.request, { lotId: fx.lotId })
+		).toBe("started");
 	});
 
-	test("an empty read keeps the attempt stamp and no pageFacts", async () => {
+	test("a later read adds its facts over the earlier read's instead of replacing them", async () => {
+		const fx = await setup({
+			pageFacts: { process: "Natural", variety: "Heirloom" },
+			pageReads: 1,
+		});
+		await fx.t.mutation(internal.pageFacts.store, {
+			facts: { producer: "Mullugeta Muntasha", variety: "74158" },
+			productId: fx.lotId,
+		});
+		const stored = await product(fx);
+		expect(stored?.pageFacts).toEqual({
+			process: "Natural",
+			producer: "Mullugeta Muntasha",
+			variety: "74158",
+		});
+		expect(stored?.pageReads).toBe(2);
+	});
+
+	test("an empty read keeps the attempt stamp, counts the read and stores no pageFacts", async () => {
 		const fx = await setup();
 		await fx.t.mutation(internal.pageFacts.store, {
 			facts: {},
@@ -366,6 +468,7 @@ describe("pageFacts.store and the lot page", () => {
 		const stored = await product(fx);
 		expect(stored?.copyFetchedAt).toEqual(expect.any(Number));
 		expect(stored?.pageFacts).toBeUndefined();
+		expect(stored?.pageReads).toBe(1);
 	});
 
 	test("the feed write never touches pageFacts", async () => {
@@ -445,7 +548,61 @@ describe("pageFacts.scrape", () => {
 		]);
 	});
 
-	test("a Jev failure stores nothing and the lot retries after the window", async () => {
+	test("a shop that redirects the handle to another page is not read as the lot's page; Firecrawl decides", async () => {
+		const fx = await setup();
+		const fetchMock = stubProviders({ answeredUrl: COLLECTION_URL });
+		await fx.t.action(internal.pageFacts.scrape, {
+			productId: fx.lotId,
+			url: PAGE_URL,
+		});
+		expect(
+			fetchMock.mock.calls.some(([url]) => String(url).includes("firecrawl"))
+		).toBe(true);
+		const read = await product(fx);
+		expect(read?.pageFacts?.process).toBe("Natural");
+	});
+
+	test("a shop that never answers falls back to Firecrawl instead of failing the read", async () => {
+		const fx = await setup();
+		const fetchMock = stubProviders({ timeout: true });
+		await fx.t.action(internal.pageFacts.scrape, {
+			productId: fx.lotId,
+			url: PAGE_URL,
+		});
+		expect(
+			fetchMock.mock.calls.some(([url]) => String(url).includes("firecrawl"))
+		).toBe(true);
+		const read = await product(fx);
+		expect(read?.pageFacts?.process).toBe("Natural");
+	});
+
+	test("the same path with a query string dropped is the page that was asked for", async () => {
+		const fx = await setup();
+		const fetchMock = stubProviders({ answeredUrl: PAGE_URL });
+		await fx.t.action(internal.pageFacts.scrape, {
+			productId: fx.lotId,
+			url: `${PAGE_URL}?variant=1`,
+		});
+		expect(
+			fetchMock.mock.calls.some(([url]) => String(url).includes("firecrawl"))
+		).toBe(false);
+		const read = await product(fx);
+		expect(read?.pageFacts?.process).toBe("Natural");
+	});
+
+	test("samePage ignores a trailing slash and an https upgrade, and nothing else", () => {
+		expect(samePage(PAGE_URL, `${PAGE_URL}/`)).toBe(true);
+		expect(samePage(PAGE_URL, `${PAGE_URL}?variant=1#top`)).toBe(true);
+		expect(samePage(PAGE_URL.replace("https:", "http:"), PAGE_URL)).toBe(true);
+		expect(samePage(PAGE_URL, PAGE_URL.replace("https:", "http:"))).toBe(false);
+		expect(samePage(PAGE_URL, COLLECTION_URL)).toBe(false);
+		expect(samePage(PAGE_URL, PAGE_URL.replace("sey.", "www.sey."))).toBe(
+			false
+		);
+		expect(samePage(PAGE_URL, "not a url")).toBe(false);
+	});
+
+	test("a Jev failure stores nothing, counts the read and the lot retries after the window", async () => {
 		const fx = await setup();
 		stubProviders({ jev: false });
 		await fx.t.action(internal.pageFacts.scrape, {
@@ -455,10 +612,11 @@ describe("pageFacts.scrape", () => {
 		const untouched = await product(fx);
 		expect(untouched?.pageFacts).toBeUndefined();
 		expect(untouched?.copyFetchedAt).toEqual(expect.any(Number));
+		expect(untouched?.pageReads).toBe(1);
 	});
 
-	test("an unavailable page stores nothing", async () => {
-		const fx = await setup();
+	test("an unavailable page stores nothing and still counts as a read", async () => {
+		const fx = await setup({ pageReads: 1 });
 		stubProviders({ html: null, statusCode: 404 });
 		await fx.t.action(internal.pageFacts.scrape, {
 			productId: fx.lotId,
@@ -466,5 +624,7 @@ describe("pageFacts.scrape", () => {
 		});
 		const untouched = await product(fx);
 		expect(untouched?.pageFacts).toBeUndefined();
+		expect(untouched?.copyFetchedAt).toEqual(expect.any(Number));
+		expect(untouched?.pageReads).toBe(2);
 	});
 });

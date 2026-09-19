@@ -48,8 +48,9 @@ export const candidateValidator = v.object({
 	confirmedAt: v.number(),
 	currency: v.literal("USD"),
 	evidence: v.array(evidenceValidator),
-	// The lot's facts are settled (feed or pageFacts, ADR-0005), so the run
-	// does not spend a page read on it. Absent on runs from before the field.
+	// No page read is due for the lot (every page fact known, or at the read
+	// cap, or inside the retry window; ADR-0008), so the run does not spend
+	// one on it. Absent on runs from before the field.
 	factsKnown: v.optional(v.boolean()),
 	grams: v.number(),
 	market: v.literal("US"),

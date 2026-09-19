@@ -250,6 +250,16 @@ describe("commit: crawl-end page sweep (ADR-0008)", () => {
 		await fail(failed, T0, "shop down");
 		expect(await sweeps(failed)).toHaveLength(0);
 	});
+
+	test("a product_pages source gets the sweep too: its crawl read the structured product, not the rendered page", async () => {
+		const fx = await setup({ mode: "product_pages" });
+		await crawl(fx, T0, [product("a")]);
+		const scheduled = await sweeps(fx);
+		expect(scheduled).toHaveLength(1);
+		expect(scheduled[0]).toMatchObject({
+			args: [{ roasterId: fx.roasterId }],
+		});
+	});
 });
 
 describe("commit: new-event collapse (#19)", () => {

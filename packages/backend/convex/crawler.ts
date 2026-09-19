@@ -143,7 +143,12 @@ const commitCatalog = async (
 	});
 	// The page sweep (ADR-0008) runs behind the commit for the same reason:
 	// a shop or Jev outage during the reads must not fail the crawl, and the
-	// reads are paced by the sweep itself.
+	// reads are paced by the sweep itself. It runs for product_pages sources
+	// too, although that crawl already read every product page: the crawl's
+	// read is Firecrawl's structured product format over the description,
+	// with the feed extractors on top, and never sees the theme's notes
+	// element or the rendered spec block the sweep's candidates and Jev pick
+	// from. The second read is a plain fetch of the shop page, no credit.
 	await ctx.scheduler.runAfter(0, internal.pageFacts.sweep, {
 		roasterId: input.roasterId,
 	});

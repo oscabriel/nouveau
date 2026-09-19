@@ -2,8 +2,10 @@ import { describe, expect, test } from "vitest";
 
 import {
 	factPassage,
+	hasMissingPageFacts,
 	isThin,
 	joinNotes,
+	MAX_PAGE_READS,
 	mergedFacts,
 	needsPageFacts,
 	notesList,
@@ -175,6 +177,30 @@ describe("merge", () => {
 		expect(isThin({ pageFacts: page })).toBe(false);
 	});
 
+	/** Every field the page validator carries, as the feed would state them. */
+	const complete = {
+		elevation: "1800 MASL",
+		process: "Washed",
+		producer: "Gatomboya Factory",
+		region: "Nyeri",
+		roastLevel: "Light",
+		roasterNotes: ["Peach"],
+		variety: "SL28",
+	};
+
+	test("a page fact is missing until every field the page can state is known", () => {
+		expect(hasMissingPageFacts(complete)).toBe(false);
+		for (const key of Object.keys(complete)) {
+			const { [key]: _dropped, ...rest } = complete as Record<string, unknown>;
+			expect(hasMissingPageFacts(rest)).toBe(true);
+		}
+		// Page facts fill the feed's gaps.
+		const { producer: _producer, ...feed } = complete;
+		expect(
+			hasMissingPageFacts({ ...feed, pageFacts: { producer: "Gatomboya" } })
+		).toBe(false);
+	});
+
 	test("a look asks the page once, then not again inside the retry window", () => {
 		const now = 1_000_000_000;
 		expect(needsPageFacts({ process: "Washed" }, now)).toBe(true);
@@ -182,13 +208,43 @@ describe("merge", () => {
 		expect(
 			needsPageFacts({ copyFetchedAt: now - PAGE_FACTS_RETRY_MS - 1 }, now)
 		).toBe(true);
-		// Settled lots never ask, however thin the feed.
+		expect(needsPageFacts(complete, now)).toBe(false);
+	});
+
+	test("page facts stored by one read do not settle a lot that is still missing others", () => {
+		const now = 1_000_000_000;
 		expect(needsPageFacts({ pageFacts: { process: "Natural" } }, now)).toBe(
-			false
+			true
 		);
 		expect(
 			needsPageFacts(
-				{ process: "Washed", roasterNotes: ["Peach"], variety: "SL28" },
+				{
+					copyFetchedAt: now - PAGE_FACTS_RETRY_MS - 1,
+					pageFacts: { process: "Natural" },
+					pageReads: 1,
+				},
+				now
+			)
+		).toBe(true);
+	});
+
+	test("a lot read MAX_PAGE_READS times is left as it is, however much is missing", () => {
+		const now = 1_000_000_000;
+		expect(
+			needsPageFacts(
+				{
+					copyFetchedAt: now - PAGE_FACTS_RETRY_MS - 1,
+					pageReads: MAX_PAGE_READS - 1,
+				},
+				now
+			)
+		).toBe(true);
+		expect(
+			needsPageFacts(
+				{
+					copyFetchedAt: now - PAGE_FACTS_RETRY_MS - 1,
+					pageReads: MAX_PAGE_READS,
+				},
 				now
 			)
 		).toBe(false);

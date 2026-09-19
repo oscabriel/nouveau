@@ -787,6 +787,11 @@ test("a failed scrape is retried after an hour, not a day", async () => {
 	expect(
 		failing.mock.calls.filter(([url]) => url.includes("firecrawl"))
 	).toHaveLength(1);
+	// The worker's failure is not a counted read: no stamp, no pageReads, so
+	// the lot stays visible to the hourly retry below and to the crawl sweep.
+	const afterFailure = await f.t.run((ctx) => ctx.db.get(f.productId));
+	expect(afterFailure?.pageReads).toBeUndefined();
+	expect(afterFailure?.copyFetchedAt).toBeUndefined();
 	const working = installProviders();
 	const tooSoon = await f.other.mutation(api.recommendations.request, {
 		...input,

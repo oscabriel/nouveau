@@ -64,8 +64,9 @@ const enrich = async (
 	// Enrich the coffees the request is most likely to land on, so a page
 	// fetch can change what the user sees; among equals, the thinnest first.
 	const tokens = preferenceTokens(run.input.preferences);
-	// A lot whose facts are settled (feed or pageFacts, ADR-0005) does not
-	// spend a page read; the fact passage already sits in its evidence.
+	// A lot with no page read due (every page fact known, or at the read cap,
+	// or inside the retry window; ADR-0008) does not spend one here; the fact
+	// passage already sits in its evidence.
 	const scored = run.candidates
 		.filter(
 			(candidate) =>
@@ -116,13 +117,19 @@ const enrich = async (
 				facts: page.facts,
 				productId: candidate.productId,
 			});
-			const passages = pagePassages(page, reserved.known);
+			const passages = pagePassages(
+				{ markdown: page.pageText, sentences: page.sentences },
+				reserved.known
+			);
 			// oxlint-disable-next-line no-await-in-loop -- commit each bounded public source result
 			await ctx.runMutation(internal.recommendations.storeEnrichment, {
 				...args,
 				passages,
 			});
 		} catch {
+			// Not counted toward the lot's read cap (ADR-0008): the worker
+			// retries a failed page after EMPTY_EVIDENCE_TTL_MS through its own
+			// evidence cache, and a stamp here would hide the lot for a day.
 			failed = true;
 		}
 	}

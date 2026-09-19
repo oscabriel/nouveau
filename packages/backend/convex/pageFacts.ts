@@ -1,24 +1,27 @@
-// Page facts on demand (ADR-0005, option C). A lot's rendered product page
-// is read the first time someone looks at a thin lot: the lot page asks
-// through `request`, the recommendation worker asks for a candidate. One
-// Firecrawl markdown scrape (one credit, cached), then code over-finds
-// candidate spans per field and ONE Jev request picks one candidate per
-// field (or none). Every pick is verbatim on the page by construction and
-// passes the shared per-field shape (extraction.verifyPageFacts), then is
-// stored in `products.pageFacts`, which the feed write never touches.
+// Page facts (ADR-0005 option C, scheduled as ADR-0008 amends it). A lot's
+// rendered product page is read while a page fact is still missing after
+// the merge: the crawl-end sweep asks for the roaster's lots, the lot page
+// asks through `request`, the recommendation worker asks for a candidate.
+// One page text (the shop's own page, else a Firecrawl markdown scrape),
+// then code over-finds candidate spans per field and ONE Jev request picks
+// one candidate per field (or none). Every pick is verbatim on the page by
+// construction and passes the shared per-field shape
+// (extraction.verifyPageFacts), then is stored in `products.pageFacts`,
+// which the feed write never touches.
 
 import { HOUR, RateLimiter } from "@convex-dev/rate-limiter";
 import { FirecrawlClient } from "@firecrawl/firecrawl-convex";
 import { v } from "convex/values";
 
 import { components, internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
 import {
 	env,
 	internalAction,
 	internalMutation,
 	mutation,
 } from "./_generated/server";
-import type { ActionCtx } from "./_generated/server";
+import type { ActionCtx, MutationCtx } from "./_generated/server";
 import {
 	pageFactCandidates,
 	pageTextFromHtml,
@@ -35,15 +38,16 @@ import { sentenceCandidates } from "./recommendationRules";
 /** Anyone can open a lot page, so the spend is capped deployment-wide. */
 export const PAGE_FACTS_PER_HOUR = 20;
 /**
- * Thin lots one crawl's sweep reads (ADR-0008). The first sweep of a
- * catalog is a backfill spread over crawls; after that a crawl finds only
- * its new lots, so the cap mostly bounds a Jev outage's retry cost.
+ * Lots one crawl's sweep reads (ADR-0008). The first sweeps of a catalog
+ * are a backfill spread over crawls; after that a crawl finds only its new
+ * lots and the retries the cap allows, so this mostly bounds a Jev outage's
+ * retry cost.
  */
 export const PAGE_SWEEP_PER_CRAWL = 25;
 /** Reads in one sweep are spaced so a shop sees one request at a time. */
 export const PAGE_SWEEP_SPACING_MS = 2000;
 /** Current lots one sweep considers; above any real catalog (Sey ~900). */
-const PAGE_SWEEP_SCAN = 1000;
+const PAGE_SWEEP_SCAN_LIMIT = 1000;
 /**
  * Variety, elevation and producer do not change between crawls, so a page
  * Firecrawl read within a day is good enough (a fresh scrape is slower and
@@ -59,8 +63,8 @@ const firecrawl = new FirecrawlClient(components.firecrawl);
 
 /**
  * Jev's context rot: accuracy falls as the state grows, so the page state
- * is the head of the markdown (the main content Firecrawl already trimmed;
- * specs sit at the top of a product page), not the whole document. Jev's
+ * is the head of the page text (chrome already dropped; specs sit at the
+ * top of a product page), not the whole document. Jev's
  * own limit is 32k tokens for state; this stays far below it.
  */
 const JEV_STATE_LIMIT = 12_000;
@@ -209,12 +213,33 @@ const picksFromAnswers = (
 
 export const requestResultValidator = v.union(
 	v.literal("started"),
-	// The lot has its facts, or a read is in flight or inside the retry window.
+	// Nothing more to read: the lot has its facts, has had MAX_PAGE_READS
+	// reads, or a read is in flight or inside the retry window.
 	v.literal("known"),
 	v.literal("limited"),
 	// No such lot, or nothing to read (archived, no shop URL).
 	v.literal("none")
 );
+
+/**
+ * The stamp-then-schedule step every read goes through: `copyFetchedAt`
+ * is set now, so another viewer or the sweep sees the lot inside the retry
+ * window and does not read it twice, and the scrape is scheduled
+ * `delayMs` out.
+ */
+const scheduleRead = async (
+	ctx: MutationCtx,
+	productId: Id<"products">,
+	url: string,
+	now: number,
+	delayMs: number
+): Promise<void> => {
+	await ctx.db.patch("products", productId, { copyFetchedAt: now });
+	await ctx.scheduler.runAfter(delayMs, internal.pageFacts.scrape, {
+		productId,
+		url,
+	});
+};
 
 /**
  * The lot page's ask. Idempotent under concurrent viewers: the first request
@@ -245,11 +270,7 @@ export const request = mutation({
 		if (!quota.ok) {
 			return "limited";
 		}
-		await ctx.db.patch("products", productId, { copyFetchedAt: Date.now() });
-		await ctx.scheduler.runAfter(0, internal.pageFacts.scrape, {
-			productId,
-			url,
-		});
+		await scheduleRead(ctx, productId, url, Date.now(), 0);
 		return "started";
 	},
 	returns: requestResultValidator,
@@ -257,11 +278,11 @@ export const request = mutation({
 
 /**
  * The crawl-end sweep (ADR-0008): every current lot of the roaster that is
- * still thin after the feed merge, has no page facts, and was not tried
- * inside the retry window gets stamped and one scheduled read, up to
- * PAGE_SWEEP_PER_CRAWL per crawl. Same stamp-then-schedule as `request`,
- * so a viewer's ask and the sweep never read the same lot twice. Returns
- * how many reads it scheduled.
+ * still missing a page fact after the feed merge, is under the read cap,
+ * was not tried inside the retry window, and has a shop URL gets stamped
+ * and one scheduled read, up to PAGE_SWEEP_PER_CRAWL per crawl. Same
+ * stamp-then-schedule as `request`, so a viewer's ask and the sweep never
+ * read the same lot twice. Returns how many reads it scheduled.
  */
 export const sweep = internalMutation({
 	args: { roasterId: v.id("roasters") },
@@ -277,25 +298,25 @@ export const sweep = internalMutation({
 				q.eq("roasterId", args.roasterId).eq("status", "current")
 			)
 			.order("desc")
-			.take(PAGE_SWEEP_SCAN);
-		const due = lots
-			.filter((lot) => needsPageFacts(lot, now))
-			.slice(0, PAGE_SWEEP_PER_CRAWL);
-		let scheduled = 0;
-		for (const lot of due) {
+			.take(PAGE_SWEEP_SCAN_LIMIT);
+		// A lot without a shop URL can never be read, so it is dropped before
+		// the slice rather than holding one of the crawl's slots every time.
+		const due: { productId: Id<"products">; url: string }[] = [];
+		for (const lot of lots) {
 			const url = lotShopUrl(roaster, lot);
-			if (url === null) {
-				continue;
+			if (url !== null && needsPageFacts(lot, now)) {
+				due.push({ productId: lot._id, url });
 			}
-			// Sequential on purpose: the stamp and the schedule are one step
-			// per lot, and the spacing is the lot's position in the sweep.
-			// oxlint-disable-next-line no-await-in-loop
-			await ctx.db.patch("products", lot._id, { copyFetchedAt: now });
-			// oxlint-disable-next-line no-await-in-loop
-			await ctx.scheduler.runAfter(
-				scheduled * PAGE_SWEEP_SPACING_MS,
-				internal.pageFacts.scrape,
-				{ productId: lot._id, url }
+		}
+		let scheduled = 0;
+		for (const { productId, url } of due.slice(0, PAGE_SWEEP_PER_CRAWL)) {
+			// oxlint-disable-next-line no-await-in-loop -- sequential on purpose: the stamp and the schedule are one step per lot, and the spacing is the lot's position in the sweep
+			await scheduleRead(
+				ctx,
+				productId,
+				url,
+				now,
+				scheduled * PAGE_SWEEP_SPACING_MS
 			);
 			scheduled += 1;
 		}
@@ -307,33 +328,65 @@ export const sweep = internalMutation({
 /** What one page read yields: facts for the product, sentences for evidence. */
 export interface PageRead {
 	facts: PageFacts;
-	markdown: string;
+	/** The page as block text: the shop's HTML stripped, or Firecrawl's markdown. */
+	pageText: string;
 	/** Description sentences Jev approved, in page order. */
 	sentences: string[];
 }
 
+const TRAILING_SLASHES = /\/+$/u;
+
+/**
+ * Whether the page the shop answered with is the page that was asked for:
+ * same host and same path, ignoring the query string and a trailing slash,
+ * and allowing an http to https upgrade. A shop that 301s a dead handle to
+ * its collection page answers 200 with HTML, and that must not be read as
+ * the lot's page.
+ */
+export const samePage = (requested: string, answered: string): boolean => {
+	let asked: URL;
+	let got: URL;
+	try {
+		asked = new URL(requested);
+		got = new URL(answered);
+	} catch {
+		return false;
+	}
+	const upgraded = asked.protocol === "http:" && got.protocol === "https:";
+	return (
+		asked.host === got.host &&
+		(asked.protocol === got.protocol || upgraded) &&
+		asked.pathname.replace(TRAILING_SLASHES, "") ===
+			got.pathname.replace(TRAILING_SLASHES, "")
+	);
+};
+
 /**
  * The product page's text from the shop itself: one plain request, no
- * credit. Null when the shop errors, times out, serves something other
- * than HTML, or serves a script shell; the caller falls back to Firecrawl.
+ * credit. Null when the shop errors, times out, redirects to another page,
+ * serves something other than HTML, fails mid-body, or serves a script
+ * shell; the caller falls back to Firecrawl.
  */
 const fetchPageText = async (url: string): Promise<string | null> => {
-	let response: Response;
 	try {
-		response = await fetch(url, {
+		const response = await fetch(url, {
 			headers: PAGE_FETCH_HEADERS,
 			signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT_MS),
 		});
+		// A Response built by hand reports "" as its url; only a real
+		// redirect target can differ from what was asked for.
+		const answered = response.url === "" ? url : response.url;
+		if (
+			!response.ok ||
+			!samePage(url, answered) ||
+			!(response.headers.get("content-type") ?? "").includes("text/html")
+		) {
+			return null;
+		}
+		return pageTextFromHtml(await response.text());
 	} catch {
 		return null;
 	}
-	if (
-		!response.ok ||
-		!(response.headers.get("content-type") ?? "").includes("text/html")
-	) {
-		return null;
-	}
-	return pageTextFromHtml(await response.text());
 };
 
 /** The page through Firecrawl's markdown scrape (one credit, cached a day). */
@@ -365,22 +418,22 @@ export const readPageFacts = async (
 	url: string,
 	known = ""
 ): Promise<PageRead> => {
-	const markdown =
+	const pageText =
 		(await fetchPageText(url)) ?? (await scrapePageText(ctx, url));
-	const empty: PageRead = { facts: {}, markdown, sentences: [] };
+	const empty: PageRead = { facts: {}, pageText, sentences: [] };
 	const apiKey = env.TYPESAFE_API_KEY;
 	// Without the key the read still succeeds: the lot keeps its attempt
 	// stamp, the passages fall back to the regex path, and the next read
 	// after the retry window picks the Jev path up once the key is set.
-	if (apiKey === undefined || apiKey === "" || markdown === "") {
+	if (apiKey === undefined || apiKey === "" || pageText === "") {
 		return empty;
 	}
-	const candidates = pageFactCandidates(markdown);
-	const sentenceSpans = sentenceCandidates(markdown, known);
+	const candidates = pageFactCandidates(pageText);
+	const sentenceSpans = sentenceCandidates(pageText, known);
 	const answer = await askJev(
 		apiKey,
 		`pageFacts ${url}`,
-		markdown.slice(0, JEV_STATE_LIMIT),
+		pageText.slice(0, JEV_STATE_LIMIT),
 		pageJevQuestions(candidates, sentenceSpans)
 	);
 	if (answer === null) {
@@ -392,7 +445,7 @@ export const readPageFacts = async (
 		);
 	}
 	return {
-		markdown,
+		pageText,
 		...picksFromAnswers(answer.answers, candidates, sentenceSpans),
 	};
 };
@@ -404,8 +457,12 @@ export const scrape = internalAction({
 		try {
 			({ facts } = await readPageFacts(ctx, args.url));
 		} catch {
-			// copyFetchedAt is already stamped; the lot is retried after the
-			// window. Nothing is stored for a page that could not be read.
+			// Nothing is stored for a page that could not be read, but the
+			// attempt counts: the lot is retried after the window until the
+			// read cap, not forever.
+			await ctx.runMutation(internal.pageFacts.recordFailedRead, {
+				productId: args.productId,
+			});
 			return null;
 		}
 		await ctx.runMutation(internal.pageFacts.store, {
@@ -417,10 +474,20 @@ export const scrape = internalAction({
 	returns: v.null(),
 });
 
+/** The bookkeeping every read outcome writes: the stamp and the counter. */
+const attemptPatch = (
+	product: Doc<"products">
+): { copyFetchedAt: number; pageReads: number } => ({
+	copyFetchedAt: Date.now(),
+	pageReads: (product.pageReads ?? 0) + 1,
+});
+
 /**
- * Store what the page said. An empty read keeps the attempt stamp and no
- * `pageFacts`, so the lot is asked again after PAGE_FACTS_RETRY_MS; a read
- * with facts settles the lot. Never touches a feed column.
+ * Store what the page said. The attempt is stamped and counted whatever it
+ * found; facts it found are merged over the ones an earlier read stored,
+ * so a second read adds fields without dropping the first read's. A lot is
+ * asked again after PAGE_FACTS_RETRY_MS while a field is still missing,
+ * up to MAX_PAGE_READS times. Never touches a feed column.
  */
 export const store = internalMutation({
 	args: { facts: pageFactsValidator, productId: v.id("products") },
@@ -429,14 +496,34 @@ export const store = internalMutation({
 		if (product === null) {
 			return null;
 		}
-		const now = Date.now();
 		await ctx.db.patch(
 			"products",
 			args.productId,
 			Object.keys(args.facts).length === 0
-				? { copyFetchedAt: now }
-				: { copyFetchedAt: now, pageFacts: args.facts }
+				? attemptPatch(product)
+				: {
+						...attemptPatch(product),
+						pageFacts: { ...product.pageFacts, ...args.facts },
+					}
 		);
+		return null;
+	},
+	returns: v.null(),
+});
+
+/**
+ * A page that could not be read either way still counts as an attempt, so
+ * a lot whose page is gone or challenges the crawler stops at the read cap
+ * instead of retrying daily forever. Never touches a feed column.
+ */
+export const recordFailedRead = internalMutation({
+	args: { productId: v.id("products") },
+	handler: async (ctx, args) => {
+		const product = await ctx.db.get("products", args.productId);
+		if (product === null) {
+			return null;
+		}
+		await ctx.db.patch("products", args.productId, attemptPatch(product));
 		return null;
 	},
 	returns: v.null(),

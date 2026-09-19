@@ -9,7 +9,7 @@ The feed cannot close the gap. Shopify's products.json carries the description H
 - **The read runs at crawl time.** After a successful catalog commit the crawl schedules `pageFacts.sweep` for the roaster: every current lot that is still thin after the feed merge, has no page facts, and was not tried inside the retry window is stamped and gets one scheduled read, at most `PAGE_SWEEP_PER_CRAWL` per crawl, spaced `PAGE_SWEEP_SPACING_MS` apart. The first sweeps of a catalog are a backfill spread over crawls; after that a crawl reads only its new lots. The on-view ask (`pageFacts.request`) stays for a lot a viewer reaches before its sweep.
 - **The shop's own page first.** `readPageFacts` fetches the product URL with a plain request and reduces the HTML to block text (`pageTextFromHtml`: chrome dropped, then `stripHtml`). Firecrawl's markdown scrape runs only when the shop errors, times out, serves something other than HTML, or serves a script shell under `MIN_PAGE_TEXT_LENGTH` characters. Credits are spent on the exception, not the rule.
 - **The theme's notes element leads the candidates.** With HTML in hand, an element whose class names the notes (`tasting-notes`, `flavor-profile`, `flavors`) is split into one note per child element and prepended to the page text as a labelled line, so those notes head the candidate list instead of trailing the nav lines that fill the cap. Jev still verifies every candidate; the hint changes order, not authority. Classes that say upsell, related or card are another product's block and are skipped.
-- **Nothing else moves.** The schema, the shared verifiers, the stamp-and-retry rule and Jev as the picker are as ADR-0005 set them. A page read still writes only `pageFacts`.
+- **Nothing else moves.** The schema, the shared verifiers, the stamp-and-retry rule and Jev as the picker are as ADR-0005 set them. A page read still writes only `pageFacts`. (Amended below: the stamp-and-retry rule and the schema did move once the review found the gap.)
 
 ## Why this reverses C over A
 
@@ -22,3 +22,16 @@ ADR-0005 rejected A on cost: ~600 credits once and ~100 a week for lots nobody v
 - A shop that rate-limits or challenges the crawler's user agent falls back to Firecrawl for every lot, which is the pre-ADR cost; the sweep cap bounds it.
 - A theme that marks another product's notes with the same class as its own, without an upsell-style class, can lead the candidates with the wrong coffee's notes. Jev's per-note question asks about "the one coffee sold on this product page", which is the guard.
 - Every extractor change remains a catalog correction; a lot read once is not re-read until its facts are cleared or the retry window passes with no facts stored.
+
+## Amended 2026-09-18
+
+A review of the first cut found that `needsPageFacts` treated any stored `pageFacts` as settled and `store` settled a lot on any single fact, so a lot whose first read yielded only a process was never read again, and that lots whose reads found nothing were retried every day with no end. The coverage estimate above assumed neither. The rule is now:
+
+- A lot is read while any page fact is still missing after the merge: elevation, process, producer, region, roast level, tasting notes or variety (`lotFacts.hasMissingPageFacts`). Stored page facts do not settle a lot while another field is empty. The card badge (`isThin`) keeps its narrower rule of process, variety and notes.
+- A lot is read at most `MAX_PAGE_READS` times (3) and no sooner than `PAGE_FACTS_RETRY_MS` (24 hours) apart. Every attempt counts, whether it found facts, found nothing, or could not read the page either way. A lot at the cap is left as it is.
+- A read with facts no longer settles a lot that is still missing facts. A later read merges its facts over the earlier read's, so a second read adds fields without dropping the first read's.
+- The `products` table gained `pageReads`, the attempt counter, owned by the page scrape next to `copyFetchedAt`. A lot without a shop URL is dropped before the sweep's slice, so it never holds one of the crawl's slots.
+- The plain fetch accepts the page only when the shop answered from the same host and path (query string and trailing slash ignored, an http to https upgrade allowed). A redirect to another page falls back to Firecrawl, which checks `sourceURL` itself.
+- The sweep runs for `product_pages` sources too. That crawl reads every product page through Firecrawl's structured product format and the feed extractors over its description; it never sees the theme's notes element or the rendered spec block, which is what the sweep's candidates and Jev pick from. The second read is a plain fetch, no credit.
+
+The backfill therefore grows from roughly 1300 lots to most of the 2740 current lots, since few feeds state producer, region, elevation and roast level all together, still at 25 per roaster per crawl. The owner prefers complete extraction over that cost. A noteless catalog (Heart, East Pole, Verve) now costs at most three Jev requests per lot in total instead of one per lot per day.

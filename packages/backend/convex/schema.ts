@@ -167,7 +167,9 @@ export default defineSchema({
 		anyAvailable: v.optional(v.boolean()),
 		// When the roaster's product page was last read for pageFacts (ADR-0005).
 		// Set at the request so concurrent viewers share one scrape; a read that
-		// found nothing keeps the stamp and is retried after PAGE_FACTS_RETRY_MS.
+		// left facts missing keeps the stamp and is retried after
+		// PAGE_FACTS_RETRY_MS, up to MAX_PAGE_READS attempts counted in
+		// pageReads below (ADR-0008 amendment).
 		copyFetchedAt: v.optional(v.number()),
 		// §14.4 lot copy: what the roaster publishes about the lot. Filled at
 		// upsert time (products upsert every crawl, no migration); absent
@@ -189,6 +191,11 @@ export default defineSchema({
 		// page scrape (pageFacts.ts); lotCopyFields never writes it. Reads merge
 		// with the feed winning (lotFacts.mergedFacts).
 		pageFacts: v.optional(pageFactsValidator),
+		// How many times the page has been read for pageFacts, whatever the
+		// outcome (facts, nothing, or a page that could not be read). Owned by
+		// the page scrape with copyFetchedAt; absent means never read. A lot at
+		// MAX_PAGE_READS is not read again (lotFacts.needsPageFacts).
+		pageReads: v.optional(v.number()),
 		process: v.optional(v.string()),
 		producer: v.optional(v.string()),
 		// Raw Shopify product_type, for audits and per-roaster rules.
