@@ -836,6 +836,20 @@ describe("stripHtml", () => {
 			)
 		).toBe("Notes of plum.");
 	});
+
+	test("decodes the punctuation entities shop themes emit, so a spec value stays whole", () => {
+		expect(
+			stripHtml(
+				"<span>Chinacla&comma; La Paz</span><p>Ethiopia Halo &ndash; the country&rsquo;s best&hellip; &ldquo;wow&rdquo; &mdash; 1&minus;2</p>"
+			)
+		).toBe(
+			"Chinacla, La Paz\nEthiopia Halo \u2013 the country\u2019s best\u2026 \u201Cwow\u201D \u2014 1\u22122"
+		);
+	});
+
+	test("leaves an entity it does not know as typed", () => {
+		expect(stripHtml("<p>1&frac12; kg &deg;C</p>")).toBe("1&frac12; kg &deg;C");
+	});
 });
 
 const fromTags = (tags: string[]) => parseLotAttributes({ tags });

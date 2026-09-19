@@ -44,8 +44,13 @@ export const PAGE_FACTS_PER_HOUR = 20;
  * send nineteen roasters' worth of scrapes at once into Firecrawl's
  * per-minute limit. A read the budget defers keeps its schedule stamp and is
  * not a counted attempt.
+ *
+ * The figure is the Free plan's /scrape limit (10 a minute, 2 concurrent),
+ * which the prod key is on; the limit counts per team, so the crawler's own
+ * scrapes (collection pages, product pages, bot-protected feeds) draw from
+ * the same 10 without passing through this bucket. Raise it with the plan.
  */
-export const FIRECRAWL_FALLBACK_PER_MINUTE = 60;
+export const FIRECRAWL_FALLBACK_PER_MINUTE = 10;
 /**
  * Lots one crawl's sweep reads (ADR-0008). The first sweeps of a catalog
  * are a backfill spread over crawls; after that a crawl finds only its new

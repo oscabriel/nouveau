@@ -113,14 +113,39 @@ export const MAX_TAGS = 32;
 /** Store cap for the raw Shopify product_type. */
 const PRODUCT_TYPE_MAX_LENGTH = 60;
 
+/**
+ * The named entities the seed shops' pages use (a census of all 20 product
+ * pages), plus the markup set. Anything not listed stays as typed, and a
+ * stray entity in a spec value splits it: Intelligentsia's
+ * "Chinacla&comma; La Paz" read as a region called "comma".
+ */
 const NAMED_ENTITIES: Record<string, string> = {
 	"&amp;": "&",
 	"&apos;": "'",
+	"&comma;": ",",
+	"&copy;": "\u00A9",
 	"&gt;": ">",
+	"&hellip;": "\u2026",
+	"&ldquo;": "\u201C",
+	"&lsquo;": "\u2018",
 	"&lt;": "<",
+	"&mdash;": "\u2014",
+	"&minus;": "\u2212",
 	"&nbsp;": " ",
+	"&ndash;": "\u2013",
 	"&quot;": '"',
+	"&rarr;": "\u2192",
+	"&rdquo;": "\u201D",
+	"&reg;": "\u00AE",
+	"&rsquo;": "\u2019",
+	"&trade;": "\u2122",
 };
+
+/** Every named entity above plus decimal and hex references; built from the table so the two cannot drift. */
+const ENTITY = new RegExp(
+	`(?:${Object.keys(NAMED_ENTITIES).join("|")}|&#\\d+;|&#x[0-9a-f]+;)`,
+	"giu"
+);
 
 /** Block-level tags become paragraph breaks; everything else inline. */
 const BLOCK_TAG =
@@ -144,22 +169,17 @@ export const stripHtml = (html: string): string =>
 		.replaceAll(DROPPED_ELEMENT, "\n")
 		.replaceAll(BLOCK_TAG, "\n")
 		.replaceAll(ANY_TAG, " ")
-		.replaceAll(
-			/&(?:amp|apos|gt|lt|nbsp|quot|#\d+|#x[0-9a-f]+);/giu,
-			(entity) => {
-				const named = NAMED_ENTITIES[entity.toLowerCase()];
-				if (named !== undefined) {
-					return named;
-				}
-				const hex = /^&#x/iu.test(entity);
-				const digits = entity.replaceAll(/&#x|&#|;/giu, "");
-				const radix = hex ? 16 : 10;
-				const codePoint = Number.parseInt(digits, radix);
-				return Number.isNaN(codePoint)
-					? entity
-					: String.fromCodePoint(codePoint);
+		.replaceAll(ENTITY, (entity) => {
+			const named = NAMED_ENTITIES[entity.toLowerCase()];
+			if (named !== undefined) {
+				return named;
 			}
-		)
+			const hex = /^&#x/iu.test(entity);
+			const digits = entity.replaceAll(/&#x|&#|;/giu, "");
+			const radix = hex ? 16 : 10;
+			const codePoint = Number.parseInt(digits, radix);
+			return Number.isNaN(codePoint) ? entity : String.fromCodePoint(codePoint);
+		})
 		.replaceAll(/[^\S\n]+/gu, " ")
 		.replaceAll(/\s*\n\s*/gu, "\n")
 		.trim();
