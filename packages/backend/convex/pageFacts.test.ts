@@ -8,6 +8,7 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { MAX_PAGE_READS, PAGE_FACTS_RETRY_MS } from "./lotFacts";
 import {
+	FIRECRAWL_PLAN_SCRAPES_PER_MINUTE,
 	FIRECRAWL_READS_PER_MINUTE,
 	MAX_READ_DEFERRALS,
 	PAGE_FACTS_PER_HOUR,
@@ -739,13 +740,15 @@ describe("pageFacts.scrape", () => {
 		);
 	});
 
-	test("reads share a deployment-wide Firecrawl budget a minute; a read past it is not counted, reserves its slot and runs there", async () => {
+	test("reads share a deployment-wide Firecrawl budget, one at a time at the plan's rate; a read past it is not counted, reserves its slot and runs there", async () => {
 		const fx = await setup();
 		const fetchMock = stubProviders({ html: null });
 		const stamp = Date.now();
 		await fx.t.run((ctx) => ctx.db.patch(fx.lotId, { copyFetchedAt: stamp }));
-		for (let index = 0; index < FIRECRAWL_READS_PER_MINUTE + 1; index += 1) {
-			// oxlint-disable-next-line no-await-in-loop -- reads in sequence, the last one over budget
+		// Two reads in the same instant: the budget admits one and holds the
+		// next slot for the other, one interval later.
+		for (let index = 0; index < 2; index += 1) {
+			// oxlint-disable-next-line no-await-in-loop -- reads in sequence, the second over budget
 			await fx.t.action(internal.pageFacts.scrape, {
 				productId: fx.lotId,
 				url: PAGE_URL,
@@ -753,25 +756,33 @@ describe("pageFacts.scrape", () => {
 		}
 		const scrapes = () =>
 			fetchMock.mock.calls.filter(([url]) => String(url).includes("firecrawl"));
-		expect(scrapes()).toHaveLength(FIRECRAWL_READS_PER_MINUTE);
+		expect(scrapes()).toHaveLength(1);
 		const deferred = await product(fx);
-		expect(deferred?.pageReads).toBe(FIRECRAWL_READS_PER_MINUTE);
+		expect(deferred?.pageReads).toBe(1);
 		expect(deferred?.copyFetchedAt).toBe(stamp);
 		// The shop was asked once for the deferred read, at no credit.
 		expect(
 			fetchMock.mock.calls.filter(([url]) => String(url).startsWith(PAGE_URL))
 		).toHaveLength(1);
 		const [retry] = await scheduledReads(fx);
-		expect(retry?.scheduledTime).toBeGreaterThan(stamp);
-		expect(retry?.scheduledTime).toBeLessThanOrEqual(stamp + MINUTE);
+		expect(retry?.scheduledTime).toBeCloseTo(
+			stamp + MINUTE / FIRECRAWL_READS_PER_MINUTE,
+			-1
+		);
 		expect(retry?.args[0]).toEqual(
 			expect.objectContaining({ deferrals: 1, reserved: true })
 		);
 		await fx.t.finishAllScheduledFunctions(vi.runAllTimers);
-		expect(scrapes()).toHaveLength(FIRECRAWL_READS_PER_MINUTE + 1);
+		expect(scrapes()).toHaveLength(2);
 		const read = await product(fx);
-		expect(read?.pageReads).toBe(FIRECRAWL_READS_PER_MINUTE + 1);
+		expect(read?.pageReads).toBe(2);
 		expect(read?.pageFacts?.process).toBe("Natural");
+	});
+
+	test("the budget never admits more than the plan's minute in any sixty seconds: no burst", () => {
+		// A token bucket admits capacity + rate in a fixed window; Firecrawl's
+		// window is fixed, so the burst must be one and the rate one under.
+		expect(FIRECRAWL_READS_PER_MINUTE).toBe(FIRECRAWL_PLAN_SCRAPES_PER_MINUTE - 1);
 	});
 
 	test("a read put off MAX_READ_DEFERRALS times gives up to the lot's next window: stamp kept, nothing scheduled", async () => {

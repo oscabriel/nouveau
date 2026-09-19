@@ -38,6 +38,13 @@ import { sentenceCandidates } from "./recommendationRules";
 /** Anyone can open a lot page, so the spend is capped deployment-wide. */
 export const PAGE_FACTS_PER_HOUR = 20;
 /**
+ * The Free plan's /scrape limit (10 a minute, 2 concurrent), which the
+ * prod key is on. The limit counts per team, so the crawler's own scrapes
+ * (collection pages, product pages, bot-protected feeds) draw from the
+ * same 10 without passing through the read budget. Raise it with the plan.
+ */
+export const FIRECRAWL_PLAN_SCRAPES_PER_MINUTE = 10;
+/**
  * The deployment's Firecrawl read budget: page reads a minute across every
  * sweep and the recommendation worker (ADR-0010). One cron tick crawls
  * every source, and twenty roasters' sweeps at once would otherwise send
@@ -45,12 +52,13 @@ export const PAGE_FACTS_PER_HOUR = 20;
  * defers keeps its schedule stamp, is not a counted attempt, and reserves
  * the slot it runs in (see scrape).
  *
- * The figure is the Free plan's /scrape limit (10 a minute, 2 concurrent),
- * which the prod key is on; the limit counts per team, so the crawler's own
- * scrapes (collection pages, product pages, bot-protected feeds) draw from
- * the same 10 without passing through this bucket. Raise it with the plan.
+ * One under the plan's figure because the bucket holds one token: a bucket
+ * admits its capacity plus its rate inside any fixed minute, Firecrawl's
+ * minute is fixed, and Firecrawl counts every request against it, the
+ * component's three retries of a 429 included. One read over the line
+ * therefore costs the rest of the minute, so the budget never bursts.
  */
-export const FIRECRAWL_READS_PER_MINUTE = 10;
+export const FIRECRAWL_READS_PER_MINUTE = FIRECRAWL_PLAN_SCRAPES_PER_MINUTE - 1;
 /**
  * Lots one crawl's sweep reads (ADR-0008). The first sweeps of a catalog
  * are a backfill spread over crawls; after that a crawl finds only its new
@@ -72,7 +80,7 @@ export const PAGE_FACTS_MAX_AGE_MS = 24 * 60 * 60_000;
 
 const limiter = new RateLimiter(components.rateLimiter, {
 	firecrawlReads: {
-		capacity: FIRECRAWL_READS_PER_MINUTE,
+		capacity: 1,
 		kind: "token bucket",
 		period: MINUTE,
 		rate: FIRECRAWL_READS_PER_MINUTE,

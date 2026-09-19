@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import { MINUTE } from "@convex-dev/rate-limiter";
 import { register as registerRateLimiter } from "@convex-dev/rate-limiter/test";
 import { register as registerWorkpool } from "@convex-dev/workpool/test";
 import { register as registerFirecrawl } from "@firecrawl/firecrawl-convex/test";
@@ -763,7 +764,9 @@ test("a read settles the lot: purging the evidence cache alone does not scrape a
 		runId: second,
 	});
 	expect(firecrawlCalls()).toHaveLength(1);
-	// Forgetting the read on the product is what makes a run read again.
+	// Forgetting the read on the product is what makes a run read again
+	// (once the Firecrawl read budget has a slot: one read a minute's ninth).
+	vi.setSystemTime(NOW + MINUTE);
 	await f.t.run((ctx) =>
 		ctx.db.patch(f.productId, {
 			copyFetchedAt: undefined,
