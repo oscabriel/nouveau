@@ -13,7 +13,7 @@
 - **Auth:** Convex Auth
 - **AI models:** OpenAI `gpt-5.6-luna` (Responses API, low reasoning effort, strict JSON schema) for Find my next bag, live in prod at `/next-bag`. TypeSafe System One `jev-1.13.0` (`convex/jev.ts`) picks one verified span per fact field from a product page and shadow-checks the lot classifier. Product pages are read with a plain fetch first; Firecrawl's markdown scrape is the fallback.
 - **Started:** 2026-08-29T18:06:09Z
-- **Last updated:** 2026-09-19T01:45:51Z
+- **Last updated:** 2026-09-19T17:26:21Z
 
 ## Log
 
@@ -263,3 +263,6 @@ Half the catalog had no tasting notes to show on the grid or in recommendations,
 
 Surveyed all 20 roasters for structured page data. Only image alt text pays: Verve keeps its whole spec line there and nowhere in the rendered text. JSON-LD equals the feed body everywhere it exists, and the SEO description named another coffee on two of nineteen pages, so both are rejected (`.agents/docs/adr/0009-*.md`). The page read now keeps labelled `Label: value` alt segments ahead of the page text (`extraction.ts`). Every Jev question names the lot, the second guard after a featured-products block had leaked another blend's notes onto 54 of 55 Sweet Bloom lots; `pageFacts.resetReads` clears a roaster's reads and facts by hand so an extractor fix applies now. Verified on dev: the reset Sweet Bloom lots carry only their own notes, and Verve lots gain notes, roast, process and variety. Deployed `f45d54f` to prod with `bun run deploy` (owner consent; 17.0s), prod's first crawl-time page reads. Suite 485.
 
+### 2026-09-19 - 26b5a6a - the sweep skips sold-out lots; prod backfill done
+
+Prod's first crawl-time sweep exposed a feed quirk: Sey keeps 874 of its 881 lots current but sold out, and with every stamp equal after one crawl the sweep read 2019 archive pages while the seven purchasable lots waited behind roughly nine hours of reads. `pageFacts.sweep` now skips a lot whose stock rollup says sold out; a lot with no rollup yet stays due, and the lot page's on-view ask is unchanged (`pageFacts.ts`, ADR-0008 amendment). Two seed fixes rode along: La Colombe's row had inherited Passenger's `www` host from a paste (`b589d56`), and `seed.applySeedUrls` repoints a deployment's roaster URLs onto the seed table by slug, idempotent (`55e542c`). Deployed to prod (owner consent; 17.5s). Next-morning export: Sey's seven purchasable lots read within the hour, no sold-out Sey lot read since, the whole backfill finished 45 minutes after the deploy (729 reads, no failures), and the hourly sweeps have scheduled nothing since. Merged coverage across 2,760 current lots: notes 65%, process 55%; region, producer and roast level under 20%, almost all of it sold-out lots the sweep no longer reads. Suite 487.
