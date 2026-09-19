@@ -1950,6 +1950,42 @@ describe("pageTextFromHtml", () => {
 		]);
 	});
 
+	// ADR-0009: Verve's page text carries no notes; its product image alt
+	// does, as a dash-joined spec line. Only the `Label: value` segments
+	// become lines; the marketing segments and the menu images' alts do not.
+	test("labelled image alt segments lead the candidates (Verve); unlabelled segments never become notes (ADR-0009)", () => {
+		const text = pageTextFromHtml(
+			`<html><body>${chrome}<main><div class="grid"><img src="/menu.png" alt="Verve Coffee Roasters - Menu - Best Sellers - Sermon, Streetlevel, Vancouver, Seabright Coffees"><img src="/silo.png" alt="Verve Coffee Roasters - Jose Martinez - 12oz - Single Origin - Huila, Colombia - Process: Washed - Variety: Pink Bourbon - Tasting Notes: Pear, Nectarine, Brown Sugar - Layered Elegance - Latin America - Seasonal - Direct Trade - Light Roast - Whole Bean Coffee"><img src='/scent.png' alt='Verve Coffee Roasters - Jose Martinez - Scent Profile - Process: Washed - Variety: Pink Bourbon - Tasting Notes: Pear, Nectarine, Brown Sugar - Light + Adventurous'></div><h1>Colombia José Martínez</h1>${story}</main></body></html>`
+		);
+		expect(text?.split("\n").slice(0, 3)).toEqual([
+			"Process: Washed",
+			"Variety: Pink Bourbon",
+			"Tasting Notes: Pear, Nectarine, Brown Sugar",
+		]);
+		expect(text).not.toContain("Layered Elegance");
+		expect(text).not.toContain("Streetlevel");
+		const candidates = pageFactCandidates(text ?? "");
+		expect(candidates.tastingNotes.slice(0, 3)).toEqual([
+			"Pear",
+			"Nectarine",
+			"Brown Sugar",
+		]);
+		expect(candidates.process).toContain("Washed");
+		expect(candidates.variety).toContain("Pink Bourbon");
+	});
+
+	test("an image alt inside an upsell block is another coffee's and is never read; the theme-notes line still comes first (ADR-0009)", () => {
+		const text = pageTextFromHtml(
+			`<html><body>${chrome}<main><div class="tasting-notes"><span class="note">Tart Apple</span><span class="note">Pecan</span></div><img alt="Honduras Fredy Perez - Roast: Light - Elevation: 1,650 masl" src="/bag.png">${story}<section class="related-products"><img alt="Kenya Karumandi - Tasting Notes: Red Currant, Blackberry" src="/other.png"></section></main></body></html>`
+		);
+		expect(text?.split("\n").slice(0, 3)).toEqual([
+			"Tasting notes: Tart Apple, Pecan",
+			"Roast: Light",
+			"Elevation: 1,650 masl",
+		]);
+		expect(text).not.toContain("Red Currant");
+	});
+
 	test("a pipe-separated notes wrapper (Counter Culture) and a per-note div block (Stumptown)", () => {
 		const counterCulture = pageTextFromHtml(
 			`<html><body>${chrome}<div class="tasting-notes--wrapper flex"><p class="italic">tropical | brown sugar | juicy</p><button title="Toggle Taste Notes">?</button></div>${story}</body></html>`

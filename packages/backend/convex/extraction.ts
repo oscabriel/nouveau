@@ -388,6 +388,50 @@ const reducePage = (html: string): ReducedPage => {
 	return { html: reduced, text: stripHtml(reduced) };
 };
 
+/** The alt attribute of an image, in either quote style. */
+const IMAGE_ALT =
+	/<img\b[^>]*\balt\s*=\s*(?:"(?<double>[^"]*)"|'(?<single>[^']*)')/giu;
+/** The separators a theme joins an alt's segments with ("... - Process: Washed - Variety: ..."). */
+const ALT_SEGMENT_SEPARATOR = /\s+[-|–—•·]\s+/u;
+/**
+ * A `Label: value` alt segment whose label the page router reads. Nothing
+ * else in an alt is a line: "Layered Elegance" and a menu image's list of
+ * coffees would otherwise be note candidates.
+ */
+const ALT_FACT_SEGMENT =
+	/^(?<label>(?:tasting|flavou?r|cupping)\s+notes?|notes|process(?:ing)?(?:\s+method)?|variet(?:y|al|als|ies)|cultivar|(?:growing\s+)?region|location|elevation|altitude|producer|farm|farmer|washing\s+station|roast(?:\s+level)?)\s*:\s*(?<value>.+)$/iu;
+/** Alt lines one page contributes; Verve's spec line yields four. */
+const MAX_ALT_LINES = 8;
+
+/**
+ * The labelled facts the images' alt text states, one `Label: value` line
+ * each, in page order, deduplicated (ADR-0009). Verve keeps the coffee's
+ * whole spec line in its product image alt ("... - Process: Washed -
+ * Variety: Pink Bourbon - Tasting Notes: Pear, Nectarine, Brown Sugar -
+ * ...") and nowhere in the rendered text. Reads HTML dropBlocks has
+ * already reduced, so an upsell card's image is never seen.
+ */
+const altFactLines = (html: string): string[] => {
+	const lines: string[] = [];
+	for (const match of html.matchAll(IMAGE_ALT)) {
+		const alt = stripHtml(match.groups?.double ?? match.groups?.single ?? "");
+		for (const segment of alt.split(ALT_SEGMENT_SEPARATOR)) {
+			const fact = ALT_FACT_SEGMENT.exec(segment.trim())?.groups;
+			if (fact?.label === undefined || fact.value === undefined) {
+				continue;
+			}
+			const line = `${fact.label}: ${fact.value.trim()}`;
+			if (
+				lines.length < MAX_ALT_LINES &&
+				!lines.some((seen) => seen.toLowerCase() === line.toLowerCase())
+			) {
+				lines.push(line);
+			}
+		}
+	}
+	return lines;
+};
+
 /**
  * A product page as the shop serves it, reduced to the block text the page
  * candidate finder reads. The main element is read when the page has one
@@ -398,7 +442,8 @@ const reducePage = (html: string): ReducedPage => {
  * Every roaster checked (ADR-0008) renders its notes server-side, so this
  * is the same text Firecrawl's markdown carries, without the credit. When
  * the theme marks its notes element, those notes open the text as a
- * labelled line, so they lead the candidates instead of trailing the lines
+ * labelled line, and the labelled facts in the images' alt text follow
+ * (ADR-0009), so both lead the candidates instead of trailing the lines
  * that fill the cap. Null for a shell page.
  */
 export const pageTextFromHtml = (html: string): string | null => {
@@ -407,9 +452,13 @@ export const pageTextFromHtml = (html: string): string | null => {
 		return null;
 	}
 	const themeNotes = themeNotesFromReducedHtml(reduced);
-	return themeNotes.length === 0
-		? text
-		: `Tasting notes: ${themeNotes.join(", ")}\n${text}`;
+	const head = [
+		...(themeNotes.length === 0
+			? []
+			: [`Tasting notes: ${themeNotes.join(", ")}`]),
+		...altFactLines(reduced),
+	];
+	return head.length === 0 ? text : `${head.join("\n")}\n${text}`;
 };
 
 /**
