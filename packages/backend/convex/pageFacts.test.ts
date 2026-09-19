@@ -408,6 +408,34 @@ describe("pageFacts.sweep", () => {
 			expect.objectContaining({ productId: fx.lotId }),
 		]);
 	});
+
+	test("a sold-out lot never holds one of the sweep's slots; it reads once a size is purchasable again", async () => {
+		const fx = await setup();
+		// Sey's feed keeps years of sold-out lots current; the fixture lot has
+		// no rollup yet (no variants seen), which is not evidence of sold out.
+		const soldOut = await insertLot(fx, 200, { anyAvailable: false });
+		const onSale = await insertLot(fx, 201, { anyAvailable: true });
+		expect(
+			await fx.t.mutation(internal.pageFacts.sweep, { roasterId: fx.roasterId })
+		).toBe(2);
+		const reads = await scheduledReads(fx);
+		expect(reads.map((row) => row.args[0])).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ productId: fx.lotId }),
+				expect.objectContaining({ productId: onSale }),
+			])
+		);
+		expect(reads).toHaveLength(2);
+
+		await fx.t.run((ctx) => ctx.db.patch(soldOut, { anyAvailable: true }));
+		expect(
+			await fx.t.mutation(internal.pageFacts.sweep, { roasterId: fx.roasterId })
+		).toBe(1);
+		const later = await scheduledReads(fx);
+		expect(later.map((row) => row.args[0])).toContainEqual(
+			expect.objectContaining({ productId: soldOut })
+		);
+	});
 });
 
 describe("pageFacts.resetReads", () => {

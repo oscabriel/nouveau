@@ -348,10 +348,18 @@ export const sweep = internalMutation({
 			.take(PAGE_SWEEP_SCAN_LIMIT);
 		// A lot without a shop URL can never be read, so it is dropped before
 		// the slice rather than holding one of the crawl's slots every time.
+		// So is a sold-out lot: a feed that keeps years of sold-out lots
+		// current (Sey: 874 of 881) would otherwise put its few purchasable
+		// lots behind hours of archive pages, and its facts wait until a size
+		// is purchasable again. A lot with no rollup yet has not been judged.
 		const due: { lot: Doc<"products">; url: string }[] = [];
 		for (const lot of lots) {
 			const url = lotShopUrl(roaster, lot);
-			if (url !== null && needsPageFacts(lot, now)) {
+			if (
+				url !== null &&
+				lot.anyAvailable !== false &&
+				needsPageFacts(lot, now)
+			) {
 				due.push({ lot, url });
 			}
 		}

@@ -43,3 +43,9 @@ The backfill therefore grows from roughly 1300 lots to most of the 2740 current 
 - Every Jev question names the lot ("Ethiopia Mullugeta Muntasha", the one coffee sold on this product page) and the state opens with a `Coffee: <name>` line, when the read knows the name. The sweep, the lot page's ask and the recommendation worker all pass it; a read scheduled before the change runs without it. Sweet Bloom's featured-products block had passed the unnamed per-note question with another blend's notes on 54 of 55 lots; the block cut is the first guard, the name the second.
 - `pageFacts.resetReads` clears the read count and the stamp on one roaster's current lots, and with `clearFacts` the stored page facts, so an extractor fix can be applied now instead of waiting for the retry window or never (a lot at the cap). Run by hand from the CLI.
 - Labelled image alt text joins the page text (ADR-0009).
+
+## Amended 2026-09-19
+
+- The sweep skips a sold-out lot (`anyAvailable === false`). The first prod backfill showed Sey's feed keeps years of sold-out lots current (874 of 881), and with every lot's stamp equal after one crawl the sweep spent its first slots on 2019 archive pages while the seven purchasable lots waited behind roughly nine hours of reads. A sold-out lot's facts wait until a size is purchasable again; the lot page's on-view ask (`pageFacts.request`) is unchanged, so a viewer who reaches a sold-out lot still gets its read. A lot with no rollup yet (variants never seen) is not judged sold out and stays due.
+- The line above about Sey needing the Firecrawl fallback is stale: Sey's shop answers the plain fetch with the labelled blocks (ADR-0009).
+

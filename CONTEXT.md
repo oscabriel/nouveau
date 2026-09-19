@@ -46,7 +46,7 @@ A drop-alert service with a social layer for home coffee brewers: watches US spe
 
 **Roaster notes**: Tasting descriptors taken from the roaster's own copy — description prose and tags on the lot's shop page. Only descriptors literally present count; nothing is invented. _Avoid_: AI summary (that's the alert email's generated line)
 
-**Page facts**: The facts a lot's rendered shop page states that its feed did not: process, variety, region, elevation, producer, roast level and tasting notes. Read verbatim from the page (its text, the theme's notes element, and the labelled facts in its images' alt text) while any of them is still missing, at most three reads per lot a day apart, and shown only where the feed left a gap. _Avoid_: Enrichment, scrape results
+**Page facts**: The facts a lot's rendered shop page states that its feed did not: process, variety, region, elevation, producer, roast level and tasting notes. Read verbatim from the page (its text, the theme's notes element, and the labelled facts in its images' alt text) while any of them is still missing and a size is purchasable, at most three reads per lot a day apart, and shown only where the feed left a gap. _Avoid_: Enrichment, scrape results
 
 **Thin lot**: A current lot with no process, no variety or no notes after its feed facts and page facts are merged. The lot page's badge. A page read is due more widely: whenever any page fact is missing. _Avoid_: Incomplete, sparse
 
