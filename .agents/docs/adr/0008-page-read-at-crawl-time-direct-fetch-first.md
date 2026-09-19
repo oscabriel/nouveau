@@ -37,3 +37,9 @@ A review of the first cut found that `needsPageFacts` treated any stored `pageFa
 - The sweep runs for `product_pages` sources too. That crawl reads every product page through Firecrawl's structured product format and the feed extractors over its description; it never sees the theme's notes element or the rendered spec block, which is what the sweep's candidates and Jev pick from. The second read is a plain fetch, no credit.
 
 The backfill therefore grows from roughly 1300 lots to most of the 2740 current lots, since few feeds state producer, region, elevation and roast level all together, still at 25 per roaster per crawl. The owner prefers complete extraction over that cost. A noteless catalog (Heart, East Pole, Verve) now costs at most three Jev requests per lot in total instead of one per lot per day.
+
+## Amended 2026-09-18, later the same day
+
+- Every Jev question names the lot ("Ethiopia Mullugeta Muntasha", the one coffee sold on this product page) and the state opens with a `Coffee: <name>` line, when the read knows the name. The sweep, the lot page's ask and the recommendation worker all pass it; a read scheduled before the change runs without it. Sweet Bloom's featured-products block had passed the unnamed per-note question with another blend's notes on 54 of 55 lots; the block cut is the first guard, the name the second.
+- `pageFacts.resetReads` clears the read count and the stamp on one roaster's current lots, and with `clearFacts` the stored page facts, so an extractor fix can be applied now instead of waiting for the retry window or never (a lot at the cap). Run by hand from the CLI.
+- Labelled image alt text joins the page text (ADR-0009).

@@ -14,7 +14,7 @@ import { FirecrawlClient } from "@firecrawl/firecrawl-convex";
 import { ConvexError, v } from "convex/values";
 
 import { components, internal } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Doc } from "./_generated/dataModel";
 import {
 	env,
 	internalAction,
@@ -118,52 +118,64 @@ const CHOICE_FIELDS: readonly (readonly [
 ])[] = [
 	[
 		"elevation",
-		"Which of these states the elevation or altitude at which the one coffee sold on this product page was grown?",
+		"Which of these states the elevation or altitude at which %COFFEE% was grown?",
 	],
-	[
-		"process",
-		"Which of these terms names the process used for the one coffee sold on this product page?",
-	],
+	["process", "Which of these terms names the process used for %COFFEE%?"],
 	[
 		"producer",
-		"Which of these names the producer, farm, or washing station of the one coffee sold on this product page?",
+		"Which of these names the producer, farm, or washing station of %COFFEE%?",
 	],
 	[
 		"region",
-		"Which of these names the growing region of the one coffee sold on this product page? A country alone is not a region.",
+		"Which of these names the growing region of %COFFEE%? A country alone is not a region.",
 	],
-	[
-		"roastLevel",
-		"Which of these states the roast level of the one coffee sold on this product page?",
-	],
-	[
-		"variety",
-		"Which of these names the variety or varieties of the one coffee sold on this product page?",
-	],
+	["roastLevel", "Which of these states the roast level of %COFFEE%?"],
+	["variety", "Which of these names the variety or varieties of %COFFEE%?"],
 ];
 
+/**
+ * Sweet Bloom's featured-products block once passed this question with
+ * another blend's notes; the coffee is named now, and another coffee the
+ * shop sells is spelled out as a wrong answer.
+ */
 const NOTE_QUESTION: JevQuestion = {
 	instructions:
-		'On this product page, is "%NOTE%" a tasting note of the one coffee sold here — a flavor or aroma word — rather than a roast level, a certification, brewing guidance, or something else the shop sells?',
+		'On this product page, is "%NOTE%" a tasting note (a flavor or aroma word) of %COFFEE%, rather than a roast level, a certification, brewing guidance, or a note of another coffee the shop sells?',
 	type: "noul",
 };
 
 const SENTENCE_QUESTION: JevQuestion = {
 	instructions:
-		"Does this sentence describe the one coffee sold on this product page — its flavor, aroma, character, or growing details — rather than the roaster, the shop, shipping, brewing advice, or other products?",
+		"Does this sentence describe %COFFEE% (its flavor, aroma, character, or growing details) rather than the roaster, the shop, shipping, brewing advice, or other products?",
 	type: "noul",
 };
+
+/** How every question refers to the lot: by name when the read knows it. */
+const coffeePhrase = (name: string): string =>
+	name === ""
+		? "the one coffee sold on this product page"
+		: `"${name}", the one coffee sold on this product page`;
+
+/** The state Jev reads: the lot's name first, then the head of the page text. */
+export const pageJevState = (pageText: string, name: string): string =>
+	(name === "" ? pageText : `Coffee: ${name}\n${pageText}`).slice(
+		0,
+		JEV_STATE_LIMIT
+	);
 
 /**
  * The page read's questions: one Choice per field that has candidates, one
  * Noul per note candidate and per description-sentence candidate, all in a
  * single /v1/systemone request (Jev evaluates them against the state in
- * parallel, so extra questions cost almost nothing).
+ * parallel, so extra questions cost almost nothing). Every question names
+ * the lot when the read knows its name.
  */
 export const pageJevQuestions = (
 	candidates: ReturnType<typeof pageFactCandidates>,
-	sentences: readonly string[]
+	sentences: readonly string[],
+	name = ""
 ): Record<string, JevQuestion> => {
+	const coffee = coffeePhrase(name);
 	const questions: Record<string, JevQuestion> = {};
 	for (const [field, instructions] of CHOICE_FIELDS) {
 		const spans = candidates[field];
@@ -176,18 +188,24 @@ export const pageJevQuestions = (
 				[NONE_OPTION]:
 					"The page does not state this about this specific coffee.",
 			},
-			instructions,
+			instructions: instructions.replaceAll("%COFFEE%", coffee),
 			type: "choice",
 		};
 	}
 	for (const [index, note] of candidates.tastingNotes.entries()) {
 		questions[`note_${index}`] = {
 			...NOTE_QUESTION,
-			instructions: NOTE_QUESTION.instructions.replaceAll("%NOTE%", note),
+			instructions: NOTE_QUESTION.instructions
+				.replaceAll("%NOTE%", note)
+				.replaceAll("%COFFEE%", coffee),
 		};
 	}
+	const sentenceQuestion: JevQuestion = {
+		...SENTENCE_QUESTION,
+		instructions: SENTENCE_QUESTION.instructions.replaceAll("%COFFEE%", coffee),
+	};
 	for (const index of sentences.keys()) {
-		questions[`sentence_${index}`] = SENTENCE_QUESTION;
+		questions[`sentence_${index}`] = sentenceQuestion;
 	}
 	return questions;
 };
@@ -257,14 +275,15 @@ export const requestResultValidator = v.union(
  */
 const scheduleRead = async (
 	ctx: MutationCtx,
-	productId: Id<"products">,
+	product: Pick<Doc<"products">, "_id" | "name">,
 	url: string,
 	now: number,
 	delayMs: number
 ): Promise<void> => {
-	await ctx.db.patch("products", productId, { copyFetchedAt: now });
+	await ctx.db.patch("products", product._id, { copyFetchedAt: now });
 	await ctx.scheduler.runAfter(delayMs, internal.pageFacts.scrape, {
-		productId,
+		name: product.name,
+		productId: product._id,
 		url,
 	});
 };
@@ -298,7 +317,7 @@ export const request = mutation({
 		if (!quota.ok) {
 			return "limited";
 		}
-		await scheduleRead(ctx, productId, url, Date.now(), 0);
+		await scheduleRead(ctx, product, url, Date.now(), 0);
 		return "started";
 	},
 	returns: requestResultValidator,
@@ -329,26 +348,62 @@ export const sweep = internalMutation({
 			.take(PAGE_SWEEP_SCAN_LIMIT);
 		// A lot without a shop URL can never be read, so it is dropped before
 		// the slice rather than holding one of the crawl's slots every time.
-		const due: { productId: Id<"products">; url: string }[] = [];
+		const due: { lot: Doc<"products">; url: string }[] = [];
 		for (const lot of lots) {
 			const url = lotShopUrl(roaster, lot);
 			if (url !== null && needsPageFacts(lot, now)) {
-				due.push({ productId: lot._id, url });
+				due.push({ lot, url });
 			}
 		}
 		let scheduled = 0;
-		for (const { productId, url } of due.slice(0, PAGE_SWEEP_PER_CRAWL)) {
+		for (const { lot, url } of due.slice(0, PAGE_SWEEP_PER_CRAWL)) {
 			// oxlint-disable-next-line no-await-in-loop -- sequential on purpose: the stamp and the schedule are one step per lot, and the spacing is the lot's position in the sweep
-			await scheduleRead(
-				ctx,
-				productId,
-				url,
-				now,
-				scheduled * PAGE_SWEEP_SPACING_MS
-			);
+			await scheduleRead(ctx, lot, url, now, scheduled * PAGE_SWEEP_SPACING_MS);
 			scheduled += 1;
 		}
 		return scheduled;
+	},
+	returns: v.number(),
+});
+
+/**
+ * An extractor fix is a catalog correction (ADR-0008): a lot read once is
+ * not read again until its window passes, and a lot at the cap never is.
+ * This is the hand that makes the correction now: the roaster's current
+ * lots lose their read count and stamp, so the next sweep treats them as
+ * never read, and with `clearFacts` the stored page facts go too (for a
+ * read that stored another coffee's notes). Returns how many lots changed.
+ * Run by hand from the CLI; nothing schedules it.
+ */
+export const resetReads = internalMutation({
+	args: { clearFacts: v.optional(v.boolean()), roasterId: v.id("roasters") },
+	handler: async (ctx, args) => {
+		const lots = await ctx.db
+			.query("products")
+			.withIndex("by_roaster_and_status_and_last_seen_at", (q) =>
+				q.eq("roasterId", args.roasterId).eq("status", "current")
+			)
+			.take(PAGE_SWEEP_SCAN_LIMIT);
+		let changed = 0;
+		for (const lot of lots) {
+			const clearFacts =
+				args.clearFacts === true && lot.pageFacts !== undefined;
+			if (
+				lot.pageReads === undefined &&
+				lot.copyFetchedAt === undefined &&
+				!clearFacts
+			) {
+				continue;
+			}
+			// oxlint-disable-next-line no-await-in-loop -- one patch per lot inside one transaction
+			await ctx.db.patch("products", lot._id, {
+				copyFetchedAt: undefined,
+				pageReads: undefined,
+				...(clearFacts ? { pageFacts: undefined } : {}),
+			});
+			changed += 1;
+		}
+		return changed;
 	},
 	returns: v.number(),
 });
@@ -450,12 +505,14 @@ const scrapePageText = async (ctx: ActionCtx, url: string): Promise<string> => {
  * recommendation worker so both write the same thing. `known` is the
  * catalog copy the evidence must be new against (empty for the lot-page
  * ask). Throws when the page is unavailable both ways; the caller decides
- * what a failure means for it.
+ * what a failure means for it. `name` is the lot's name as the catalog
+ * has it; every Jev question names the coffee with it.
  */
 export const readPageFacts = async (
 	ctx: ActionCtx,
 	url: string,
-	known = ""
+	known = "",
+	name = ""
 ): Promise<PageRead> => {
 	const pageText =
 		(await fetchPageText(url)) ?? (await scrapePageText(ctx, url));
@@ -472,8 +529,8 @@ export const readPageFacts = async (
 	const answer = await askJev(
 		apiKey,
 		`pageFacts ${url}`,
-		pageText.slice(0, JEV_STATE_LIMIT),
-		pageJevQuestions(candidates, sentenceSpans)
+		pageJevState(pageText, name),
+		pageJevQuestions(candidates, sentenceSpans, name)
 	);
 	if (answer === null) {
 		return empty;
@@ -490,11 +547,16 @@ export const readPageFacts = async (
 };
 
 export const scrape = internalAction({
-	args: { productId: v.id("products"), url: v.string() },
+	// `name` is optional so reads scheduled before it existed still run.
+	args: {
+		name: v.optional(v.string()),
+		productId: v.id("products"),
+		url: v.string(),
+	},
 	handler: async (ctx, args) => {
 		let facts: PageFacts = {};
 		try {
-			({ facts } = await readPageFacts(ctx, args.url));
+			({ facts } = await readPageFacts(ctx, args.url, "", args.name ?? ""));
 		} catch (error) {
 			// A deferred or rate-limited fallback never reached the page: the
 			// stamp from the schedule stands, so the lot is retried after the

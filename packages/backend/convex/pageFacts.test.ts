@@ -342,8 +342,11 @@ describe("pageFacts.sweep", () => {
 		const reads = await scheduledReads(fx);
 		expect(reads.map((row) => row.args[0])).toEqual(
 			expect.arrayContaining([
-				expect.objectContaining({ productId: fx.lotId }),
-				expect.objectContaining({ productId: thin }),
+				expect.objectContaining({
+					name: "Ethiopia Mullugeta Muntasha",
+					productId: fx.lotId,
+				}),
+				expect.objectContaining({ name: "Sweep 4", productId: thin }),
 			])
 		);
 		expect(reads).toHaveLength(2);
@@ -404,6 +407,82 @@ describe("pageFacts.sweep", () => {
 		expect(reads.map((row) => row.args[0])).toEqual([
 			expect.objectContaining({ productId: fx.lotId }),
 		]);
+	});
+});
+
+describe("pageFacts.resetReads", () => {
+	const READ_TODAY = {
+		copyFetchedAt: Date.now(),
+		pageFacts: { tastingNotes: ["Blend jasmine", "mango"] },
+		pageReads: 2,
+	};
+
+	test("clears the count and the stamp on the roaster's current lots, so the next sweep reads them; facts stay unless asked", async () => {
+		const fx = await setup(READ_TODAY);
+		const archived = await insertLot(fx, 1, {
+			...READ_TODAY,
+			status: "archived",
+		});
+		const otherRoaster = await fx.t.run(async (ctx) => {
+			const roaster = await ctx.db.insert("roasters", {
+				city: "Denver",
+				claimed: false,
+				domain: "bloom.example.com",
+				name: "Bloom",
+				productPageUrl: "https://bloom.example.com/collections/coffee",
+				slug: "bloom",
+				source: "curated",
+				state: "CO",
+				status: "active",
+				websiteUrl: "https://bloom.example.com",
+			});
+			return ctx.db.insert("products", {
+				...READ_TODAY,
+				externalId: "b1",
+				firstSeenAt: 1000,
+				handle: "wuri",
+				lastSeenAt: 1000,
+				missedCrawls: 0,
+				name: "Wuri",
+				roasterId: roaster,
+				status: "current",
+			});
+		});
+		expect(
+			await fx.t.mutation(internal.pageFacts.sweep, { roasterId: fx.roasterId })
+		).toBe(0);
+		expect(
+			await fx.t.mutation(internal.pageFacts.resetReads, {
+				roasterId: fx.roasterId,
+			})
+		).toBe(1);
+		const reset = await product(fx);
+		expect(reset?.pageReads).toBeUndefined();
+		expect(reset?.copyFetchedAt).toBeUndefined();
+		expect(reset?.pageFacts).toEqual(READ_TODAY.pageFacts);
+		const untouched = await fx.t.run((ctx) =>
+			Promise.all([ctx.db.get(archived), ctx.db.get(otherRoaster)])
+		);
+		expect(untouched[0]?.pageReads).toBe(2);
+		expect(untouched[1]?.pageReads).toBe(2);
+		expect(
+			await fx.t.mutation(internal.pageFacts.sweep, { roasterId: fx.roasterId })
+		).toBe(1);
+	});
+
+	test("with clearFacts the stored page facts go too, and a lot with nothing to clear is not counted", async () => {
+		const fx = await setup(READ_TODAY);
+		await insertLot(fx, 2);
+		expect(
+			await fx.t.mutation(internal.pageFacts.resetReads, {
+				clearFacts: true,
+				roasterId: fx.roasterId,
+			})
+		).toBe(1);
+		const reset = await product(fx);
+		expect(reset?.pageFacts).toBeUndefined();
+		expect(reset?.pageReads).toBeUndefined();
+		expect(reset?.copyFetchedAt).toBeUndefined();
 	});
 });
 
@@ -497,6 +576,54 @@ describe("pageFacts.store and the lot page", () => {
 });
 
 describe("pageFacts.scrape", () => {
+	// Sweet Bloom's featured-products block once passed Jev's "the one
+	// coffee sold on this page" question with another blend's notes. The
+	// read now names the lot, in the state and in every question.
+	test("the read names the lot in Jev's state and questions; a read without a name still asks", async () => {
+		const fx = await setup();
+		const fetchMock = stubProviders();
+		await fx.t.action(internal.pageFacts.scrape, {
+			name: "Ethiopia Mullugeta Muntasha",
+			productId: fx.lotId,
+			url: PAGE_URL,
+		});
+		const jev = fetchMock.mock.calls.find(([url]) =>
+			String(url).includes("typesafe")
+		);
+		const body = JSON.parse(String(jev?.[1]?.body)) as {
+			questions: Record<string, { instructions: string }>;
+			state: string;
+		};
+		expect(body.state.startsWith("Coffee: Ethiopia Mullugeta Muntasha\n")).toBe(
+			true
+		);
+		expect(Object.keys(body.questions)).toEqual(
+			expect.arrayContaining(["process", "variety", "note_0"])
+		);
+		for (const question of Object.values(body.questions)) {
+			expect(question.instructions).toContain('"Ethiopia Mullugeta Muntasha"');
+		}
+		fetchMock.mockClear();
+		await fx.t.run((ctx) =>
+			ctx.db.patch(fx.lotId, { copyFetchedAt: undefined, pageReads: undefined })
+		);
+		await fx.t.action(internal.pageFacts.scrape, {
+			productId: fx.lotId,
+			url: PAGE_URL,
+		});
+		const unnamed = fetchMock.mock.calls.find(([url]) =>
+			String(url).includes("typesafe")
+		);
+		const unnamedBody = JSON.parse(String(unnamed?.[1]?.body)) as {
+			questions: Record<string, { instructions: string }>;
+			state: string;
+		};
+		expect(unnamedBody.state.startsWith("Coffee:")).toBe(false);
+		expect(unnamedBody.questions.note_0?.instructions).toContain(
+			"the one coffee sold on this product page"
+		);
+	});
+
 	test("the shop's own page and one Jev request; no Firecrawl credit when the page has content", async () => {
 		const fx = await setup();
 		const fetchMock = stubProviders();

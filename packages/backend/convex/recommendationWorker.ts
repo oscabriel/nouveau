@@ -111,7 +111,12 @@ const enrich = async (
 			// verified facts land on the product too (ADR-0005), so the lot page
 			// shows them and the next run skips the read.
 			// oxlint-disable-next-line no-await-in-loop -- bound concurrent scrapes
-			const page = await readPageFacts(ctx, candidate.url, reserved.known);
+			const page = await readPageFacts(
+				ctx,
+				candidate.url,
+				reserved.known,
+				candidate.name
+			);
 			// oxlint-disable-next-line no-await-in-loop -- one settled fact set per lot
 			await ctx.runMutation(internal.pageFacts.store, {
 				facts: page.facts,
