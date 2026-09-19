@@ -7,6 +7,7 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { MAX_PAGE_READS, PAGE_FACTS_RETRY_MS } from "./lotFacts";
 import {
+	FIRECRAWL_FALLBACK_PER_MINUTE,
 	PAGE_FACTS_PER_HOUR,
 	PAGE_SWEEP_PER_CRAWL,
 	PAGE_SWEEP_SPACING_MS,
@@ -550,6 +551,24 @@ describe("pageFacts.scrape", () => {
 		expect(read?.pageFacts).toBeUndefined();
 		expect(read?.pageReads).toBeUndefined();
 		expect(read?.copyFetchedAt).toBe(before);
+	});
+
+	test("the Firecrawl fallback has a deployment-wide budget a minute; a deferred read is not counted", async () => {
+		const fx = await setup();
+		const fetchMock = stubProviders({ html: null });
+		for (let index = 0; index < FIRECRAWL_FALLBACK_PER_MINUTE + 1; index += 1) {
+			// oxlint-disable-next-line no-await-in-loop -- reads in sequence, the last one over budget
+			await fx.t.action(internal.pageFacts.scrape, {
+				productId: fx.lotId,
+				url: PAGE_URL,
+			});
+		}
+		const scrapes = fetchMock.mock.calls.filter(([url]) =>
+			String(url).includes("firecrawl")
+		);
+		expect(scrapes).toHaveLength(FIRECRAWL_FALLBACK_PER_MINUTE);
+		const read = await product(fx);
+		expect(read?.pageReads).toBe(FIRECRAWL_FALLBACK_PER_MINUTE);
 	});
 
 	test("a page that is only a script shell falls back to Firecrawl", async () => {

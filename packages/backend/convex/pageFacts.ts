@@ -9,7 +9,7 @@
 // (extraction.verifyPageFacts), then is stored in `products.pageFacts`,
 // which the feed write never touches.
 
-import { HOUR, RateLimiter } from "@convex-dev/rate-limiter";
+import { HOUR, MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
 import { FirecrawlClient } from "@firecrawl/firecrawl-convex";
 import { ConvexError, v } from "convex/values";
 
@@ -38,6 +38,15 @@ import { sentenceCandidates } from "./recommendationRules";
 /** Anyone can open a lot page, so the spend is capped deployment-wide. */
 export const PAGE_FACTS_PER_HOUR = 20;
 /**
+ * Firecrawl fallbacks a minute, deployment-wide, across every sweep and the
+ * recommendation worker. One cron tick crawls every source, and a shop that
+ * needs the fallback for every lot (Sey renders client-side) would otherwise
+ * send nineteen roasters' worth of scrapes at once into Firecrawl's
+ * per-minute limit. A read the budget defers keeps its schedule stamp and is
+ * not a counted attempt.
+ */
+export const FIRECRAWL_FALLBACK_PER_MINUTE = 60;
+/**
  * Lots one crawl's sweep reads (ADR-0008). The first sweeps of a catalog
  * are a backfill spread over crawls; after that a crawl finds only its new
  * lots and the retries the cap allows, so this mostly bounds a Jev outage's
@@ -57,8 +66,19 @@ const PAGE_SWEEP_SCAN_LIMIT = 1000;
 export const PAGE_FACTS_MAX_AGE_MS = 24 * 60 * 60_000;
 
 const limiter = new RateLimiter(components.rateLimiter, {
+	firecrawlFallback: {
+		capacity: FIRECRAWL_FALLBACK_PER_MINUTE,
+		kind: "token bucket",
+		period: MINUTE,
+		rate: FIRECRAWL_FALLBACK_PER_MINUTE,
+	},
 	pageFacts: { kind: "fixed window", period: HOUR, rate: PAGE_FACTS_PER_HOUR },
 });
+
+/** The fallback budget had no room: the page was never asked, so the lot waits for its next window. */
+class ReadDeferredError extends Error {
+	override name = "ReadDeferredError";
+}
 const firecrawl = new FirecrawlClient(components.firecrawl);
 
 /**
@@ -399,6 +419,10 @@ const fetchPageText = async (url: string): Promise<string | null> => {
 
 /** The page through Firecrawl's markdown scrape (one credit, cached a day). */
 const scrapePageText = async (ctx: ActionCtx, url: string): Promise<string> => {
+	const budget = await limiter.limit(ctx, "firecrawlFallback");
+	if (!budget.ok) {
+		throw new ReadDeferredError("Firecrawl fallback budget spent this minute");
+	}
 	const page = await firecrawl.scrape(ctx, url, {
 		formats: ["markdown"],
 		maxAge: PAGE_FACTS_MAX_AGE_MS,
@@ -465,10 +489,10 @@ export const scrape = internalAction({
 		try {
 			({ facts } = await readPageFacts(ctx, args.url));
 		} catch (error) {
-			// A rate-limited fallback never reached the page: the stamp from
-			// the schedule stands, so the lot is retried after the window, but
-			// the try does not spend one of its MAX_PAGE_READS.
-			if (isRateLimited(error)) {
+			// A deferred or rate-limited fallback never reached the page: the
+			// stamp from the schedule stands, so the lot is retried after the
+			// window, but the try does not spend one of its MAX_PAGE_READS.
+			if (error instanceof ReadDeferredError || isRateLimited(error)) {
 				return null;
 			}
 			// Nothing is stored for a page that could not be read, but the
