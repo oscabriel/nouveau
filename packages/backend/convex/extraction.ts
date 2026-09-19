@@ -7,7 +7,6 @@ import { v } from "convex/values";
 
 import type { PageFacts } from "./lotFacts";
 import {
-	MAX_NOTES,
 	NOTE_SEPARATOR,
 	splitNotes,
 	verifyElevation,
@@ -225,6 +224,13 @@ const OTHER_PRODUCT_BLOCK =
 	/(?:^|[\s_-])(?:upsells?|related|recommendations?|recommended|cross[-_]?sells?|also[-_]?like|complementary|featured[-_]products?)(?=$|[\s_-])/iu;
 /** A role that marks a menu or a modal: text a viewer opens, never the lot's. */
 const DROPPED_ROLE = /\brole\s*=\s*["']?(?:navigation|dialog)\b/iu;
+/**
+ * A class token that marks the same thing without the role: a popover or
+ * tooltip a viewer opens (Counter Culture's flavor-wheel popover sits inside
+ * the notes wrapper and its copy read as notes).
+ */
+const VIEWER_OPENED_BLOCK =
+	/(?:^|[\s_-])(?:popover|popup|tooltip|modal)(?=$|[\s_-])/iu;
 /** The class attribute of an opening tag, in either quote style. */
 const CLASS_ATTRIBUTE =
 	/\bclass\s*=\s*(?<quote>["'])(?<classes>[^"']*)\k<quote>/iu;
@@ -307,14 +313,16 @@ const isDroppedBlock = (open: RegExpExecArray): boolean => {
 	return (
 		OTHER_PRODUCT_BLOCK.test(classes) ||
 		OTHER_PRODUCT_BLOCK.test(id) ||
-		OTHER_PRODUCT_BLOCK.test(tag)
+		OTHER_PRODUCT_BLOCK.test(tag) ||
+		VIEWER_OPENED_BLOCK.test(classes)
 	);
 };
 
 /**
  * The HTML with every other-product block (an upsell or related-products
- * section, ancestors included) and every menu or modal cut out whole, so
- * neither the notes scan nor the page text sees another coffee's copy.
+ * section, ancestors included) and every menu, modal, popover or tooltip
+ * cut out whole, so neither the notes scan nor the page text sees another
+ * coffee's copy or a viewer-opened one.
  */
 const dropBlocks = (html: string): string => {
 	const kept: string[] = [];
@@ -1889,8 +1897,78 @@ const parseLotCopy = (raw: ShopifyProduct): LotCopy =>
 		vendor: raw.vendor,
 	});
 
-/** A page read yields at most this many Jev options per field. */
-const MAX_PAGE_CANDIDATES = 12;
+/**
+ * A line past this is prose, not an element Jev can pick (ADR-0010; the
+ * probe sent lines up to 160 characters and every spec line fit).
+ */
+const MAX_ELEMENT_LENGTH = 160;
+/** A bare note list line ("Prunes • Fig Danish • Nutmeg") past this is prose. */
+const MAX_NOTE_LINE_LENGTH = 120;
+/**
+ * A notes lead with a list after it: "Tasting notes: Prunes", "Notes of Red
+ * Fruit, Citrus", "Flavor Notes - Cherry". A bare header ("Tasting Notes",
+ * "NOTES") has no list and is not a note line.
+ */
+const NOTES_LEAD =
+	/^(?:(?:tasting|flavou?r|cupping)\s+notes?|notes?|flavou?rs)\b\s*(?:[:|–—-]|of\b)\s*(?=\S)/iu;
+/**
+ * The label vocabulary a page line can lead with, in any case, with or
+ * without a colon (Regalia writes "Process Washed"; La Colombe "COOP/FARM :
+ * Lacador"). A run of labels joined by a slash or a space is one lead.
+ */
+const PAGE_LABEL_WORD =
+	"process(?:ing)?(?:\\s+method)?|roast(?:\\s+level|\\s+profile)?|variet(?:y|al|ies|als)|cultivar|growing\\s+region|sub-?region|micro-?region|region|location|zone|district|woreda|appellation|origins?|elevation|altitude?|producers?|farms?|farmers?|washing\\s+station|mill|co-?op(?:erative)?|estate|growers?|produced\\s+by";
+const PAGE_LABEL_LEAD = new RegExp(
+	`^(?:(?:${PAGE_LABEL_WORD})\\b\\s*[/&]?\\s*)+(?:[:|–—-]\\s*)?(?=\\S)`,
+	"iu"
+);
+/** Sentence punctuation with more text after it marks prose, never a note list. */
+const SENTENCE_PUNCTUATION = /[.!?]./u;
+
+/** The page as Jev's options: its distinct lines, and the note-shaped ones among them. */
+export interface PageElements {
+	/** Every distinct line up to MAX_ELEMENT_LENGTH, in page order. */
+	lines: string[];
+	/** The lines shaped like a notes list; each gets one Noul. */
+	noteLines: string[];
+}
+
+/**
+ * Whether a line is shaped like a tasting-notes list: a notes lead with a
+ * list after it, or a bare list with a separator, and no sentence
+ * punctuation either way. Loose on purpose: the probe found Jev's line
+ * Noul passes headers and prose without this filter. A line that leads
+ * with another field's label ("Altitude: 1,900 - 2,100 masl") is that
+ * field's, never notes.
+ */
+const isNoteLine = (line: string): boolean => {
+	if (SENTENCE_PUNCTUATION.test(line) || PAGE_LABEL_LEAD.test(line)) {
+		return false;
+	}
+	if (NOTES_LEAD.test(line)) {
+		return true;
+	}
+	return line.length <= MAX_NOTE_LINE_LENGTH && NOTE_SEPARATOR.test(line);
+};
+
+/**
+ * The reduced page text as elements (ADR-0010): every distinct line up to
+ * the element cap, in page order, is an option on each field's Choice; the
+ * note-shaped lines among them each get a Noul. No cap on the count: the
+ * probe sent 227 options and Jev answered; the state limit bounds it.
+ */
+export const pageElements = (pageText: string): PageElements => {
+	const seen = new Set<string>();
+	const lines: string[] = [];
+	for (const raw of pageText.split(/\n+/u)) {
+		const line = raw.trim();
+		if (line !== "" && line.length <= MAX_ELEMENT_LENGTH && !seen.has(line)) {
+			seen.add(line);
+			lines.push(line);
+		}
+	}
+	return { lines, noteLines: lines.filter(isNoteLine) };
+};
 
 /**
  * Over-find elevation spans anywhere on a page: the unanchored twin of the
@@ -1909,221 +1987,85 @@ const ELEVATION_SPAN =
 const VARIETY_TERM =
 	/\b(?:gesha|geisha|sl\s?\d\d|ruiru\s*11|batian|heirloom|landrace|74\d\d\d|(?:pink|red|yellow|orange)\s+bourbon|bourbon|typica|caturra|catuai|pacamara|pacas|maragogype|maragogipe|sidra|wush\s*wush|wolisho|dega|kurume|tekisic|villalobos|villa\s+sarchi|catimor|sarchimor|parainema|laurina|eugenioides|castillo|tabi|jackson|blue\s+mountain|mokka)\b/giu;
 
-/** The page labels each fact field answers to, beyond the feed's key set. */
-const PAGE_REGION_KEY =
-	/^(?:growing region|subregion|microregion|region|location|zone|district|woreda|appellation|origin)$/iu;
-const PAGE_PRODUCER_KEY =
-	/^(?:producer|farm|farmer|washing station|mill|cooperative|co-op|estate|grower|produced by)$/iu;
-const PAGE_NOTES_KEY =
+/** A notes lead mid-line: "look for notes of red plum, brown sugar" (Coava). */
+const NOTES_LEAD_ANYWHERE = /\b(?:notes?|flavou?rs?|hints?|aromas?)\s+of\s+/iu;
+
+/** The picked line without its label lead. */
+const stripLabel = (line: string): string =>
+	line.replace(PAGE_LABEL_LEAD, "").trim();
+
+/** The roast level on the line: a labelled or bare level, else "light roast" in prose. */
+const cutRoast = (line: string): string | undefined => {
+	const [level] = roastFromValue(stripLabel(line));
+	return level ?? ROAST_IN_TITLE.exec(line)?.[0].trim();
+};
+
+/**
+ * The variety on the line: the labelled list whole when it verifies
+ * ("Caturra, Typica, Marsellesa"), else the vocabulary terms it names,
+ * because a long list fails the shape as a whole and would lose every term
+ * (PTS: "Typica, Pacas, Caturra, Catuaí, and San Salvador").
+ */
+const cutVariety = (line: string): string | undefined => {
+	const value = stripLabel(line);
+	if (verifyVariety(value) !== null) {
+		return value;
+	}
+	const terms: string[] = [];
+	for (const match of value.matchAll(VARIETY_TERM)) {
+		if (!terms.some((seen) => seen.toLowerCase() === match[0].toLowerCase())) {
+			terms.push(match[0]);
+		}
+	}
+	return terms.length === 0 ? undefined : terms.join(", ");
+};
+
+/** ELEVATION_SPAN without the global flag: the first span on a line. */
+const FIRST_ELEVATION_SPAN = new RegExp(ELEVATION_SPAN.source, "iu");
+
+/** The first elevation span on the line ("Altitud 2050 MASL" carries one). */
+const cutElevation = (line: string): string | undefined =>
+	FIRST_ELEVATION_SPAN.exec(line)?.[0];
+
+/**
+ * The producer on the line, unless the line is the lot's name. Lot names
+ * pass the producer shape at high confidence ("Kenya Karumandi", "Rwanda -
+ * Rulindo Murambi - Washed"), and a lot named after its producer is common
+ * (Madcap "Irvin Izaguirre"), so equality with the name separates nothing.
+ * What does: a producer's name has no country and no process term in it.
+ */
+const cutProducer = (line: string): string | undefined => {
+	const value = stripLabel(line);
+	return findCountries(value).length > 0 || findProcesses(value).length > 0
+		? undefined
+		: value;
+};
+
+/** A notes header with nothing after it ("Tasting Notes", "NOTES"). */
+const NOTES_HEADER =
 	/^(?:(?:tasting|flavou?r|cupping)\s+notes?|notes?|flavou?rs)$/iu;
 
-/** A candidate found in a page, per field. Jev picks one of these (or none). */
-export interface PageFactCandidates {
-	elevation: string[];
-	process: string[];
-	producer: string[];
-	region: string[];
-	roastLevel: string[];
-	tastingNotes: string[];
-	variety: string[];
-}
-
-/** A field of PageFactCandidates. */
-export type PageFactField = keyof PageFactCandidates;
-
-const emptyCandidates = (): PageFactCandidates => ({
-	elevation: [],
-	process: [],
-	producer: [],
-	region: [],
-	roastLevel: [],
-	tastingNotes: [],
-	variety: [],
-});
-
-const pushCandidate = (into: string[], value: string): void => {
-	if (
-		into.length < MAX_PAGE_CANDIDATES &&
-		!into.some((seen) => seen.toLowerCase() === value.toLowerCase())
-	) {
-		into.push(value);
+/** The notes on the line: the list after its lead, split; a bare header has none. */
+const cutNotes = (line: string): string[] => {
+	if (NOTES_HEADER.test(line.trim())) {
+		return [];
 	}
+	const list = line.replace(PAGE_LABEL_LEAD, "").replace(NOTES_LEAD, "");
+	const mid = NOTES_LEAD_ANYWHERE.exec(list);
+	return splitNotes(
+		mid === null ? list : list.slice(mid.index + mid[0].length)
+	);
 };
 
 /**
- * "`Key: Value`" and "`| Key | Value |`" lines, in any case, with markdown
- * junk tolerated ahead of the label. The value is cut at a pipe so a
- * multi-cell table row does not glue its neighbours onto the fact.
- */
-const PAGE_LABEL_LINE =
-	/^(?:[#>*_\s|~-]*)(?<label>[\p{L}][\p{L}' /-]*?)\s*[:|–—-]\s*(?<value>.+)$/u;
-/** An all-caps or bare label line ("TASTING NOTES", "Producer") whose value sits on the next line. */
-const PAGE_BARE_LABEL =
-	/^(?:[#>*_\s|~-]*)(?<label>process(?:ing)?(?:\s+method)?|roast(?:\s+level|\s+profile)?|variety|varietals?|varieties|cultivar|growing region|subregion|region|location|elevation|altitude|origin|producer|farm|farmer|washing station|mill|notes|tasting notes)\s*$/iu;
-/** A label line with nothing after the colon: the value sits on the next line. */
-const PAGE_LABEL_ONLY =
-	/^(?:[#>*_\s|~-]*)(?<label>[\p{L}][\p{L}' /-]*?)\s*:\s*$/u;
-/** A candidate value past this is prose, not a fact. */
-const MAX_PAGE_CANDIDATE_LENGTH = 80;
-/** A bare note list line ("Prunes • Fig Danish • Nutmeg") past this is prose. */
-const MAX_NOTE_LINE_LENGTH = 120;
-/** A note with its separator runs about this long ("Candied Orange Peel, " is 21). */
-const NOTE_ITEM_LENGTH = 25;
-/** A notes-labelled value past this is prose, not a list of up to MAX_NOTES notes. */
-const MAX_LABELLED_NOTES_LENGTH = MAX_NOTES * NOTE_ITEM_LENGTH;
-
-/** The value cap a label allows: a notes list runs past the fact cap. */
-const labelCap = (label: string): number =>
-	PAGE_NOTES_KEY.test(label)
-		? MAX_LABELLED_NOTES_LENGTH
-		: MAX_PAGE_CANDIDATE_LENGTH;
-
-/** A line's captured value, cut at a pipe and trimmed; null past the cap. */
-const pageValue = (raw: string, maxLength: number): string | null => {
-	const pipe = raw.indexOf("|");
-	const text = (pipe === -1 ? raw : raw.slice(0, pipe))
-		.trim()
-		.replaceAll(/\s+/gu, " ");
-	return text === "" || text.length > maxLength ? null : text;
-};
-
-/** Route one labelled value into its field's candidate list. */
-const pushLabelled = (
-	candidates: PageFactCandidates,
-	label: string,
-	value: string | null
-): void => {
-	if (value === null) {
-		return;
-	}
-	if (BODY_PROCESS_KEY.test(label)) {
-		for (const term of findProcesses(value)) {
-			pushCandidate(candidates.process, term);
-		}
-	} else if (BODY_ROAST_KEY.test(label)) {
-		for (const level of roastFromValue(value)) {
-			pushCandidate(candidates.roastLevel, level);
-		}
-	} else if (BODY_VARIETY_KEY.test(label)) {
-		const variety = verifyVariety(value);
-		if (variety !== null) {
-			pushCandidate(candidates.variety, variety);
-		}
-	} else if (PAGE_REGION_KEY.test(label)) {
-		const region = verifyRegion(value);
-		// A country is an origin, not a region (Onyx returns "Kenya" here).
-		if (region !== null && !CANONICAL_COUNTRY.has(region.toLowerCase())) {
-			pushCandidate(candidates.region, region);
-		}
-	} else if (BODY_ELEVATION_KEY.test(label)) {
-		const elevation = verifyElevation(value);
-		if (elevation !== null) {
-			pushCandidate(candidates.elevation, elevation);
-		}
-	} else if (PAGE_PRODUCER_KEY.test(label)) {
-		const producer = verifyProducer(value);
-		if (producer !== null) {
-			pushCandidate(candidates.producer, producer);
-		}
-	} else if (PAGE_NOTES_KEY.test(label)) {
-		for (const note of splitNotes(value)) {
-			pushCandidate(candidates.tastingNotes, note);
-		}
-	}
-};
-
-/*
- * Vocabulary and shape spans over the whole markdown, before the line
- * router runs: process terms, elevation spans, variety names and roast
- * phrases written anywhere on the page, label or no label.
- */
-const pushSpanCandidates = (
-	candidates: PageFactCandidates,
-	markdown: string
-): void => {
-	for (const term of findProcesses(markdown)) {
-		pushCandidate(candidates.process, term);
-	}
-	for (const match of markdown.matchAll(ELEVATION_SPAN)) {
-		const elevation = verifyElevation(match[0]);
-		if (elevation !== null) {
-			pushCandidate(candidates.elevation, elevation);
-		}
-	}
-	for (const match of markdown.matchAll(VARIETY_TERM)) {
-		const variety = verifyVariety(match[0]);
-		if (variety !== null) {
-			pushCandidate(candidates.variety, variety);
-		}
-	}
-	for (const match of markdown.matchAll(
-		new RegExp(ROAST_IN_TITLE.source, "giu")
-	)) {
-		pushCandidate(candidates.roastLevel, match[0].trim());
-	}
-};
-
-/**
- * Over-find candidate spans per field in the page markdown (ADR-0005): the
- * recall shapes the feed verifiers share, plus label lines and a small
- * vocabulary, tuned to find every mention and let Jev pick. Each candidate
- * already passes its field's shape, so the pick needs no re-check for form,
- * and is verbatim on the page by construction. Notes keep no Jev Choice of
- * their own (a pick is one note): they arrive as one Noul per candidate.
- */
-export const pageFactCandidates = (markdown: string): PageFactCandidates => {
-	const candidates = emptyCandidates();
-	pushSpanCandidates(candidates, markdown);
-	const lines = markdown.split(/\n+/u);
-	for (const [index, line] of lines.entries()) {
-		const labelled = PAGE_LABEL_LINE.exec(line)?.groups;
-		if (labelled !== undefined) {
-			const label = (labelled.label ?? "").trim();
-			pushLabelled(
-				candidates,
-				label,
-				pageValue(labelled.value ?? "", labelCap(label))
-			);
-			continue;
-		}
-		const labelOnly = PAGE_LABEL_ONLY.exec(line)?.groups;
-		const next = lines[index + 1] ?? "";
-		if (labelOnly !== undefined && next !== "") {
-			const label = (labelOnly.label ?? "").trim();
-			pushLabelled(candidates, label, pageValue(next, labelCap(label)));
-			continue;
-		}
-		const bare = PAGE_BARE_LABEL.exec(line)?.groups;
-		if (bare !== undefined && next !== "") {
-			const label = (bare.label ?? "").trim();
-			pushLabelled(candidates, label, pageValue(next, labelCap(label)));
-			continue;
-		}
-		// A bare list line is note candidates when its parts are note-shaped.
-		// Sentence punctuation marks prose, never a note list.
-		const bareLine = line.replace(/^[#>*_\s|~-]+/u, "").trim();
-		if (
-			bareLine.length <= MAX_NOTE_LINE_LENGTH &&
-			!/[.!?]./u.test(bareLine) &&
-			NOTE_SEPARATOR.test(bareLine)
-		) {
-			for (const note of splitNotes(bareLine)) {
-				pushCandidate(candidates.tastingNotes, note);
-			}
-		}
-	}
-	return candidates;
-};
-
-/**
- * The spans Jev picked for one product page, verified through the same
- * per-field shapes the feed path applies (ADR-0005). Every pick is verbatim
- * on the page by construction (it is a span pageFactCandidates found), so
- * the letter-for-letter gate has no work left; what remains is shape. So
- * "Not specified" fails a field's shape, Merit's `roastLevel: "Espresso"`
- * (the page's recommended use) fails the roast shape, and a country under
- * region is an origin, not a region. An empty object means the page said
- * nothing usable.
+ * The values cut from one product page, verified through the same
+ * per-field shapes the feed path applies (ADR-0005). Every value is verbatim
+ * on the page by construction (it is cut from a line Jev picked), so the
+ * letter-for-letter gate has no work left; what remains is shape. So "Not
+ * specified" fails a field's shape, Merit's `roastLevel: "Espresso"` (the
+ * page's recommended use) fails the roast shape, and a country under region
+ * is an origin, not a region. An empty object means the page said nothing
+ * usable.
  */
 export const verifyPageFacts = (picks: PageFacts): PageFacts => {
 	const facts: PageFacts = {};
@@ -2168,6 +2110,47 @@ export const verifyPageFacts = (picks: PageFacts): PageFacts => {
 		}
 	}
 	return facts;
+};
+
+/**
+ * The facts on the lines Jev picked (ADR-0010): each field's cutter takes
+ * its value from the line, then verifyPageFacts gates the result. Jev
+ * locates, code cuts, the verifier decides; a line is never stored whole.
+ */
+export const pageFactsFromPicks = (picks: PageFacts): PageFacts => {
+	const cut: PageFacts = {};
+	const processTerms =
+		picks.process === undefined ? [] : findProcesses(picks.process);
+	if (processTerms.length > 0) {
+		cut.process = processTerms.join(", ");
+	}
+	const roastLevel =
+		picks.roastLevel === undefined ? undefined : cutRoast(picks.roastLevel);
+	if (roastLevel !== undefined) {
+		cut.roastLevel = roastLevel;
+	}
+	const variety =
+		picks.variety === undefined ? undefined : cutVariety(picks.variety);
+	if (variety !== undefined) {
+		cut.variety = variety;
+	}
+	const elevation =
+		picks.elevation === undefined ? undefined : cutElevation(picks.elevation);
+	if (elevation !== undefined) {
+		cut.elevation = elevation;
+	}
+	if (picks.region !== undefined) {
+		cut.region = stripLabel(picks.region);
+	}
+	const producer =
+		picks.producer === undefined ? undefined : cutProducer(picks.producer);
+	if (producer !== undefined) {
+		cut.producer = producer;
+	}
+	if (picks.tastingNotes !== undefined) {
+		cut.tastingNotes = picks.tastingNotes.flatMap(cutNotes);
+	}
+	return verifyPageFacts(cut);
 };
 
 /**

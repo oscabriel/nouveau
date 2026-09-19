@@ -54,7 +54,7 @@ const wordCount = (text: string): number => text.split(/\s+/u).length;
 
 /** Placeholders an extractor or a roaster writes for "no value". */
 const NOT_A_VALUE =
-	/^(?:not\s+(?:specified|available|listed|stated)|n\/?a|none|unknown|tbd|various|blend)$/iu;
+	/^(?:not\s+(?:specified|available|listed|stated)|n\/?a|none|unknown|tbd|varied|various(?:\s+\p{L}+)?|blend)$/iu;
 
 const cleanFact = (raw: string): string | null => {
 	const text = raw.trim().replaceAll(/\s+/gu, " ").replace(/\.$/u, "");
@@ -63,8 +63,9 @@ const cleanFact = (raw: string): string | null => {
 		: text;
 };
 
+/** An Oxford ", &" or ", and" is one separator, so "& black tea" is never a part. */
 export const NOTE_SEPARATOR =
-	/\s*(?:,|;|•|·|\||\/|\s[-–—]\s|\s\+\s|\s&\s|\band\b)\s*/iu;
+	/\s*(?:,\s*(?:&|and\b)|,|;|•|·|\||\/|\s[-–—]\s|\s\+\s|\s&\s|\band\b)\s*/iu;
 const NOTE_LEAD_IN =
 	/^(?:(?:with\s+)?(?:notes?|flavou?rs?|hints?|aromas?)\s+of|tastes?\s+(?:of|like)|(?:a|an|the)\s+)+/iu;
 const NOTE_SHAPE = /^[\p{L}\p{N}][\p{L}\p{N}\s'’-]*$/u;

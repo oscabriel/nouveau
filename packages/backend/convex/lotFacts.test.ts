@@ -39,6 +39,12 @@ describe("notes", () => {
 			"Caramel",
 			"Stone Fruit",
 		]);
+		// Coava writes the Oxford ampersand: ", &" is one separator.
+		expect(splitNotes("red plum, brown sugar, & black tea.")).toEqual([
+			"red plum",
+			"brown sugar",
+			"black tea",
+		]);
 		expect(splitNotes("bittersweet chocolate and graham cracker")).toEqual([
 			"bittersweet chocolate",
 			"graham cracker",
@@ -116,6 +122,9 @@ describe("field shapes", () => {
 	test("producer is a name, not prose", () => {
 		expect(verifyProducer("Wilfredo Ule Vargas")).toBe("Wilfredo Ule Vargas");
 		expect(verifyProducer("Iyenga FCS")).toBe("Iyenga FCS");
+		// A blend's page says who grew it in a word that names no one.
+		expect(verifyProducer("varied")).toBeNull();
+		expect(verifyProducer("Various Producers")).toBeNull();
 		// Sey, both determinism runs.
 		expect(
 			verifyProducer(

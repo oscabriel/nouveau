@@ -9,7 +9,8 @@ import {
 	parseLotAttributes,
 	parseProductsJson,
 	parseVariantGrams,
-	pageFactCandidates,
+	pageElements,
+	pageFactsFromPicks,
 	pageTextFromHtml,
 	PRODUCTS_JSON_PAGE_SIZE,
 	SHOPIFY_FETCH_HEADERS,
@@ -19,6 +20,9 @@ import {
 	verifyPageFacts,
 	walkFeedPages,
 } from "./extraction";
+import probePagesJson from "./fixtures/probePages.json";
+import type { PageFacts } from "./lotFacts";
+import { JEV_STATE_LIMIT } from "./pageFacts";
 
 interface FeedProduct {
 	body_html?: string;
@@ -1820,64 +1824,344 @@ describe("walkFeedPages", () => {
 	});
 });
 
-describe("pageFactCandidates (ADR-0005)", () => {
-	// Merit "Ojo de Agua" and Sey "Huila Decaffeinated" as the determinism
-	// runs returned them (audit §4), on a page that says what they say.
-	const markdown = [
-		"# Ojo de Agua",
-		"Process: Washed",
-		"Cultivar: Caturra, Colombia",
-		"Altitude: 1500-1730masl",
-		"Region: Huila",
-		"Producer: Finca Ojo de Agua",
-		"Recommended use: Espresso",
-		"Roast: Ultra Light",
+describe("pageElements (ADR-0010)", () => {
+	// Regalia's colon-less spec block and Merit's lead-in notes, as the
+	// reducer lays them out: the theme notes line first, then the blocks.
+	const pageText = [
+		"Tasting notes: Prunes, Fig Danish, and Nutmeg",
+		"Ojo de Agua",
+		"Process Washed",
+		"Region Planadas, Tolima, Colombia",
+		"Tasting Notes",
 		"Prunes • Fig Danish • Nutmeg",
+		"Ojo de Agua",
+		"Sparkling. Complex.",
 		"Hand-picked at peak ripeness. Floated to remove defects, then fully washed and dried on raised beds over three weeks.",
-	].join("\n\n");
+		"x".repeat(161),
+	].join("\n");
 
-	test("label lines, vocabulary spans and bare note lists become candidates", () => {
-		expect(pageFactCandidates(markdown)).toEqual({
-			elevation: ["1500-1730masl"],
-			process: ["Washed", "fully washed"],
-			producer: ["Finca Ojo de Agua"],
-			region: ["Huila"],
-			roastLevel: [],
-			tastingNotes: ["Prunes", "Fig Danish", "Nutmeg"],
-			variety: ["Caturra", "Caturra, Colombia"],
+	test("every distinct line up to the element cap is an option, in page order", () => {
+		expect(pageElements(pageText).lines).toEqual([
+			"Tasting notes: Prunes, Fig Danish, and Nutmeg",
+			"Ojo de Agua",
+			"Process Washed",
+			"Region Planadas, Tolima, Colombia",
+			"Tasting Notes",
+			"Prunes • Fig Danish • Nutmeg",
+			"Sparkling. Complex.",
+			"Hand-picked at peak ripeness. Floated to remove defects, then fully washed and dried on raised beds over three weeks.",
+		]);
+	});
+
+	test("a note line carries a notes label or a separator, no sentence punctuation and no other label, and is short", () => {
+		expect(pageElements(pageText).noteLines).toEqual([
+			"Tasting notes: Prunes, Fig Danish, and Nutmeg",
+			"Prunes • Fig Danish • Nutmeg",
+		]);
+	});
+});
+
+describe("pageFactsFromPicks (ADR-0010)", () => {
+	// The lines Jev picked on the probe pages (jev-probe.md), cut by each
+	// field's cutter: a whole line is where the fact is, never the fact.
+	const headline =
+		"A HIGH ELEVATION PACAS SEPARATION FROM A YOUNG PRODUCER IN SANTA BÁRBARA";
+
+	test("a label stays out of the value, colon or no colon (Regalia)", () => {
+		expect(
+			pageFactsFromPicks({
+				elevation: "Altitud 2050 MASL",
+				process: "Process Washed",
+				producer: "Producer Jorge Rojas",
+				region: "Region Planadas, Tolima, Colombia",
+				variety: "Chiroso",
+			})
+		).toEqual({
+			elevation: "2050 MASL",
+			process: "Washed",
+			producer: "Jorge Rojas",
+			region: "Planadas, Tolima, Colombia",
+			variety: "Chiroso",
 		});
 	});
 
-	test("a roast label only yields a candidate when the value is a level", () => {
-		expect(pageFactCandidates("Roast: Ultra Light").roastLevel).toEqual([]);
-		expect(pageFactCandidates("Roast Level: Medium-Light").roastLevel).toEqual([
-			"Medium-Light",
-		]);
+	test("process keeps every term on the line (Sweet Bloom); roast needs a level", () => {
 		expect(
-			pageFactCandidates("a bright light roast for filter").roastLevel
-		).toEqual(["light roast"]);
+			pageFactsFromPicks({
+				process: "washed & natural process",
+				roastLevel: "Roast: Light-Medium",
+			})
+		).toEqual({ process: "washed, natural", roastLevel: "Light-Medium" });
+		expect(pageFactsFromPicks({ roastLevel: "light roast" })).toEqual({
+			roastLevel: "light roast",
+		});
+		expect(
+			pageFactsFromPicks({
+				process: "Batch Roasted in Philadelphia",
+				roastLevel: "This coffee is available as Drip roast profile only.",
+			})
+		).toEqual({});
+		expect(pageFactsFromPicks({ roastLevel: "Bright" })).toEqual({});
 	});
 
-	test("table rows, next-line values and a country under region", () => {
-		const tabled = [
-			"| Process | Washed | 250g |",
-			"Producer",
-			"Finca Ojo de Agua",
-			"Origin: Colombia",
-		].join("\n");
-		const candidates = pageFactCandidates(tabled);
-		expect(candidates.process).toEqual(["Washed"]);
-		expect(candidates.producer).toEqual(["Finca Ojo de Agua"]);
-		// "Colombia" is a country: it is an origin, not a region candidate.
-		expect(candidates.region).toEqual([]);
+	test("a variety list is kept whole when it verifies, else cut term by term (PTS)", () => {
+		expect(
+			pageFactsFromPicks({ variety: "Caturra, Typica, Marsellesa" })
+		).toEqual({ variety: "Caturra, Typica, Marsellesa" });
+		expect(pageFactsFromPicks({ variety: "Varietals: Heirloom" })).toEqual({
+			variety: "Heirloom",
+		});
+		expect(
+			pageFactsFromPicks({
+				variety: "Varietal: Typica, Pacas, Caturra, Catuaí, and San Salvador",
+			})
+		).toEqual({ variety: "Typica, Pacas, Caturra" });
+		expect(
+			pageFactsFromPicks({
+				variety:
+					"Origins : A seasonal blend of thoughtfully sourced specialty Arabica beans gathered at their peak from Sumatra and Brazil",
+			})
+		).toEqual({});
+		expect(pageFactsFromPicks({ variety: "Various" })).toEqual({});
 	});
 
-	test("variety prose is found by the vocabulary, elevation by its span", () => {
-		const candidates = pageFactCandidates(
-			"A washed SL28 and SL34 blend grown at 1,900 - 2,100 masl."
+	test("elevation is the span on the line; a headline picked for four fields yields the one term it carries (Madcap)", () => {
+		expect(
+			pageFactsFromPicks({ elevation: "Elevation: 1,500–1,680 meters" })
+		).toEqual({ elevation: "1,500–1,680 meters" });
+		expect(pageFactsFromPicks({ elevation: "1600 Meters" })).toEqual({
+			elevation: "1600 Meters",
+		});
+		expect(
+			pageFactsFromPicks({
+				elevation: headline,
+				process: headline,
+				region: headline,
+				variety: headline,
+			})
+		).toEqual({ variety: "PACAS" });
+	});
+
+	test("region: a spaced or missing colon (La Colombe, Heart); a country alone is an origin; a title line is too long", () => {
+		expect(pageFactsFromPicks({ region: "Region : Cerrado Minas" })).toEqual({
+			region: "Cerrado Minas",
+		});
+		expect(pageFactsFromPicks({ region: "Location: Gedeb" })).toEqual({
+			region: "Gedeb",
+		});
+		expect(pageFactsFromPicks({ region: "Origin: Colombia" })).toEqual({});
+		expect(
+			pageFactsFromPicks({ region: "Rwanda - Rulindo Murambi - Washed" })
+		).toEqual({});
+	});
+
+	test("producer: a line naming a country or a process is the lot's name (Stumptown, Blossom); a producer the lot is named after stays (Madcap, Counter Culture)", () => {
+		expect(pageFactsFromPicks({ producer: "Kenya Karumandi" })).toEqual({});
+		expect(
+			pageFactsFromPicks({ producer: "Rwanda - Rulindo Murambi - Washed" })
+		).toEqual({});
+		expect(pageFactsFromPicks({ producer: "Enrique Posada (Washed)" })).toEqual(
+			{}
 		);
-		expect(candidates.variety).toEqual(["SL28", "SL34"]);
-		expect(candidates.elevation).toEqual(["1,900 - 2,100 masl"]);
+		expect(pageFactsFromPicks({ producer: "Irvin Izaguirre" })).toEqual({
+			producer: "Irvin Izaguirre",
+		});
+		expect(pageFactsFromPicks({ producer: "Finca El Puente" })).toEqual({
+			producer: "Finca El Puente",
+		});
+		expect(pageFactsFromPicks({ producer: "COOP/FARM : Lacador" })).toEqual({
+			producer: "Lacador",
+		});
+		expect(
+			pageFactsFromPicks({ producer: "Farm: Hacienda La Papaya" })
+		).toEqual({ producer: "Hacienda La Papaya" });
+		expect(pageFactsFromPicks({ producer: "Farmhouse Collective" })).toEqual({
+			producer: "Farmhouse Collective",
+		});
+	});
+
+	test("a note line is split after its lead, at the start (Merit, Passenger) or mid-line (Coava); a header is never a note", () => {
+		expect(
+			pageFactsFromPicks({
+				tastingNotes: ["Tasting notes: Prunes, Fig Danish, and Nutmeg"],
+			})
+		).toEqual({ tastingNotes: ["Prunes", "Fig Danish", "Nutmeg"] });
+		expect(
+			pageFactsFromPicks({
+				tastingNotes: [
+					"Notes of Red Fruit, Citrus, Browning Sugars",
+					"Red Grape, Rose, Mullberry",
+				],
+			})
+		).toEqual({
+			tastingNotes: [
+				"Red Fruit",
+				"Citrus",
+				"Browning Sugars",
+				"Red Grape",
+				"Rose",
+				"Mullberry",
+			],
+		});
+		expect(
+			pageFactsFromPicks({
+				tastingNotes: [
+					"In this washed-process offering, look for notes of red plum, brown sugar, & black tea.",
+				],
+			})
+		).toEqual({ tastingNotes: ["red plum", "brown sugar", "black tea"] });
+		expect(pageFactsFromPicks({ tastingNotes: ["Tasting Notes"] })).toEqual({});
+		expect(pageFactsFromPicks({})).toEqual({});
+	});
+});
+
+/** One probe page: its reduced text, the lines Jev picked per field, and the lines its Noul passed. */
+interface ProbePage {
+	confidence: Record<string, number>;
+	name: string;
+	noteLines: string[];
+	picks: Partial<Record<Exclude<keyof PageFacts, "tastingNotes">, string>>;
+	text: string;
+	url: string;
+}
+const probePages: Record<string, ProbePage> = probePagesJson;
+
+describe("the probe pages, line in and fact out (ADR-0010)", () => {
+	// The 19 pages of the 2026-09-19 probe: each field's pick is the line
+	// Jev chose, each note line is one its Noul passed, and the facts are
+	// what the cut and the verifier keep of them, reviewed page by page.
+	const expected: Record<string, PageFacts> = {
+		blossom: { process: "Washed" },
+		coava: {
+			elevation: "1600 Meters",
+			process: "Washed",
+			producer: "Carlos Enrique Posada Vásquez (Fincas San Carlos)",
+			region: "La Palma, Chalatenango, El Salvador",
+			tastingNotes: ["red plum", "brown sugar", "black tea"],
+			variety: "Pacamara",
+		},
+		counterculture: {
+			elevation: "1,500–1,680 meters",
+			process: "Honey",
+			producer: "Finca El Puente",
+			roastLevel: "light roast",
+			tastingNotes: ["blackberry", "chocolate", "apricot"],
+			variety: "Catuai",
+		},
+		eastpole: {
+			elevation: "1350masl",
+			process: "Washed",
+			producer: "Cipres",
+			region: "Chiapas, Mexico",
+			tastingNotes: ["Red Apple", "Milk Chocolate", "Hazelnut"],
+			variety: "Caturra, Typica, Marsellesa",
+		},
+		heart: {
+			elevation: "1900-2200m",
+			process: "Fully washed",
+			region: "Gedeb",
+			tastingNotes: ["nectarine", "honeysuckle", "strawberry candy"],
+			variety: "Heirloom",
+		},
+		intelligentsia: {
+			elevation: "1600 - 1700 m",
+			process: "Washed",
+			producer: "Marysabel Caballero & Moises Herrera",
+			region: "Chinacla, La Paz",
+			tastingNotes: ["Preserved Lemon", "Baking Spice", "Magnolia"],
+		},
+		lacolombe: {
+			producer: "Lacador",
+			region: "Cerrado Minas",
+			roastLevel: "Medium",
+			tastingNotes: ["Spices", "Nutty", "Brown Sugar"],
+		},
+		madcap: {
+			producer: "Irvin Izaguirre",
+			tastingNotes: ["Cherry candy", "honeysuckle", "strawberry jam"],
+			variety: "PACAS",
+		},
+		// Merit's plain fetch is a 404 and its rendered page is the home page.
+		merit: { tastingNotes: ["Prunes", "Fig Danish", "Nutmeg"] },
+		onyx: {
+			elevation: "1650 MASL",
+			process: "Red Honey",
+			tastingNotes: ["Red Grape", "Rose", "Mullberry", "Vanilla"],
+			variety: "Pacamara",
+		},
+		passenger: {
+			process: "Washed",
+			tastingNotes: ["Red Fruit", "Citrus", "Browning Sugars"],
+		},
+		proudmary: {
+			process: "Anaerobic Natural",
+			producer: "Luiz Paulo",
+			tastingNotes: ["Red grape", "blackberry", "caramel"],
+			variety: "Pacamara",
+		},
+		pts: {
+			elevation: "2,100 masl",
+			process: "Anaerobic Natural",
+			producer: "Hacienda La Papaya",
+			region: "Loja Province",
+			roastLevel: "Light-Medium",
+			tastingNotes: ["Black Cherry", "Cocoa Powder", "Kumquat"],
+			variety: "Typica, Pacas, Caturra",
+		},
+		regalia: {
+			elevation: "2050 MASL",
+			process: "Washed",
+			producer: "Jorge Rojas",
+			region: "Planadas, Tolima, Colombia",
+			variety: "Chiroso",
+		},
+		sey: {
+			elevation: "2,200 masl",
+			process: "WASHED",
+			producer: "Danche",
+			region: "Gedeb, Gedeo",
+			variety: "Ethiopian Landrace",
+		},
+		sightglass: { roastLevel: "Light-Medium Roast" },
+		stumptown: {
+			tastingNotes: ["Red Currant", "Blackberry", "Dark Chocolate"],
+		},
+		sweetbloom: {
+			process: "washed, natural",
+			tastingNotes: ["jasmine", "red grape", "mango"],
+		},
+		verve: {
+			elevation: "1500-2000 Meters",
+			process: "Anaerobic Washed",
+			roastLevel: "Light roast",
+			tastingNotes: ["Orange Zest", "Sugar Cane", "Watermelon"],
+		},
+	};
+
+	test.each(Object.keys(probePages))("%s", (key) => {
+		const page = probePages[key];
+		const elements = pageElements(page.text);
+		// Every pick is one of the options the read would have sent.
+		for (const line of Object.values(page.picks)) {
+			expect(elements.lines).toContain(line);
+		}
+		const approved = elements.noteLines.filter((line) =>
+			page.noteLines.includes(line)
+		);
+		expect(
+			pageFactsFromPicks({
+				...page.picks,
+				...(approved.length === 0 ? {} : { tastingNotes: approved }),
+			})
+		).toEqual(expected[key]);
+	});
+
+	test("the pages fit Jev's state, and no pick lies past the state cap", () => {
+		for (const page of Object.values(probePages)) {
+			for (const line of Object.values(page.picks)) {
+				expect(page.text.indexOf(line)).toBeLessThan(JEV_STATE_LIMIT - 200);
+			}
+		}
 	});
 });
 
@@ -1956,12 +2240,9 @@ describe("pageTextFromHtml", () => {
 			`<html><body>${chrome}<main><h1>Honduras Fredy Perez</h1><p class="tasting-notes kapra"><span class="note">Tart Apple</span><span class="note">Pecan</span><span class="note">Fig</span><span class="note">Allspice</span></p>${story}</main></body></html>`
 		);
 		expect(text).not.toBeNull();
-		expect(pageFactCandidates(text ?? "").tastingNotes.slice(0, 4)).toEqual([
-			"Tart Apple",
-			"Pecan",
-			"Fig",
-			"Allspice",
-		]);
+		expect(pageElements(text ?? "").noteLines[0]).toBe(
+			"Tasting notes: Tart Apple, Pecan, Fig, Allspice"
+		);
 	});
 
 	// ADR-0009: Verve's page text carries no notes; its product image alt
@@ -1978,14 +2259,11 @@ describe("pageTextFromHtml", () => {
 		]);
 		expect(text).not.toContain("Layered Elegance");
 		expect(text).not.toContain("Streetlevel");
-		const candidates = pageFactCandidates(text ?? "");
-		expect(candidates.tastingNotes.slice(0, 3)).toEqual([
-			"Pear",
-			"Nectarine",
-			"Brown Sugar",
-		]);
-		expect(candidates.process).toContain("Washed");
-		expect(candidates.variety).toContain("Pink Bourbon");
+		const { lines, noteLines } = pageElements(text ?? "");
+		expect(noteLines[0]).toBe("Tasting Notes: Pear, Nectarine, Brown Sugar");
+		expect(lines).toEqual(
+			expect.arrayContaining(["Process: Washed", "Variety: Pink Bourbon"])
+		);
 	});
 
 	test("an image alt inside an upsell block is another coffee's and is never read; the theme-notes line still comes first (ADR-0009)", () => {
@@ -2004,15 +2282,25 @@ describe("pageTextFromHtml", () => {
 		const counterCulture = pageTextFromHtml(
 			`<html><body>${chrome}<div class="tasting-notes--wrapper flex"><p class="italic">tropical | brown sugar | juicy</p><button title="Toggle Taste Notes">?</button></div>${story}</body></html>`
 		);
-		expect(
-			pageFactCandidates(counterCulture ?? "").tastingNotes.slice(0, 3)
-		).toEqual(["tropical", "brown sugar", "juicy"]);
+		expect(pageElements(counterCulture ?? "").noteLines[0]).toBe(
+			"Tasting notes: tropical, brown sugar, juicy"
+		);
 		const stumptown = pageTextFromHtml(
 			`<html><body>${chrome}<div class="product-flavor-profile__tasting-notes"><h3 class="product-flavor-profile__tasting-notes-title">Tasting Notes</h3><div class="product-flavor-profile__flavors"><div class="product-flavor-profile__flavor">Red Currant</div><div class="product-flavor-profile__flavor">Cocoa</div><div class="product-flavor-profile__flavor">Honey</div></div></div>${story}</body></html>`
 		);
-		expect(
-			pageFactCandidates(stumptown ?? "").tastingNotes.slice(0, 3)
-		).toEqual(["Red Currant", "Cocoa", "Honey"]);
+		expect(pageElements(stumptown ?? "").noteLines[0]).toBe(
+			"Tasting notes: Red Currant, Cocoa, Honey"
+		);
+	});
+
+	test("a popover inside the notes wrapper is a viewer-opened block, not notes (Counter Culture)", () => {
+		const text = pageTextFromHtml(
+			`<html><body>${chrome}<div class="tasting-notes--wrapper flex"><p class="italic">blackberry | chocolate | apricot</p><button title="Toggle Taste Notes">?</button><div class="wheel_popover hidden"><h3>Tasting Notes</h3><p>Tasting notes are descriptors of a coffee's sensory profile. For more, check out our <a href="/wheel">Flavor Wheel</a></p></div></div>${story}</body></html>`
+		);
+		expect(text?.split("\n")[0]).toBe(
+			"Tasting notes: blackberry, chocolate, apricot"
+		);
+		expect(text).not.toContain("Flavor Wheel");
 	});
 
 	test("a script shell is null; chrome never reaches the text", () => {
@@ -2034,21 +2322,13 @@ describe("pageTextFromHtml", () => {
 		const text = pageTextFromHtml(
 			`<html><body>${chrome}<main id="MainContent"><h1>Colombia El Diviso</h1><div class="tasting-notes"><span class="note">Blueberry Muffin</span><span class="note">Milk Chocolate</span><span class="note">Candied Orange Peel</span><span class="note">Brown Sugar</span><span class="note">Vanilla Bean</span><span class="note">Toasted Hazelnut</span></div>${story}</main></body></html>`
 		);
-		expect(pageFactCandidates(text ?? "").tastingNotes.slice(0, 6)).toEqual([
-			"Blueberry Muffin",
-			"Milk Chocolate",
-			"Candied Orange Peel",
-			"Brown Sugar",
-			"Vanilla Bean",
-			"Toasted Hazelnut",
-		]);
-	});
-
-	test("a labelled notes line longer than the fact cap is still split into notes (A1)", () => {
-		const candidates = pageFactCandidates(
-			"Tasting notes: Blueberry Muffin, Milk Chocolate, Candied Orange Peel, Brown Sugar, Vanilla Bean, Toasted Hazelnut\nRoast: Light"
+		const [notesLine] = pageElements(text ?? "").noteLines;
+		expect(notesLine).toBe(
+			"Tasting notes: Blueberry Muffin, Milk Chocolate, Candied Orange Peel, Brown Sugar, Vanilla Bean, Toasted Hazelnut"
 		);
-		expect(candidates.tastingNotes).toEqual([
+		expect(
+			pageFactsFromPicks({ tastingNotes: [notesLine ?? ""] }).tastingNotes
+		).toEqual([
 			"Blueberry Muffin",
 			"Milk Chocolate",
 			"Candied Orange Peel",
@@ -2086,7 +2366,7 @@ describe("pageTextFromHtml", () => {
 		const html = `<html><body>${chrome}<main>${story}<div class="shopify-section"><section class="featured-products-grid"><div class="featured-products-grid__grid"><card-product class="card-product "><div class="card-product__title"><a href="/products/migration">Migration 9.2</a></div><span>Blend</span><em>jasmine, red grape, mango</em></card-product></div></section></div></main></body></html>`;
 		const text = pageTextFromHtml(html) ?? "";
 		expect(text).not.toContain("jasmine");
-		expect(pageFactCandidates(text).tastingNotes).not.toContain("red grape");
+		expect(pageElements(text).noteLines).toEqual([]);
 	});
 
 	test("the real notes element before an upsell section still leads (A2)", () => {

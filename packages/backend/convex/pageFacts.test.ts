@@ -71,12 +71,19 @@ interface ProviderOptions {
 	firecrawlStatus?: number;
 }
 
+/** The line Jev's stub picks per field: the fixture's spec lines, as the reader offers them. */
+const STUB_PICKS: Record<string, RegExp> = {
+	elevation: /1,900/u,
+	process: /Natural/u,
+	variety: /Heirloom/u,
+};
+
 /**
  * The providers a read touches. The shop serves the product page itself
  * (`html`; null means the shop answered with an error); Firecrawl is the
- * fallback and returns the page markdown; Jev answers every question with
- * its first real option (Choice) or a yes (Noul), so the stored facts
- * follow from the fixture page.
+ * fallback and returns the page markdown; Jev picks the fixture's spec line
+ * for each field it states (Choice) and passes a note line or a sentence
+ * that mentions peach (Noul), so the stored facts follow from the page.
  */
 const stubProviders = ({
 	answeredUrl,
@@ -126,6 +133,7 @@ const stubProviders = ({
 					string,
 					{
 						criteria?: Record<string, string | null>;
+						instructions: string;
 						type: string;
 					}
 				>;
@@ -133,17 +141,21 @@ const stubProviders = ({
 			const answers: Record<string, unknown> = {};
 			for (const [key, question] of Object.entries(body.questions)) {
 				if (question.type === "choice") {
-					const choices = Object.keys(question.criteria ?? {}).find(
-						(option) => option !== "none"
+					const wanted = STUB_PICKS[key];
+					const line = Object.keys(question.criteria ?? {}).find((option) =>
+						wanted === undefined ? false : wanted.test(option)
 					);
 					answers[key] = {
-						choice: choices ?? "",
+						choice: line ?? "none",
 						confidence: 0.9,
 						probabilities: {},
 						type: "choice",
 					};
 				} else {
-					answers[key] = { noul: 0.9, type: "noul" };
+					answers[key] = {
+						noul: question.instructions.includes("peach") ? 0.9 : 0.1,
+						type: "noul",
+					};
 				}
 			}
 			return Response.json({
@@ -619,7 +631,10 @@ describe("pageFacts.scrape", () => {
 			String(url).includes("typesafe")
 		);
 		const body = JSON.parse(String(jev?.[1]?.body)) as {
-			questions: Record<string, { instructions: string }>;
+			questions: Record<
+				string,
+				{ criteria?: Record<string, string | null>; instructions: string }
+			>;
 			state: string;
 		};
 		expect(body.state.startsWith("Coffee: Ethiopia Mullugeta Muntasha\n")).toBe(
@@ -631,6 +646,14 @@ describe("pageFacts.scrape", () => {
 		for (const question of Object.values(body.questions)) {
 			expect(question.instructions).toContain('"Ethiopia Mullugeta Muntasha"');
 		}
+		// One Choice per field over the page's lines (ADR-0010), and one Noul
+		// per note-shaped line, the line spelled out in the question.
+		expect(Object.keys(body.questions.process?.criteria ?? {})).toEqual(
+			expect.arrayContaining(["Mullugeta", "Process: Natural", "none"])
+		);
+		expect(body.questions.note_0?.instructions).toContain(
+			'"Tasting notes: peach, melon, red tea."'
+		);
 		fetchMock.mockClear();
 		await fx.t.run((ctx) =>
 			ctx.db.patch(fx.lotId, { copyFetchedAt: undefined, pageReads: undefined })

@@ -3,11 +3,11 @@
 // the merge: the crawl-end sweep asks for the roaster's lots, the lot page
 // asks through `request`, the recommendation worker asks for a candidate.
 // One page text (the shop's own page, else a Firecrawl markdown scrape),
-// then code over-finds candidate spans per field and ONE Jev request picks
-// one candidate per field (or none). Every pick is verbatim on the page by
-// construction and passes the shared per-field shape
-// (extraction.verifyPageFacts), then is stored in `products.pageFacts`,
-// which the feed write never touches.
+// split into lines, then ONE Jev request picks one line per field (or
+// none) and passes or fails each note-shaped line (ADR-0010). Code cuts the
+// value from the picked line with the field's own cutter and the shared
+// per-field shape gates it (extraction.pageFactsFromPicks), then it is
+// stored in `products.pageFacts`, which the feed write never touches.
 
 import { HOUR, MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
 import { FirecrawlClient } from "@firecrawl/firecrawl-convex";
@@ -23,11 +23,11 @@ import {
 } from "./_generated/server";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import {
-	pageFactCandidates,
+	pageElements,
+	pageFactsFromPicks,
 	pageTextFromHtml,
-	verifyPageFacts,
 } from "./extraction";
-import type { PageFactField } from "./extraction";
+import type { PageElements } from "./extraction";
 import { askJev, JEV_MODEL, jevChoice, jevNoul } from "./jev";
 import type { JevQuestion } from "./jev";
 import { needsPageFacts, pageFactsValidator } from "./lotFacts";
@@ -89,10 +89,11 @@ const firecrawl = new FirecrawlClient(components.firecrawl);
 /**
  * Jev's context rot: accuracy falls as the state grows, so the page state
  * is the head of the page text (chrome already dropped; specs sit at the
- * top of a product page), not the whole document. Jev's
- * own limit is 32k tokens for state; this stays far below it.
+ * top of a product page), not the whole document. Jev's own limit is 32k
+ * tokens for state; this stays far below it. The options are lines of the
+ * same head, so the cap bounds them too (ADR-0010).
  */
-const JEV_STATE_LIMIT = 12_000;
+export const JEV_STATE_LIMIT = 12_000;
 /** The escape-hatch option on every field Choice. */
 const NONE_OPTION = "none";
 /** A Noul at or above this is a yes. */
@@ -116,11 +117,11 @@ const PAGE_FETCH_HEADERS: Record<string, string> = {
 		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36 nouveau-crawler",
 };
 
-/** The Choice question for one fact field, over its candidate spans. */
-const CHOICE_FIELDS: readonly (readonly [
-	Exclude<PageFactField, "tastingNotes">,
-	string,
-])[] = [
+/** A fact field Jev locates with one Choice over the page's lines. */
+type ChoiceField = Exclude<keyof PageFacts, "tastingNotes">;
+
+/** The Choice question for one fact field, over the page's lines. */
+const CHOICE_FIELDS: readonly (readonly [ChoiceField, string])[] = [
 	[
 		"elevation",
 		"Which of these states the elevation or altitude at which %COFFEE% was grown?",
@@ -139,13 +140,14 @@ const CHOICE_FIELDS: readonly (readonly [
 ];
 
 /**
- * Sweet Bloom's featured-products block once passed this question with
- * another blend's notes; the coffee is named now, and another coffee the
- * shop sells is spelled out as a wrong answer.
+ * One Noul per note-shaped line (ADR-0010), the line spelled out. Sweet
+ * Bloom's featured-products block once passed the note question with
+ * another blend's notes; the coffee is named, and another coffee the shop
+ * sells is spelled out as a wrong answer.
  */
-const NOTE_QUESTION: JevQuestion = {
+const NOTE_LINE_QUESTION: JevQuestion = {
 	instructions:
-		'On this product page, is "%NOTE%" a tasting note (a flavor or aroma word) of %COFFEE%, rather than a roast level, a certification, brewing guidance, or a note of another coffee the shop sells?',
+		'Is this line of the page a list of tasting notes (flavor or aroma words) of %COFFEE%, rather than notes of another coffee the shop sells, a roast level, a certification, or brewing guidance? Line: "%LINE%"',
 	type: "noul",
 };
 
@@ -161,47 +163,51 @@ const coffeePhrase = (name: string): string =>
 		? "the one coffee sold on this product page"
 		: `"${name}", the one coffee sold on this product page`;
 
+/** The state's first line when the read knows the lot's name. */
+const coffeeLine = (name: string): string =>
+	name === "" ? "" : `Coffee: ${name}\n`;
+
+/** The head of the page text that fits Jev's state beside the lot's name: the lines Jev can pick from. */
+export const pageHead = (pageText: string, name: string): string =>
+	pageText.slice(0, JEV_STATE_LIMIT - coffeeLine(name).length);
+
 /** The state Jev reads: the lot's name first, then the head of the page text. */
 export const pageJevState = (pageText: string, name: string): string =>
-	(name === "" ? pageText : `Coffee: ${name}\n${pageText}`).slice(
-		0,
-		JEV_STATE_LIMIT
-	);
+	`${coffeeLine(name)}${pageHead(pageText, name)}`;
 
 /**
- * The page read's questions: one Choice per field that has candidates, one
- * Noul per note candidate and per description-sentence candidate, all in a
- * single /v1/systemone request (Jev evaluates them against the state in
- * parallel, so extra questions cost almost nothing). Every question names
- * the lot when the read knows its name.
+ * The page read's questions: one Choice per field over every line of the
+ * page head, one Noul per note-shaped line and per description-sentence
+ * candidate, all in a single /v1/systemone request (Jev evaluates them
+ * against the state in parallel, so extra questions cost almost nothing;
+ * the probe sent 227 options and 233 questions for one page). Every
+ * question names the lot when the read knows its name.
  */
 export const pageJevQuestions = (
-	candidates: ReturnType<typeof pageFactCandidates>,
+	elements: PageElements,
 	sentences: readonly string[],
 	name = ""
 ): Record<string, JevQuestion> => {
 	const coffee = coffeePhrase(name);
 	const questions: Record<string, JevQuestion> = {};
-	for (const [field, instructions] of CHOICE_FIELDS) {
-		const spans = candidates[field];
-		if (spans.length === 0) {
-			continue;
-		}
-		questions[field] = {
-			criteria: {
-				...Object.fromEntries(spans.map((span) => [span, null])),
-				[NONE_OPTION]:
-					"The page does not state this about this specific coffee.",
-			},
-			instructions: instructions.replaceAll("%COFFEE%", coffee),
-			type: "choice",
+	if (elements.lines.length > 0) {
+		const options = {
+			...Object.fromEntries(elements.lines.map((line) => [line, null])),
+			[NONE_OPTION]: "The page does not state this about this specific coffee.",
 		};
+		for (const [field, instructions] of CHOICE_FIELDS) {
+			questions[field] = {
+				criteria: options,
+				instructions: instructions.replaceAll("%COFFEE%", coffee),
+				type: "choice",
+			};
+		}
 	}
-	for (const [index, note] of candidates.tastingNotes.entries()) {
+	for (const [index, line] of elements.noteLines.entries()) {
 		questions[`note_${index}`] = {
-			...NOTE_QUESTION,
-			instructions: NOTE_QUESTION.instructions
-				.replaceAll("%NOTE%", note)
+			...NOTE_LINE_QUESTION,
+			instructions: NOTE_LINE_QUESTION.instructions
+				.replaceAll("%LINE%", line)
 				.replaceAll("%COFFEE%", coffee),
 		};
 	}
@@ -216,38 +222,34 @@ export const pageJevQuestions = (
 };
 
 /**
- * The picks out of one answer map, copied verbatim from the candidates.
- * A choice outside the sent options or the none hatch is a protocol error
- * and leaves the field unset, never defaulted.
+ * The lines out of one answer map, then the facts cut from them. A choice
+ * outside the sent lines or the none hatch is a protocol error and leaves
+ * the field unset, never defaulted.
  */
 const picksFromAnswers = (
 	answers: Record<string, unknown>,
-	candidates: ReturnType<typeof pageFactCandidates>,
+	elements: PageElements,
 	sentences: readonly string[]
 ): { facts: PageFacts; sentences: string[] } => {
 	const picks: PageFacts = {};
+	const options = [...elements.lines, NONE_OPTION];
 	for (const [field] of CHOICE_FIELDS) {
-		if (candidates[field].length === 0) {
-			continue;
-		}
-		const chosen = jevChoice(answers[field], [
-			...candidates[field],
-			NONE_OPTION,
-		]);
+		const chosen =
+			elements.lines.length === 0 ? null : jevChoice(answers[field], options);
 		if (chosen === null || chosen.choice === NONE_OPTION) {
 			continue;
 		}
 		picks[field] = chosen.choice;
 	}
-	const notes: string[] = [];
-	for (const [index, note] of candidates.tastingNotes.entries()) {
+	const noteLines: string[] = [];
+	for (const [index, line] of elements.noteLines.entries()) {
 		const yes = jevNoul(answers[`note_${index}`]);
 		if (yes !== null && yes >= YES) {
-			notes.push(note);
+			noteLines.push(line);
 		}
 	}
-	if (notes.length > 0) {
-		picks.tastingNotes = notes;
+	if (noteLines.length > 0) {
+		picks.tastingNotes = noteLines;
 	}
 	const approved: string[] = [];
 	for (const [index, sentence] of sentences.entries()) {
@@ -257,7 +259,7 @@ const picksFromAnswers = (
 		}
 	}
 	return {
-		facts: verifyPageFacts(picks),
+		facts: pageFactsFromPicks(picks),
 		sentences: approved.slice(0, MAX_PAGE_SENTENCES),
 	};
 };
@@ -537,13 +539,13 @@ export const readPageFacts = async (
 	if (apiKey === undefined || apiKey === "" || pageText === "") {
 		return empty;
 	}
-	const candidates = pageFactCandidates(pageText);
+	const elements = pageElements(pageHead(pageText, name));
 	const sentenceSpans = sentenceCandidates(pageText, known);
 	const answer = await askJev(
 		apiKey,
 		`pageFacts ${url}`,
 		pageJevState(pageText, name),
-		pageJevQuestions(candidates, sentenceSpans, name)
+		pageJevQuestions(elements, sentenceSpans, name)
 	);
 	if (answer === null) {
 		return empty;
@@ -555,7 +557,7 @@ export const readPageFacts = async (
 	}
 	return {
 		pageText,
-		...picksFromAnswers(answer.answers, candidates, sentenceSpans),
+		...picksFromAnswers(answer.answers, elements, sentenceSpans),
 	};
 };
 
