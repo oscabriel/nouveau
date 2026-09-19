@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Firecrawl's HTML is the page read's first source; Jev picks the element, the span cutters keep the value
 
-Drafted 2026-09-19 for the owner's decision. Amends ADR-0008 (plain fetch first, Firecrawl markdown as the fallback) and the candidate-finding half of ADR-0005 (regex spans, Jev picks one); ADR-0009's reducer and alt lines stand. The question that started the review: can the page-facts path become "Firecrawl grabs the page, code splits it into elements, Jev classifies each element", replacing the regex tiers? Evidence: a live diff of one purchasable lot per seed roaster across four sources (plain fetch, Firecrawl `rawHtml`, `html` and `markdown`, 2026-09-19, `/tmp/nouveau-handoff/diff.md`), and a Jev probe of whole-line elements against the current span candidates on 19 of those pages (`jev-1.13.0`, `/tmp/nouveau-handoff/jev-probe.md`, raw answers in `probe.json`).
+Drafted 2026-09-19; accepted the same day (owner). Implementation follows in three pieces, reader first (see the handoff of 2026-09-19). Amends ADR-0008 (plain fetch first, Firecrawl markdown as the fallback) and the candidate-finding half of ADR-0005 (regex spans, Jev picks one); ADR-0009's reducer and alt lines stand. The question that started the review: can the page-facts path become "Firecrawl grabs the page, code splits it into elements, Jev classifies each element", replacing the regex tiers? Evidence: a live diff of one purchasable lot per seed roaster across four sources (plain fetch, Firecrawl `rawHtml`, `html` and `markdown`, 2026-09-19, `/tmp/nouveau-handoff/diff.md`), and a Jev probe of whole-line elements against the current span candidates on 19 of those pages (`jev-1.13.0`, `/tmp/nouveau-handoff/jev-probe.md`, raw answers in `probe.json`).
 
 ## Evidence
 
