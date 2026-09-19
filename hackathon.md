@@ -11,9 +11,9 @@
 - **Components:** @agentmail/convex, @convex-dev/aggregate, @convex-dev/auth (core + Google OAuth), @convex-dev/rate-limiter, @convex-dev/static-hosting, @convex-dev/workpool, @firecrawl/firecrawl-convex
 - **Convex features:** schema, indexes, queries, mutations, actions, crons, scheduled functions, file storage, realtime queries, HTTP actions, workpool
 - **Auth:** Convex Auth
-- **AI models:** OpenAI `gpt-5.6-luna` (Responses API, low reasoning effort, strict JSON schema) for Find my next bag, live in prod at `/next-bag`. Firecrawl JSON extraction reads product pages for the same feature.
+- **AI models:** OpenAI `gpt-5.6-luna` (Responses API, low reasoning effort, strict JSON schema) for Find my next bag, live in prod at `/next-bag`. TypeSafe System One `jev-1.13.0` (`convex/jev.ts`) picks one verified span per fact field from a product page and shadow-checks the lot classifier. Product pages are read with a plain fetch first; Firecrawl's markdown scrape is the fallback.
 - **Started:** 2026-08-29T18:06:09Z
-- **Last updated:** 2026-09-17T20:40:00Z
+- **Last updated:** 2026-09-19T01:45:51Z
 
 ## Log
 
@@ -250,3 +250,16 @@ Moved the public app off the raw deployment URLs. The owner bought `nouveau.coff
 ### 2026-09-18 - eb27c34 - design pass: header, theme switch, roasters
 
 The index vocabulary reached its first inner pages. The header is now caps links with a hairline circle for the theme switch (`header.tsx`, `mode-toggle.tsx`). `/roasters` and `/roasters/$slug` moved to `PageTitle` (h1, tabular count, caps actions on the right baseline), a `SearchField` underline input, full-width hairline tables and `SiteFooter`; the roaster page reuses `DropTable` with `showRoaster={false}` and the lots list in `lots.tsx` carries the caps ARCHIVED tag. The controls those pages share were redone in the same language: `status-chip` is an 8px colored dot with grey text, `watch-button` a WATCH / WATCHING toggle pair, `check-now-button` caps text with the 44px hit area. No query changed; this commit is layout and copy only. `DESIGN.md` records the built result and the handoff's Task 3 now lists what is done and what remains (lot page, cards to rows, signed-in home, next bag, the rest).
+
+### 2026-09-18 - 4f11755 - ADR-0007: one event per variant burst; sizes, deep links, grid filters
+
+A restock of four bag sizes had been four feed cards and four emails per watcher. One crawl of one product is now one burst: `diffVariant` reports each move and `planBurstEvents` emits at most one event per kind, citing a headline size and every moved variant (`crawlSources.ts`, `dropEvents.variantIds`). Variants keep the Shopify variant id, so the lot page's size table deep-links the exact size on the roaster's shop (`lotUrl.ts`, `lots.tsx`). A stock rollup (`anyAvailable`, `minPriceCents`, `weightOptions`) lands on `products` at upsert; the roaster grid dims sold-out lots and filters on stock, bag size, price cap and origin over a bounded index scan (`roasters.ts`, `lotStock.ts`). Twenty-six review follow-ups from the two-axis code review landed as small commits (`2fdc558`..`4f11755`), plus a backend `check-types` script so the root turbo task typechecks both packages. Convex features: indexes, scheduled functions, paginated queries.
+
+### 2026-09-18 - 6c8fb2f - ADR-0008: thin lots get their page read at crawl time, from the shop itself
+
+Half the catalog had no tasting notes to show on the grid or in recommendations, because most roasters keep notes in a metafield the theme renders only on the product page. After each successful crawl, `pageFacts.sweep` schedules one read per thin lot, 25 per roaster per crawl, two seconds apart (`pageFacts.ts`, `ctx.scheduler`). The read fetches the shop's own page with a plain request and reduces it to block text (`extraction.ts`: main element first, chrome and upsell blocks cut, the theme's notes element leading the candidates); Firecrawl's markdown scrape runs only when the shop errors, redirects elsewhere or serves a script shell, under a deployment-wide token bucket of 60 fallbacks a minute (`@convex-dev/rate-limiter`). Jev picks one verified span per field. A lot is read while any of seven facts is missing, at most three times a day apart (`products.pageReads`). A live run on dev raised notes coverage from about 55% to 76% of 3,030 lots in one session and surfaced four defects, all fixed the same day. Suite 480.
+
+### 2026-09-18 - f45d54f - ADR-0009: image alt text joins the page read; prod deploy
+
+Surveyed all 20 roasters for structured page data. Only image alt text pays: Verve keeps its whole spec line there and nowhere in the rendered text. JSON-LD equals the feed body everywhere it exists, and the SEO description named another coffee on two of nineteen pages, so both are rejected (`.agents/docs/adr/0009-*.md`). The page read now keeps labelled `Label: value` alt segments ahead of the page text (`extraction.ts`). Every Jev question names the lot, the second guard after a featured-products block had leaked another blend's notes onto 54 of 55 Sweet Bloom lots; `pageFacts.resetReads` clears a roaster's reads and facts by hand so an extractor fix applies now. Verified on dev: the reset Sweet Bloom lots carry only their own notes, and Verve lots gain notes, roast, process and variety. Deployed `f45d54f` to prod with `bun run deploy` (owner consent; 17.0s), prod's first crawl-time page reads. Suite 485.
+
