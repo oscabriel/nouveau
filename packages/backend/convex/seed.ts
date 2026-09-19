@@ -154,9 +154,6 @@ const SEED_ROASTERS = [
 		name: "La Colombe Coffee Roasters",
 		productPath: "/collections/coffee",
 		state: "PA",
-		// The apex is a headless front with no products.json; the Shopify shop
-		// (and its feed) live on www.
-		website: "https://www.drinkpassenger.com",
 	},
 	{
 		cadenceMinutes: 30,
