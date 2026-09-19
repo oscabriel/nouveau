@@ -633,16 +633,40 @@ describe("pageFacts.scrape", () => {
 		expect(read?.pageFacts?.process).toBe("Natural");
 	});
 
-	test("samePage ignores a trailing slash and an https upgrade, and nothing else", () => {
+	test("samePage allows a trailing slash, an https upgrade, the www host and a renamed handle, and nothing else", () => {
 		expect(samePage(PAGE_URL, `${PAGE_URL}/`)).toBe(true);
 		expect(samePage(PAGE_URL, `${PAGE_URL}?variant=1#top`)).toBe(true);
 		expect(samePage(PAGE_URL.replace("https:", "http:"), PAGE_URL)).toBe(true);
 		expect(samePage(PAGE_URL, PAGE_URL.replace("https:", "http:"))).toBe(false);
 		expect(samePage(PAGE_URL, COLLECTION_URL)).toBe(false);
-		expect(samePage(PAGE_URL, PAGE_URL.replace("sey.", "www.sey."))).toBe(
-			false
-		);
+		// Sey answers from www; Sweet Bloom renamed hometown to hometown-blend.
+		expect(samePage(PAGE_URL, PAGE_URL.replace("sey.", "www.sey."))).toBe(true);
+		expect(samePage(PAGE_URL.replace("sey.", "www.sey."), PAGE_URL)).toBe(true);
+		expect(samePage(PAGE_URL, `${PAGE_URL}-blend`)).toBe(true);
+		// Another shop's product page is not this shop's.
+		expect(samePage(PAGE_URL, PAGE_URL.replace("sey.", "other."))).toBe(false);
+		expect(samePage(PAGE_URL, "https://sey.example.com/products/")).toBe(false);
 		expect(samePage(PAGE_URL, "not a url")).toBe(false);
+	});
+
+	test("a shop that answers a renamed handle from its www host is read directly, no Firecrawl credit", async () => {
+		const fx = await setup();
+		const fetchMock = stubProviders({
+			answeredUrl: "https://www.sey.example.com/products/mullugeta-2026",
+		});
+		await fx.t.action(internal.pageFacts.scrape, {
+			productId: fx.lotId,
+			url: PAGE_URL,
+		});
+		expect(
+			fetchMock.mock.calls.some(([url]) => String(url).includes("firecrawl"))
+		).toBe(false);
+		const read = await product(fx);
+		expect(read?.pageFacts?.tastingNotes).toEqual([
+			"peach",
+			"melon",
+			"red tea",
+		]);
 	});
 
 	test("a Jev failure stores nothing, counts the read and the lot retries after the window", async () => {

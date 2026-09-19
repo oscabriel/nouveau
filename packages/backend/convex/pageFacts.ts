@@ -363,13 +363,18 @@ export interface PageRead {
 }
 
 const TRAILING_SLASHES = /\/+$/u;
+/** The apex and its www host are the same shop (Sey answers from www). */
+const WWW_PREFIX = /^www\./iu;
+/** A Shopify product page; a renamed handle 301s here from the old one. */
+const PRODUCT_PATH = /^\/products\/[^/]+$/u;
 
 /**
- * Whether the page the shop answered with is the page that was asked for:
- * same host and same path, ignoring the query string and a trailing slash,
- * and allowing an http to https upgrade. A shop that 301s a dead handle to
- * its collection page answers 200 with HTML, and that must not be read as
- * the lot's page.
+ * Whether the page the shop answered with is the lot's page: the same shop
+ * (host, ignoring a leading www and an http to https upgrade) and either
+ * the same path (query string and trailing slash ignored) or another
+ * product path, which is how Shopify answers a renamed handle. A shop that
+ * 301s a dead handle to its collection page answers 200 with HTML, and
+ * that must not be read as the lot's page.
  */
 export const samePage = (requested: string, answered: string): boolean => {
 	let asked: URL;
@@ -381,12 +386,14 @@ export const samePage = (requested: string, answered: string): boolean => {
 		return false;
 	}
 	const upgraded = asked.protocol === "http:" && got.protocol === "https:";
-	return (
-		asked.host === got.host &&
-		(asked.protocol === got.protocol || upgraded) &&
-		asked.pathname.replace(TRAILING_SLASHES, "") ===
-			got.pathname.replace(TRAILING_SLASHES, "")
-	);
+	const sameShop =
+		asked.host.replace(WWW_PREFIX, "") === got.host.replace(WWW_PREFIX, "") &&
+		(asked.protocol === got.protocol || upgraded);
+	const askedPath = asked.pathname.replace(TRAILING_SLASHES, "");
+	const gotPath = got.pathname.replace(TRAILING_SLASHES, "");
+	const renamedProduct =
+		PRODUCT_PATH.test(askedPath) && PRODUCT_PATH.test(gotPath);
+	return sameShop && (askedPath === gotPath || renamedProduct);
 };
 
 /**
