@@ -202,7 +202,7 @@ const OTHER_PRODUCT_CLASS =
  * on those would drop the page's own description.
  */
 const OTHER_PRODUCT_BLOCK =
-	/(?:^|[\s_-])(?:upsells?|related|recommendations?|recommended|cross[-_]?sells?|also[-_]?like|complementary)(?=$|[\s_-])/iu;
+	/(?:^|[\s_-])(?:upsells?|related|recommendations?|recommended|cross[-_]?sells?|also[-_]?like|complementary|featured[-_]products?)(?=$|[\s_-])/iu;
 /** A role that marks a menu or a modal: text a viewer opens, never the lot's. */
 const DROPPED_ROLE = /\brole\s*=\s*["']?(?:navigation|dialog)\b/iu;
 /** The class attribute of an opening tag, in either quote style. */

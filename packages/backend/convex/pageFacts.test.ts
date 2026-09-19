@@ -66,6 +66,8 @@ interface ProviderOptions {
 	statusCode?: number;
 	/** The shop never answers: the plain fetch aborts on its timeout. */
 	timeout?: boolean;
+	/** Firecrawl's HTTP status; 429 is its rate limit. */
+	firecrawlStatus?: number;
 }
 
 /**
@@ -77,6 +79,7 @@ interface ProviderOptions {
  */
 const stubProviders = ({
 	answeredUrl,
+	firecrawlStatus = 200,
 	html = PAGE_HTML,
 	jev = true,
 	markdown = PAGE_MARKDOWN,
@@ -99,6 +102,12 @@ const stubProviders = ({
 			return response;
 		}
 		if (url.includes("firecrawl")) {
+			if (firecrawlStatus !== 200) {
+				return new Response("Rate limit exceeded", {
+					headers: { "retry-after": "0" },
+					status: firecrawlStatus,
+				});
+			}
 			return Response.json({
 				data: {
 					markdown,
@@ -526,6 +535,21 @@ describe("pageFacts.scrape", () => {
 			tastingNotes: ["peach", "melon", "red tea"],
 			variety: "Heirloom",
 		});
+	});
+
+	test("a rate-limited fallback keeps the stamp but is not a counted read", async () => {
+		const fx = await setup();
+		stubProviders({ firecrawlStatus: 429, html: null });
+		const before = Date.now();
+		await fx.t.run((ctx) => ctx.db.patch(fx.lotId, { copyFetchedAt: before }));
+		await fx.t.action(internal.pageFacts.scrape, {
+			productId: fx.lotId,
+			url: PAGE_URL,
+		});
+		const read = await product(fx);
+		expect(read?.pageFacts).toBeUndefined();
+		expect(read?.pageReads).toBeUndefined();
+		expect(read?.copyFetchedAt).toBe(before);
 	});
 
 	test("a page that is only a script shell falls back to Firecrawl", async () => {

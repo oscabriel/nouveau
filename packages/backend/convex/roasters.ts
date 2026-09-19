@@ -11,7 +11,7 @@ import { query } from "./_generated/server";
 import { LOT_FILTER_SCAN, LOT_SEARCH_LIMIT } from "./constants";
 import { followerCounts } from "./followerCounts";
 import { crawlStatusValidator, getCrawlStatus } from "./health";
-import { joinNotes } from "./lotFacts";
+import { joinNotes, mergedFacts } from "./lotFacts";
 import { lotAvailability, lotAvailabilityValidator } from "./lotStock";
 
 /** Roaster fields every roaster surface renders (directory, watches, page). */
@@ -98,7 +98,8 @@ const lotRowValidator = v.object({
 	// The lot's origin as the feed publishes it (filterable, shown on md+).
 	origin: v.union(v.string(), v.null()),
 	// Roaster notes (§14.4): descriptors from the roaster's own copy, shown
-	// while picking a lot and while logging it.
+	// while picking a lot and while logging it. Feed notes first, else the
+	// page read's (ADR-0008: the grid column is what the sweep fills).
 	roasterNotes: v.union(v.string(), v.null()),
 	status: v.union(v.literal("current"), v.literal("archived")),
 });
@@ -111,7 +112,7 @@ const toLotRow = (lot: Doc<"products">): Infer<typeof lotRowValidator> => ({
 	minPriceCents: lot.minPriceCents ?? null,
 	name: lot.name,
 	origin: lot.origin ?? null,
-	roasterNotes: joinNotes(lot.roasterNotes),
+	roasterNotes: joinNotes(mergedFacts(lot).notes),
 	status: lot.status,
 });
 

@@ -189,6 +189,43 @@ describe("roasters", () => {
 		expect(inStock.map((row) => row.name)).toEqual(["In-stock lot"]);
 	});
 
+	test("the notes column shows the page read's notes when the feed has none (ADR-0008)", async () => {
+		const { active, t } = await setup();
+		await t.run(async (ctx) => {
+			await ctx.db.insert("products", {
+				externalId: "p1",
+				firstSeenAt: 1000,
+				handle: "page-notes-lot",
+				lastSeenAt: 1000,
+				name: "Page-notes lot",
+				pageFacts: { tastingNotes: ["Tart Apple", "Pecan", "Fig"] },
+				roasterId: active,
+				status: "current",
+			});
+			await ctx.db.insert("products", {
+				externalId: "p2",
+				firstSeenAt: 1000,
+				handle: "feed-notes-lot",
+				lastSeenAt: 1000,
+				name: "Feed-notes lot",
+				pageFacts: { tastingNotes: ["cardboard"] },
+				roasterId: active,
+				roasterNotes: ["peach", "melon"],
+				status: "current",
+			});
+		});
+		const rows = await t.query(api.roasters.listLots, {
+			paginationOpts: { cursor: null, numItems: 10 },
+			roasterId: active,
+		});
+		const byName = Object.fromEntries(rows.page.map((row) => [row.name, row]));
+		expect(byName["Page-notes lot"]?.roasterNotes).toBe(
+			"Tart Apple, Pecan, Fig"
+		);
+		// The feed's own notes still win over the page's.
+		expect(byName["Feed-notes lot"]?.roasterNotes).toBe("peach, melon");
+	});
+
 	test("lotWeightOptions is the catalog's distinct sizes, ascending", async () => {
 		const { active, t } = await setup();
 		await t.run(async (ctx) => {

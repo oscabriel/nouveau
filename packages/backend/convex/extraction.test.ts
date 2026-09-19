@@ -2029,6 +2029,16 @@ describe("pageTextFromHtml", () => {
 		expect(pageTextFromHtml(html)).not.toContain("Jasmine");
 	});
 
+	test("a featured-products grid is another product's block too (Sweet Bloom)", () => {
+		// Sweet Bloom's product page ends in a featured-products grid whose
+		// cards carry each blend's notes as a bare list, which the bare-list
+		// route read as this coffee's until the section was cut.
+		const html = `<html><body>${chrome}<main>${story}<div class="shopify-section"><section class="featured-products-grid"><div class="featured-products-grid__grid"><card-product class="card-product "><div class="card-product__title"><a href="/products/migration">Migration 9.2</a></div><span>Blend</span><em>jasmine, red grape, mango</em></card-product></div></section></div></main></body></html>`;
+		const text = pageTextFromHtml(html) ?? "";
+		expect(text).not.toContain("jasmine");
+		expect(pageFactCandidates(text).tastingNotes).not.toContain("red grape");
+	});
+
 	test("the real notes element before an upsell section still leads (A2)", () => {
 		const text = pageTextFromHtml(
 			`<html><body>${chrome}<main><p class="tasting-notes"><span>Tart Apple</span><span>Pecan</span></p>${story}${upsell}</main></body></html>`

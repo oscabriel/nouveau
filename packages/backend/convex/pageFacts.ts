@@ -11,7 +11,7 @@
 
 import { HOUR, RateLimiter } from "@convex-dev/rate-limiter";
 import { FirecrawlClient } from "@firecrawl/firecrawl-convex";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -74,6 +74,14 @@ const NONE_OPTION = "none";
 const YES = 0.5;
 /** A page read contributes at most this many description sentences. */
 const MAX_PAGE_SENTENCES = 3;
+/** Firecrawl's rate limit: the page was never asked, so the try is not a read (see scrape). */
+const RATE_LIMITED_STATUS = 429;
+/** Whether the fallback failed on Firecrawl's rate limit rather than on the page. */
+const isRateLimited = (error: unknown): boolean =>
+	error instanceof ConvexError &&
+	typeof error.data === "object" &&
+	error.data !== null &&
+	(error.data as { status?: unknown }).status === RATE_LIMITED_STATUS;
 /** A shop that has not answered by then is read through Firecrawl instead. */
 const PAGE_FETCH_TIMEOUT_MS = 15_000;
 /** Shopify and WooCommerce themes serve a browser the full page; a bare client UA can get a challenge page. */
@@ -456,7 +464,13 @@ export const scrape = internalAction({
 		let facts: PageFacts = {};
 		try {
 			({ facts } = await readPageFacts(ctx, args.url));
-		} catch {
+		} catch (error) {
+			// A rate-limited fallback never reached the page: the stamp from
+			// the schedule stands, so the lot is retried after the window, but
+			// the try does not spend one of its MAX_PAGE_READS.
+			if (isRateLimited(error)) {
+				return null;
+			}
 			// Nothing is stored for a page that could not be read, but the
 			// attempt counts: the lot is retried after the window until the
 			// read cap, not forever.
