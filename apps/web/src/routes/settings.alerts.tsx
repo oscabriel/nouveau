@@ -49,9 +49,15 @@ const AlertSettingsComponent = () => {
 		<div className="container mx-auto max-w-3xl px-4 py-8">
 			<header className="mb-6 flex items-baseline justify-between gap-4">
 				<h1 className="text-2xl font-semibold">Alert settings</h1>
-				<Link className="text-sm hover:underline" to="/watches">
-					Your watches
-				</Link>
+				{me !== null && (
+					<Link
+						className="text-sm hover:underline"
+						params={{ user: me.handle ?? me.id }}
+						to="/$user"
+					>
+						Your watches
+					</Link>
+				)}
 			</header>
 			<section className="mb-8">
 				<h2 className="mb-2 text-lg font-medium">Alert inbox</h2>
@@ -87,8 +93,8 @@ const AlertSettingsComponent = () => {
 							>
 								<Link
 									className="text-sm hover:underline"
-									params={{ slug: watch.roaster.slug }}
-									to="/roasters/$slug"
+									params={{ roaster: watch.roaster.slug }}
+									to="/roaster/$roaster"
 								>
 									{watch.roaster.name}
 								</Link>

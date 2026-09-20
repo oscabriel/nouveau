@@ -60,7 +60,7 @@ const DropHistory = ({ roasterId }: { roasterId: Id<"roasters"> }) => {
  * Then every alert-worthy drop as a table, then the whole lot catalog.
  */
 const RoasterComponent = () => {
-	const { slug } = useParams({ from: "/roasters/$slug" });
+	const { roaster: slug } = useParams({ from: "/roaster/$roaster/" });
 	const roaster = useQuery(api.roasters.getBySlug, { slug });
 	const { isAuthenticated } = useConvexAuth();
 
@@ -115,7 +115,7 @@ const RoasterComponent = () => {
 					<DropHistory roasterId={roaster.id} />
 				</div>
 				<div className="mt-16 md:mt-24">
-					<Lots roasterId={roaster.id} />
+					<Lots roasterId={roaster.id} slug={roaster.slug} />
 				</div>
 			</div>
 			<SiteFooter />
@@ -123,6 +123,6 @@ const RoasterComponent = () => {
 	);
 };
 
-export const Route = createFileRoute("/roasters/$slug")({
+export const Route = createFileRoute("/roaster/$roaster/")({
 	component: RoasterComponent,
 });

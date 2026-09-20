@@ -68,7 +68,11 @@ const Utilities = () => {
 			aria-label="Your account"
 			className="flex flex-wrap items-center gap-x-4 md:gap-x-5"
 		>
-			<Link activeProps={activeProps} className={utilityClass} to="/watches">
+			<Link
+				activeProps={activeProps}
+				className={utilityClass}
+				to="/settings/alerts"
+			>
 				Watches
 			</Link>
 			<Link activeProps={activeProps} className={utilityClass} to="/saved">
@@ -78,8 +82,8 @@ const Utilities = () => {
 				<Link
 					activeProps={activeProps}
 					className={`${utilityClass} max-w-40 truncate`}
-					params={{ userId: user.id }}
-					to="/profile/$userId"
+					params={{ user: user.handle ?? user.id }}
+					to="/$user"
 				>
 					{user.name ?? "Profile"}
 				</Link>
@@ -138,7 +142,7 @@ const Header = () => {
 	const links = [
 		{ label: "Roasters", to: "/roasters" },
 		{ label: "Activity", to: "/activity" },
-		...(isAuthenticated ? [{ label: "Feed", to: "/feed" }] : []),
+		...(isAuthenticated ? [{ label: "Feed", to: "/drops" }] : []),
 	];
 
 	return (

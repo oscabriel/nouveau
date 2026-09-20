@@ -35,8 +35,8 @@ export const SavedCoffeeCard = ({ item }: { item: SavedCoffee }) => (
 			<div className="flex flex-wrap items-baseline gap-x-2">
 				<Link
 					className="truncate font-medium hover:underline"
-					params={{ lotId: item.lot.id }}
-					to="/lots/$lotId"
+					params={{ lot: item.lot.handle, roaster: item.roaster.slug }}
+					to="/roaster/$roaster/$lot"
 				>
 					{item.lot.name}
 				</Link>
@@ -44,8 +44,8 @@ export const SavedCoffeeCard = ({ item }: { item: SavedCoffee }) => (
 					at{" "}
 					<Link
 						className="hover:underline"
-						params={{ slug: item.roaster.slug }}
-						to="/roasters/$slug"
+						params={{ roaster: item.roaster.slug }}
+						to="/roaster/$roaster"
 					>
 						{item.roaster.name}
 					</Link>

@@ -65,8 +65,8 @@ export const LatestTiles = ({ rows }: { rows: DropRow[] }) => {
 					<li key={row.productId}>
 						<Link
 							className="bg-muted group relative block aspect-[3/2] overflow-hidden"
-							params={{ lotId: row.productId }}
-							to="/lots/$lotId"
+							params={{ lot: row.lotHandle, roaster: row.roasterSlug }}
+							to="/roaster/$roaster/$lot"
 						>
 							{row.imageUrl !== null && (
 								<img

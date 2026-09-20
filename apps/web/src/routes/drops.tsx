@@ -18,6 +18,6 @@ const FeedComponent = () => (
 	</div>
 );
 
-export const Route = createFileRoute("/feed")({
+export const Route = createFileRoute("/drops")({
 	component: FeedComponent,
 });

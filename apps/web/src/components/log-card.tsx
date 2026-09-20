@@ -56,8 +56,8 @@ export const LogCard = ({
 					{showUser && (
 						<Link
 							className="truncate font-medium hover:underline"
-							params={{ userId: log.user.id }}
-							to="/profile/$userId"
+							params={{ user: log.user.handle ?? log.user.id }}
+							to="/$user"
 						>
 							{log.user.name ?? "A taster"}
 						</Link>
@@ -65,8 +65,8 @@ export const LogCard = ({
 					<span className="text-muted-foreground text-sm">tried</span>
 					<Link
 						className="truncate font-medium hover:underline"
-						params={{ lotId: log.lot.id }}
-						to="/lots/$lotId"
+						params={{ lot: log.lot.handle, roaster: log.roaster.slug }}
+						to="/roaster/$roaster/$lot"
 					>
 						{log.lot.name}
 					</Link>
@@ -74,8 +74,8 @@ export const LogCard = ({
 						from{" "}
 						<Link
 							className="hover:underline"
-							params={{ slug: log.roaster.slug }}
-							to="/roasters/$slug"
+							params={{ roaster: log.roaster.slug }}
+							to="/roaster/$roaster"
 						>
 							{log.roaster.name}
 						</Link>

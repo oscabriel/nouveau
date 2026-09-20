@@ -48,7 +48,7 @@ export const SiteFooter = () => {
 					<Link className={footerLink} to="/activity">
 						Activity
 					</Link>
-					<Link className={footerLink} to="/feed">
+					<Link className={footerLink} to="/drops">
 						Feed
 					</Link>
 				</nav>
@@ -57,7 +57,7 @@ export const SiteFooter = () => {
 				</button>
 				<nav className="flex gap-4 md:gap-5">
 					{isAuthenticated ? (
-						<Link className={footerLink} to="/watches">
+						<Link className={footerLink} to="/settings/alerts">
 							Watches
 						</Link>
 					) : (

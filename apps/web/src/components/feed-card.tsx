@@ -12,11 +12,12 @@ export type DeliveryStatus = "pending" | "sent" | "delivered" | "failed";
 
 export interface FeedCardData {
 	detectedAt: number;
+	// The lot's address pair (ADR-0011): the Log action lands on
+	// /roaster/$roaster/$lot.
+	lotHandle: string;
 	lotUrl: string;
 	newPriceCents: number | null;
 	oldPriceCents: number | null;
-	// The lot's Nouveau page (/lots/$lotId) — where the Log action lands.
-	productId: string;
 	productName: string;
 	roasterName: string;
 	roasterSlug: string;
@@ -128,8 +129,8 @@ export const FeedCard = ({
 							<span className="text-muted-foreground text-sm">at</span>
 							<Link
 								className="truncate font-medium hover:underline"
-								params={{ slug: card.roasterSlug }}
-								to="/roasters/$slug"
+								params={{ roaster: card.roasterSlug }}
+								to="/roaster/$roaster"
 							>
 								{card.roasterName}
 							</Link>
@@ -170,8 +171,8 @@ export const FeedCard = ({
 					</a>
 					<Link
 						className="inline-flex items-center gap-0.5 text-sm font-medium hover:underline"
-						params={{ lotId: card.productId }}
-						to="/lots/$lotId"
+						params={{ lot: card.lotHandle, roaster: card.roasterSlug }}
+						to="/roaster/$roaster/$lot"
 					>
 						Log
 					</Link>

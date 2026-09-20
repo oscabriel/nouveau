@@ -34,6 +34,7 @@ const LotTableRow = ({
 	lot,
 	onClose,
 	onOpen,
+	slug,
 }: {
 	canLog: boolean;
 	index: number;
@@ -41,6 +42,7 @@ const LotTableRow = ({
 	lot: LotRow;
 	onClose: () => void;
 	onOpen: () => void;
+	slug: string;
 }) => {
 	const archived = lot.status === "archived";
 	// Unknown stock (available null, no rollup yet) renders like in stock:
@@ -61,8 +63,8 @@ const LotTableRow = ({
 				>
 					<Link
 						className="hover:underline"
-						params={{ lotId: lot.id }}
-						to="/lots/$lotId"
+						params={{ lot: lot.handle, roaster: slug }}
+						to="/roaster/$roaster/$lot"
 					>
 						{lot.name}
 					</Link>
@@ -139,6 +141,7 @@ const LotsBody = ({
 	openLotId,
 	pages,
 	searching,
+	slug,
 	term,
 	visible,
 }: {
@@ -149,6 +152,7 @@ const LotsBody = ({
 	openLotId: Id<"products"> | null;
 	pages: { loadMore: (count: number) => void; status: string };
 	searching: boolean;
+	slug: string;
 	term: string;
 	visible: LotRow[] | undefined;
 }) => {
@@ -210,6 +214,7 @@ const LotsBody = ({
 							onOpen={() => {
 								onOpen(lot.id);
 							}}
+							slug={slug}
 						/>
 					))}
 				</tbody>
@@ -321,7 +326,13 @@ const LotFilterRow = ({
  * so, and filters (size, price, origin, in stock) run against the whole
  * catalog.
  */
-export const Lots = ({ roasterId }: { roasterId: Id<"roasters"> }) => {
+export const Lots = ({
+	roasterId,
+	slug,
+}: {
+	roasterId: Id<"roasters">;
+	slug: string;
+}) => {
 	const { isAuthenticated } = useConvexAuth();
 	const [openLotId, setOpenLotId] = useState<Id<"products"> | null>(null);
 	const [search, setSearch] = useState("");
@@ -409,6 +420,7 @@ export const Lots = ({ roasterId }: { roasterId: Id<"roasters"> }) => {
 				openLotId={openLotId}
 				pages={pages}
 				searching={searching}
+				slug={slug}
 				term={term}
 				visible={visible}
 			/>

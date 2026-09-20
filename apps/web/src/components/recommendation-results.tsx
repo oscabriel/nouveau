@@ -27,6 +27,43 @@ const basisLabel = (logCount: number): string => {
 	return `Based on ${logCount} selected logs and your request.`;
 };
 
+/**
+ * The candidate's page on Nouveau, addressed by the (roaster, lot) pair
+ * (ADR-0011). Runs stored before the field carry no handle or roaster slug,
+ * so those fall back to the roaster's own product page.
+ */
+const CandidateLink = ({
+	candidate,
+	className,
+	children,
+}: {
+	candidate: Result["candidate"];
+	className: string;
+	children: React.ReactNode;
+}) => {
+	if (candidate.handle === undefined || candidate.roasterSlug === undefined) {
+		return (
+			<a
+				className={className}
+				href={candidate.url}
+				rel="noopener noreferrer"
+				target="_blank"
+			>
+				{children}
+			</a>
+		);
+	}
+	return (
+		<Link
+			className={className}
+			params={{ lot: candidate.handle, roaster: candidate.roasterSlug }}
+			to="/roaster/$roaster/$lot"
+		>
+			{children}
+		</Link>
+	);
+};
+
 const Recommendation = ({
 	result,
 	runId,
@@ -46,13 +83,9 @@ const Recommendation = ({
 		<article className="py-6">
 			<div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
 				<h3 className="min-w-0 text-lg font-semibold [overflow-wrap:anywhere]">
-					<Link
-						className="hover:underline"
-						params={{ lotId: candidate.productId }}
-						to="/lots/$lotId"
-					>
+					<CandidateLink candidate={candidate} className="hover:underline">
 						{candidate.name}
-					</Link>
+					</CandidateLink>
 				</h3>
 				<p className="shrink-0 text-sm tabular-nums">
 					{`${formatPrice(candidate.priceCents)} USD · ${candidate.variantName} (${candidate.grams} g)`}
@@ -146,13 +179,12 @@ const Recommendation = ({
 			)}
 			<div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
 				<SaveButton fromRunId={runId} lotId={candidate.productId} />
-				<Link
+				<CandidateLink
+					candidate={candidate}
 					className="inline-flex min-h-11 items-center underline underline-offset-4"
-					params={{ lotId: candidate.productId }}
-					to="/lots/$lotId"
 				>
 					Coffee page and logs
-				</Link>
+				</CandidateLink>
 				<a
 					className="inline-flex min-h-11 items-center underline underline-offset-4"
 					href={candidate.url}

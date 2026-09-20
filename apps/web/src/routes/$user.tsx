@@ -1,6 +1,12 @@
 import { api } from "@nouveau/backend/convex/_generated/api";
-import { createFileRoute, Link, useParams } from "@tanstack/react-router";
+import {
+	createFileRoute,
+	Link,
+	useNavigate,
+	useParams,
+} from "@tanstack/react-router";
 import { useQuery } from "convex/react";
+import { useEffect } from "react";
 
 import Loader from "@/components/loader";
 import { LogCard } from "@/components/log-card";
@@ -9,10 +15,28 @@ const plural = (count: number, noun: string) =>
 	`${count} ${count === 1 ? noun : `${noun}s`}`;
 
 const ProfileComponent = () => {
-	const { userId } = useParams({ from: "/profile/$userId" });
-	// The id is whatever the URL holds; the query resolves bad ones to null.
-	const profile = useQuery(api.logs.profile, { userId });
+	const { user: address } = useParams({ from: "/$user" });
+	// The address is whatever the URL holds; the query resolves handles,
+	// retired handles and legacy user ids alike (ADR-0011).
+	const profile = useQuery(api.logs.profile, { userId: address });
 	const me = useQuery(api.users.getCurrentUser);
+	const navigate = useNavigate();
+
+	// Adopt the canonical address: a legacy id or a retired handle resolves
+	// here, then the URL moves to the user's current handle. Absent on rows
+	// predating the handle field.
+	const canonical =
+		profile === undefined || profile === null ? undefined : profile.user.handle;
+	useEffect(() => {
+		if (canonical === undefined || canonical === address) {
+			return;
+		}
+		void navigate({
+			params: { user: canonical },
+			replace: true,
+			to: "/$user",
+		});
+	}, [address, canonical, navigate]);
 
 	if (profile === undefined || me === undefined) {
 		return <Loader />;
@@ -67,8 +91,8 @@ const ProfileComponent = () => {
 							>
 								<Link
 									className="hover:underline"
-									params={{ slug: roaster.slug }}
-									to="/roasters/$slug"
+									params={{ roaster: roaster.slug }}
+									to="/roaster/$roaster"
 								>
 									{roaster.name}
 								</Link>
@@ -105,6 +129,6 @@ const ProfileComponent = () => {
 	);
 };
 
-export const Route = createFileRoute("/profile/$userId")({
+export const Route = createFileRoute("/$user")({
 	component: ProfileComponent,
 });

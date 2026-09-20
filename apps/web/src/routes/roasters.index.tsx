@@ -36,8 +36,8 @@ const RoasterRow = ({
 		<td className={`${bodyCell} pr-4`}>
 			<Link
 				className="hover:underline"
-				params={{ slug: roaster.slug }}
-				to="/roasters/$slug"
+				params={{ roaster: roaster.slug }}
+				to="/roaster/$roaster"
 			>
 				{roaster.name}
 			</Link>
@@ -151,7 +151,7 @@ const RoastersComponent = () => {
 			<div className="px-5 pt-10 md:px-10 md:pt-14">
 				<PageTitle count={roasters?.length} title="Roasters">
 					{isAuthenticated && (
-						<Link className={capsLink} to="/watches">
+						<Link className={capsLink} to="/settings/alerts">
 							Your watches
 						</Link>
 					)}

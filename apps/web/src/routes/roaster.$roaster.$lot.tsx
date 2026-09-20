@@ -154,8 +154,8 @@ const LotDetail = ({
 					at{" "}
 					<Link
 						className="font-medium hover:underline"
-						params={{ slug: roaster.slug }}
-						to="/roasters/$slug"
+						params={{ roaster: roaster.slug }}
+						to="/roaster/$roaster"
 					>
 						{roaster.name}
 					</Link>
@@ -220,9 +220,11 @@ const LotDetail = ({
 );
 
 const LotComponent = () => {
-	const { lotId } = useParams({ from: "/lots/$lotId" });
-	// The id is whatever the URL holds; the query resolves bad ones to null.
-	const page = useQuery(api.lots.get, { lotId });
+	const { roaster: roasterSlug, lot: handle } = useParams({
+		from: "/roaster/$roaster/$lot",
+	});
+	// The pair is whatever the URL holds; the query resolves bad ones to null.
+	const page = useQuery(api.lots.get, { lot: handle, roaster: roasterSlug });
 	const me = useQuery(api.users.getCurrentUser);
 	const { isAuthenticated } = useConvexAuth();
 	const [logging, setLogging] = useState(false);
@@ -331,6 +333,6 @@ const LotComponent = () => {
 	);
 };
 
-export const Route = createFileRoute("/lots/$lotId")({
+export const Route = createFileRoute("/roaster/$roaster/$lot")({
 	component: LotComponent,
 });

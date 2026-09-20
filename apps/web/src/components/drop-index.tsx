@@ -97,8 +97,8 @@ const DropTableRow = ({
 			<td className={`${bodyCell} pr-4`}>
 				<Link
 					className="hover:underline"
-					params={{ lotId: row.productId }}
-					to="/lots/$lotId"
+					params={{ lot: row.lotHandle, roaster: row.roasterSlug }}
+					to="/roaster/$roaster/$lot"
 				>
 					{row.productName}
 				</Link>
@@ -108,8 +108,8 @@ const DropTableRow = ({
 					<td className={`${bodyCell} text-muted-foreground pr-3 md:pr-4`}>
 						<Link
 							className="hover:text-foreground hover:underline"
-							params={{ slug: row.roasterSlug }}
-							to="/roasters/$slug"
+							params={{ roaster: row.roasterSlug }}
+							to="/roaster/$roaster"
 						>
 							{row.roasterName}
 						</Link>

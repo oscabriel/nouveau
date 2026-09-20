@@ -94,7 +94,7 @@ const PersonalizedFeed = () => {
 			{unhealthy.length > 0 && (
 				<Link
 					className="mb-4 block bg-amber-500/10 px-3 py-2 text-sm text-amber-700 hover:underline dark:text-amber-400"
-					to="/watches"
+					to="/settings/alerts"
 				>
 					{unhealthy.length === 1
 						? `${unhealthy[0]?.name ?? "A roaster"} needs attention`
@@ -150,13 +150,13 @@ const SignedInHome = () => (
 		<header className="mb-6 flex items-baseline justify-between gap-4">
 			<h1 className="text-2xl font-semibold">Your roasters</h1>
 			<nav className="flex gap-4 text-sm">
-				<Link className="hover:underline" to="/feed">
+				<Link className="hover:underline" to="/drops">
 					Live feed
 				</Link>
 				<Link className="hover:underline" to="/roasters">
 					All roasters
 				</Link>
-				<Link className="hover:underline" to="/watches">
+				<Link className="hover:underline" to="/settings/alerts">
 					Your watches
 				</Link>
 			</nav>

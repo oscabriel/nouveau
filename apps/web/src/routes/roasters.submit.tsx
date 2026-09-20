@@ -74,8 +74,8 @@ const SubmissionRow = ({ submission }: { submission: Submission }) => {
 					{submission.status === "active" ? (
 						<Link
 							className="font-medium hover:underline"
-							params={{ slug: submission.slug }}
-							to="/roasters/$slug"
+							params={{ roaster: submission.slug }}
+							to="/roaster/$roaster"
 						>
 							{submission.name}
 						</Link>
@@ -145,8 +145,8 @@ const SubmitForm = ({
 				case "already": {
 					toast("We already watch this one. You do too, now.");
 					await navigate({
-						params: { slug: result.slug },
-						to: "/roasters/$slug",
+						params: { roaster: result.slug },
+						to: "/roaster/$roaster",
 					});
 					break;
 				}
