@@ -76,8 +76,8 @@ The biggest item. Dependent on nothing else in this plan except batch 0, but gat
 - [x] **Agent definition and tools.** `new Agent(components.agent, ...)`, model `openai.chat("gpt-5.6-luna")`. Tools as `createTool` wrappers over the internal queries the worker owns: search catalog, read lot facts (with the deferred Firecrawl read through the existing budget), check price and stock, read my logs (present only when the consent toggle is on).
 - [x] **`submitPicks`.** The terminal tool; its execute validates ids against the catalog, re-checks stock and price, writes the validated result to the run document, and returns an error for the model to fix on failure. Nothing parsed from free text.
 - [x] **Worker rewiring.** `recommendationWorker.run` stays the workpool entry: create the thread, call `agent.streamText` with `saveStreamDeltas: true`, `stopWhen: stepCountIs(n)`. Fresh thread per run, thread id stored on the run document. Quotas, watchdog, one-active-run and retry unchanged. The lexical score stays inside the search tool as its result ordering.
-- [ ] **Page.** One text box, the consent toggle (default off) and its grey sentence. Subscribes to the run document and the thread (`useUIMessages`, `stream: true`): steps as tool-call parts, queued and running states, then up to five simple cards ranked by the model's fit with the why from the validated result (Jev-checked), then HOW IT LOOKED, collapsed. Thread queries authorize through run ownership.
-- [ ] **Dev re-measurement.** Cost, latency, the 45-second HTTP timeout, the five-minute watchdog. This is the gate for the Monday-morning call.
+- [x] **Page.** One text box, the consent toggle (default off) and its grey sentence. Subscribes to the run document and the thread (`useUIMessages`, `stream: true`): steps as tool-call parts, queued and running states, then up to five simple cards ranked by the model's fit with the why from the validated result (Jev-checked), then HOW IT LOOKED, collapsed. Thread queries authorize through run ownership.
+- [ ] **Dev re-measurement.** Cost, latency, the 45-second HTTP timeout, the five-minute watchdog. This is the gate for the Monday-morning call. Needs one real signed-in run on dev (Google OAuth keeps it out of the headless round); the live step streaming and both themes on the real page are what to look at.
 
 ## Batch 7: finishing
 
@@ -90,6 +90,7 @@ The biggest item. Dependent on nothing else in this plan except batch 0, but gat
 
 | Date | Batch | What landed |
 | --- | --- | --- |
+| 2026-09-20 | 6 | Batch 6 page (`1c816b1`): `/next-bag` rebuilt on the loop — one text box, consent toggle with its grey sentence, run + thread subscriptions, live step list from the streamed tool-call parts, up to five cards with the validated why under a caps OPENAI label, HOW IT LOOKED collapsed. New public `recommendationThreads.list` authorizes through run ownership; two tests pin it. Page reads verified at 1440 and 390 in both themes; the signed-in live run (step streaming against the real model) still needs a session on dev. |
 | 2026-09-20 | - | All seven ADRs recorded (`f78ba65`) and every open question settled in the grill (`59e618f`). Nothing implemented. |
 | 2026-09-20 | 0 | Agent component mounted (`d55296d`), Caveat self-hosted (`02e02bf`), plate serving exports defringed into `public/plate/` (`e38eb91`). Owner still owes the pre-rotated hero. |
 | 2026-09-20 | 1 | User handles backend (`8839eca`): handle derivation at sign-in, RESERVED_ROUTES, `logs.profile` resolving handle/redirect/legacy id. ADR-0011 amended for the `handleRedirects` table. |
