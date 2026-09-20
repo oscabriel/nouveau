@@ -48,7 +48,8 @@ export const formatPrice = (cents: number): string =>
 	`$${(cents / 100).toFixed(2).replace(/\.00$/u, "")}`;
 
 export interface AlertEmail {
-	lotUrl: string;
+	// The lot's address pair (ADR-0011): the email links /roaster/$slug/$handle.
+	lotHandle: string;
 	newPriceCents: number | null;
 	oldPriceCents: number | null;
 	productName: string;
@@ -111,13 +112,18 @@ export const alertBody = (input: AlertEmail): string => {
 		// summary generator lands behind the AI seam.
 		...(input.summary === null ? [] : ["", input.summary]),
 		"",
-		`${metaPrefix}See the lot: ${input.lotUrl}`,
+		// The app's lot page (ADR-0011); the page links out to the shop.
+		`${metaPrefix}See the lot: ${appLink(
+			input.siteOrigin,
+			`/roaster/${input.roasterSlug}/${input.lotHandle}`
+		)}`,
 		"",
-		`Roaster page: ${appLink(input.siteOrigin, `/roasters/${input.roasterSlug}`)}`,
+		`Roaster page: ${appLink(input.siteOrigin, `/roaster/${input.roasterSlug}`)}`,
 		"",
 		// The locked §8.2 footer: "Mute this roaster · Alert settings". Mute
-		// lives on the watches page; settings is the stub at /settings/alerts.
-		`You're watching ${roasterName}. Mute this roaster: ${appLink(input.siteOrigin, "/watches")}`,
+		// lives on /settings/alerts (ADR-0011), which lists every watch with
+		// its mute toggle.
+		`You're watching ${roasterName}. Mute this roaster: ${appLink(input.siteOrigin, "/settings/alerts")}`,
 		`Alert settings: ${appLink(input.siteOrigin, "/settings/alerts")}`,
 	].join("\n");
 };
@@ -188,7 +194,7 @@ export const notifyWatchersOfEvent = async (
 					userId: watch.userId,
 				});
 				const emailInput = {
-					lotUrl: `${roaster.websiteUrl}/products/${product.handle}`,
+					lotHandle: product.handle,
 					newPriceCents: event.newPriceCents ?? null,
 					oldPriceCents: event.oldPriceCents ?? null,
 					productName: product.name,

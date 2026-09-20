@@ -24,7 +24,7 @@ const agentmailModules = import.meta.glob(
 );
 
 const email = {
-	lotUrl: "https://sey.example.com/products/mullugeta",
+	lotHandle: "mullugeta",
 	newPriceCents: 3500,
 	oldPriceCents: null,
 	productName: "Ethiopia Mullugeta Muntasha",
@@ -70,13 +70,13 @@ describe("alert email template", () => {
 		);
 		expect(text).toContain("Washed lot, jasmine and apricot.");
 		expect(text).toContain(
-			"250g · $35 · See the lot: https://sey.example.com/products/mullugeta"
+			"250g · $35 · See the lot: https://nouveau.example.com/roaster/sey/mullugeta"
 		);
 		expect(text).toContain(
-			"Roaster page: https://nouveau.example.com/roasters/sey"
+			"Roaster page: https://nouveau.example.com/roaster/sey"
 		);
 		expect(text).toContain(
-			"You're watching Sey. Mute this roaster: https://nouveau.example.com/watches"
+			"You're watching Sey. Mute this roaster: https://nouveau.example.com/settings/alerts"
 		);
 		expect(text).toContain(
 			"Alert settings: https://nouveau.example.com/settings/alerts"
