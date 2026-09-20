@@ -200,7 +200,7 @@ BACKEND_DIR="$REPO_ROOT/packages/backend"
 ENV_FILE="$BACKEND_DIR/.env.prod.local"
 
 PROD_DEPLOYMENT="prod:artful-chameleon-402"
-PROD_SITE_URL="https://artful-chameleon-402.convex.site"
+PROD_SITE_URL="https://nouveau.coffee"
 PROD_REDIRECT_URI="$PROD_SITE_URL/oauth/google/callback"
 PROD_AGENTMAIL_WEBHOOK="$PROD_SITE_URL/api/agentmail/webhook"
 
@@ -244,7 +244,7 @@ say "cannot stay in Testing mode (test users only)."
 open_url "https://console.cloud.google.com/auth/audience?project=$GCP_PROJECT_ID"
 step "Under Publishing status, click 'Publish app' and confirm."
 note "Email + profile scopes need no Google verification; users see a plain"
-note "consent screen naming ${PROD_SITE_URL#https://} until a custom domain exists."
+note "consent screen naming ${PROD_SITE_URL#https://}."
 pause "Published? Press Enter to continue."
 
 # ── Stage 2: copy shared sponsor keys dev -> prod ─────────────────────────
@@ -300,8 +300,8 @@ fi
 # ── Stage 4: Google creds + SITE_URL on prod ──────────────────────────────
 stage "Set Google credentials and SITE_URL on prod"
 say "SITE_URL is the browsed origin the OAuth flow may redirect back to."
-say "On prod the app is served by static hosting at the deployment's own"
-say "site URL, so: $PROD_SITE_URL"
+say "On prod the app is served by static hosting on the custom domain, so:"
+say "$PROD_SITE_URL"
 announce "will set AUTH_GOOGLE_CLIENT_ID, AUTH_GOOGLE_CLIENT_SECRET, SITE_URL"
 if [[ -z "$GOOGLE_CLIENT_ID" || -z "$GOOGLE_CLIENT_SECRET" ]]; then
   warn "Google client id/secret missing (stage 1); skipping."
