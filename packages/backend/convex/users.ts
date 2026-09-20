@@ -2,6 +2,7 @@ import { vGoogleProfile } from "@convex-dev/auth/providers/oauth/google";
 import { v } from "convex/values";
 
 import { internalMutation, query } from "./_generated/server";
+import { claimHandle, deriveBaseHandle } from "./handles";
 
 /**
  * Create the user row for a first-time Google sign-in and return its id. The
@@ -22,11 +23,19 @@ export const createUser = internalMutation({
 			)
 			.unique();
 		if (existing !== null) {
+			// Users created before handles existed get theirs at the first
+			// sign-in after the field landed.
+			if (existing.handle === undefined) {
+				await ctx.db.patch(existing._id, {
+					handle: await claimHandle(ctx, deriveBaseHandle(existing.name)),
+				});
+			}
 			return existing._id;
 		}
 		const userId = await ctx.db.insert("users", {
 			email: args.profile.email,
 			emailVerified: args.profile.emailVerified,
+			handle: await claimHandle(ctx, deriveBaseHandle(args.profile.name)),
 			imageUrl: args.profile.picture,
 			name: args.profile.name,
 			providerAccountId: args.providerAccountId,

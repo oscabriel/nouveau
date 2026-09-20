@@ -5,7 +5,7 @@
 import type { Infer } from "convex/values";
 import { v } from "convex/values";
 
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import {
@@ -13,10 +13,10 @@ import {
 	MAX_PROFILE_LOGS,
 	MAX_WATCHES_PER_USER,
 } from "./constants";
+import { redirectTarget } from "./handles";
 import { requireUserId } from "./identity";
 import { joinNotes } from "./lotFacts";
 import { roasterCardValidator } from "./roasters";
-
 /** Ratings are 1–5 in half steps (spec §14.1); anything else is rejected. */
 export const isValidRating = (rating: number): boolean =>
 	Number.isInteger(rating * 2) && rating >= 1 && rating <= 5;
@@ -36,6 +36,8 @@ const checkInput = (
 };
 
 const tasterValidator = v.object({
+	// The /$user address (ADR-0011); absent for rows predating the field.
+	handle: v.optional(v.string()),
 	id: v.id("users"),
 	imageUrl: v.optional(v.string()),
 	name: v.optional(v.string()),
@@ -90,7 +92,12 @@ const hydrateLog = async (
 		notes: log.notes ?? null,
 		rating: log.rating ?? null,
 		roaster: { name: roaster.name, slug: roaster.slug },
-		user: { id: user._id, imageUrl: user.imageUrl, name: user.name },
+		user: {
+			handle: user.handle,
+			id: user._id,
+			imageUrl: user.imageUrl,
+			name: user.name,
+		},
 	};
 };
 
@@ -120,22 +127,33 @@ export const recentLogs = query({
 });
 
 /**
- * One public profile (§14.2): the taster, their logs, their watches. The id
- * arrives as a string straight from the URL, so a malformed one resolves to
- * null (the "no taster here" page) instead of failing argument validation.
- * `logs` is capped at MAX_PROFILE_LOGS; `logsTruncated` says when the cap hit.
+ * One public profile (§14.2). ADR-0011: the address is the user's handle, but
+ * the arg keeps the old name and accepts all three shapes a URL can carry:
+ * the current handle, a handle the user once held (old-handle redirect), or a
+ * legacy users-document id from a pre-handle /profile link. A malformed or
+ * unknown one resolves to null (the "no taster here" page) instead of
+ * failing argument validation. `logs` is capped at MAX_PROFILE_LOGS;
+ * `logsTruncated` says when the cap hit. The returned user carries the
+ * current handle so a stale address can redirect to the canonical one.
  */
 export const profile = query({
 	args: { userId: v.string() },
 	handler: async (ctx, args) => {
-		const userId = ctx.db.normalizeId("users", args.userId);
-		if (userId === null) {
-			return null;
+		let user: Doc<"users"> | null = await ctx.db
+			.query("users")
+			.withIndex("by_handle", (q) => q.eq("handle", args.userId))
+			.unique();
+		if (user === null) {
+			user = await redirectTarget(ctx, args.userId);
 		}
-		const user = await ctx.db.get(userId);
+		if (user === null) {
+			const id = ctx.db.normalizeId("users", args.userId);
+			user = id === null ? null : await ctx.db.get("users", id);
+		}
 		if (user === null) {
 			return null;
 		}
+		const userId: Id<"users"> = user._id;
 		const logs = await ctx.db
 			.query("logs")
 			.withIndex("by_user_and_logged_at", (q) => q.eq("userId", userId))
@@ -163,7 +181,12 @@ export const profile = query({
 			logs: await hydrateAll(ctx, logs.slice(0, MAX_PROFILE_LOGS)),
 			logsTruncated: logs.length > MAX_PROFILE_LOGS,
 			roasters: roasterCards.filter((card) => card !== null),
-			user: { id: user._id, imageUrl: user.imageUrl, name: user.name },
+			user: {
+				handle: user.handle,
+				id: user._id,
+				imageUrl: user.imageUrl,
+				name: user.name,
+			},
 		};
 	},
 	returns: v.union(

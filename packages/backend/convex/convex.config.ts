@@ -1,5 +1,5 @@
-import agent from "@convex-dev/agent/convex.config";
 import agentmail from "@agentmail/convex/convex.config";
+import agent from "@convex-dev/agent/convex.config";
 import aggregate from "@convex-dev/aggregate/convex.config";
 import auth from "@convex-dev/auth/core/convex.config";
 import oauth from "@convex-dev/auth/providers/oauth/convex.config";

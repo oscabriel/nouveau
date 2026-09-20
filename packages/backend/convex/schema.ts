@@ -79,6 +79,16 @@ export default defineSchema({
 		// The global feed merges one desc scan per alert-worthy type.
 		.index("by_type_and_detected_at", ["type", "detectedAt"]),
 
+	// Retired user handles (ADR-0011 amendment): one row per handle the user
+	// no longer holds, so a stale /$user link resolves and redirects instead
+	// of 404ing. The row for a handle the user reclaimed is deleted. The
+	// current handle lives on users.handle; this table only ever holds
+	// non-current handles.
+	handleRedirects: defineTable({
+		handle: v.string(),
+		userId: v.id("users"),
+	}).index("by_handle", ["handle"]),
+
 	localScenes: defineTable({
 		createdAt: v.number(),
 		// Resolved live at read time against roasters' city/state.
@@ -324,10 +334,17 @@ export default defineSchema({
 	users: defineTable({
 		email: v.optional(v.string()),
 		emailVerified: v.optional(v.boolean()),
+		// Addressing (ADR-0011): a user is /$handle. Derived from the Google
+		// display name at first sign-in, editable in /settings/account; optional
+		// because users created before the field existed backfill at their next
+		// sign-in.
+		handle: v.optional(v.string()),
 		imageUrl: v.optional(v.string()),
 		name: v.optional(v.string()),
 		providerAccountId: v.string(),
-	}).index("by_provider_account_id", ["providerAccountId"]),
+	})
+		.index("by_provider_account_id", ["providerAccountId"])
+		.index("by_handle", ["handle"]),
 
 	watches: defineTable({
 		muted: v.boolean(),

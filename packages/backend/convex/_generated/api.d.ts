@@ -17,6 +17,7 @@ import type * as crons from "../crons.js";
 import type * as extraction from "../extraction.js";
 import type * as feed from "../feed.js";
 import type * as followerCounts from "../followerCounts.js";
+import type * as handles from "../handles.js";
 import type * as health from "../health.js";
 import type * as healthCheck from "../healthCheck.js";
 import type * as http from "../http.js";
@@ -62,6 +63,7 @@ declare const fullApi: ApiFromModules<{
   extraction: typeof extraction;
   feed: typeof feed;
   followerCounts: typeof followerCounts;
+  handles: typeof handles;
   health: typeof health;
   healthCheck: typeof healthCheck;
   http: typeof http;

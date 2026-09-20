@@ -19,7 +19,7 @@ Alert emails bake URLs in: `notifications.ts` writes `/roasters/$slug` for the r
 The public URL map becomes:
 
 | Route | What it is | Key |
-|---|---|---|
+| --- | --- | --- |
 | `/roasters` | the directory of every roaster the crawler reads | none |
 | `/roasters/submit` | add a roaster by URL | none |
 | `/roaster/$roaster` | one roaster's page and lot catalog | `roasters.slug` |
@@ -57,3 +57,7 @@ Reserved names. Every static top-level route (`roasters`, `roaster`, `drops`, `a
 None on the user handle: the owner settled it, 2026-09-20. The handle is derived from the Google display name at first sign-in, with a numeric suffix on collision, and is editable in `/settings/account`; the previous handle is kept as a redirect (an `oldHandles` array on the user) so no shared `/$user` link rots.
 
 **Duplicate lot handles get the year, not a number.** When a current and an archived lot in one shop share a `products.handle`, the archived lot's URL gets the year appended, as film titles do (`ethiopia-guji-2024`), rather than a random or numeric suffix. Detection rides the upsert path: the new roaster-plus-handle index makes the conflict a cheap indexed lookup at write time, so no submission-time scan of archived lots is needed. The year is the archived lot's **last-seen year**, matching how a coffee person dates a coffee and needing no new field.
+
+## Amendments
+
+**2026-09-20 (implementation, batch 1). The old-handle redirect is a table, not the `oldHandles` array.** The original decision stored old handles in an array on the user. The array is the record, but it cannot serve the lookup: indexing an array field in Convex writes one index entry per element, yet the query contract (`q.eq`) compares against the whole value, so `q.eq("oldHandles", "old-name")` matches nothing and a stale link has no indexed path. (Verified against the convex-test engine, 2026-09-20.) The redirect therefore lives in its own table, `handleRedirects` (`handle` indexed, `userId`), one row per retired handle, written when `/settings/account` saves a handle change and removed if the user reclaims that handle. One indexed read resolves a stale `/$user` link; the array field is not used and does not ship.

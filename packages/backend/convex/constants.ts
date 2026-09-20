@@ -140,3 +140,24 @@ export const MAX_ACTIVE_SUBMISSIONS_PER_USER = 5;
 // Retries of a failed baseline: a few in a row, then a wait.
 export const SUBMISSION_RETRY_RATE = 3;
 export const SUBMISSION_RETRY_PERIOD_MS = 10 * 60_000;
+
+/**
+ * Static top-level routes (ADR-0011), current and retired. No user handle or
+ * roaster slug may equal one: a static route would otherwise shadow (or be
+ * shadowed by) the dynamic segment that shares its path prefix.
+ */
+export const RESERVED_ROUTES = [
+	"roasters",
+	"roaster",
+	"drops",
+	"activity",
+	"next-bag",
+	"settings",
+	"about",
+	// Retired paths that stay as redirects forever.
+	"lots",
+	"feed",
+	"profile",
+	"watches",
+	"saved",
+];

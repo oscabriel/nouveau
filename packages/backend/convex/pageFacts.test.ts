@@ -782,7 +782,9 @@ describe("pageFacts.scrape", () => {
 	test("the budget never admits more than the plan's minute in any sixty seconds: no burst", () => {
 		// A token bucket admits capacity + rate in a fixed window; Firecrawl's
 		// window is fixed, so the burst must be one and the rate one under.
-		expect(FIRECRAWL_READS_PER_MINUTE).toBe(FIRECRAWL_PLAN_SCRAPES_PER_MINUTE - 1);
+		expect(FIRECRAWL_READS_PER_MINUTE).toBe(
+			FIRECRAWL_PLAN_SCRAPES_PER_MINUTE - 1
+		);
 	});
 
 	test("a read put off MAX_READ_DEFERRALS times gives up to the lot's next window: stamp kept, nothing scheduled", async () => {
