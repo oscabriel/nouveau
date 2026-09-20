@@ -11,6 +11,7 @@ import {
 } from "./recommendationRules";
 import { shopMarketValidator } from "./shopMarket";
 import { sourceModeValidator } from "./sourceMode";
+import { tastingNoteValidator } from "./tasting";
 
 export default defineSchema({
 	// Singleton config row (at most one document). Holds the shared AgentMail
@@ -108,6 +109,11 @@ export default defineSchema({
 		notes: v.optional(v.string()),
 		productId: v.id("products"),
 		rating: v.optional(v.number()),
+		// Personal tasting notes (ADR-0016): up to four picks from the SCA
+		// wheel's top two levels (tasting.ts), never prefilled from the
+		// roaster's descriptors. The freeform text stays on `notes`, relabelled
+		// REVIEW where it renders.
+		tastingNotes: v.optional(v.array(tastingNoteValidator)),
 		userId: v.id("users"),
 	})
 		.index("by_logged_at", ["loggedAt"])

@@ -17,6 +17,8 @@ import { redirectTarget } from "./handles";
 import { requireUserId } from "./identity";
 import { joinNotes } from "./lotFacts";
 import { roasterCardValidator } from "./roasters";
+import { MAX_TASTING_NOTES, tastingNoteValidator } from "./tasting";
+import type { TastingNote } from "./tasting";
 /** Ratings are 1–5 in half steps (spec §14.1); anything else is rejected. */
 export const isValidRating = (rating: number): boolean =>
 	Number.isInteger(rating * 2) && rating >= 1 && rating <= 5;
@@ -25,13 +27,28 @@ const NOTES_MAX_LENGTH = 1000;
 
 const checkInput = (
 	rating: number | undefined,
-	notes: string | undefined
+	notes: string | undefined,
+	tastingNotes: TastingNote[] | null | undefined
 ): void => {
 	if (rating !== undefined && !isValidRating(rating)) {
 		throw new Error("Rating must be 1–5 in half steps");
 	}
 	if (notes !== undefined && notes.length > NOTES_MAX_LENGTH) {
 		throw new Error(`Notes are capped at ${NOTES_MAX_LENGTH} characters`);
+	}
+	if (
+		tastingNotes !== undefined &&
+		tastingNotes !== null &&
+		tastingNotes.length > MAX_TASTING_NOTES
+	) {
+		throw new Error(`Tasting notes are capped at ${MAX_TASTING_NOTES} picks`);
+	}
+	if (
+		tastingNotes !== undefined &&
+		tastingNotes !== null &&
+		new Set(tastingNotes).size !== tastingNotes.length
+	) {
+		throw new Error("Each tasting note can be picked once");
 	}
 };
 
@@ -65,6 +82,9 @@ export const logCardValidator = v.object({
 	notes: v.union(v.string(), v.null()),
 	rating: v.union(v.number(), v.null()),
 	roaster: v.object({ name: v.string(), slug: v.string() }),
+	// The taster's own picks (ADR-0016), stored on the log; the roaster's
+	// descriptors live beside them on lot.roasterNotes.
+	tastingNotes: v.union(v.array(tastingNoteValidator), v.null()),
 	user: tasterValidator,
 });
 
@@ -99,6 +119,7 @@ const hydrateLog = async (
 		notes: log.notes ?? null,
 		rating: log.rating ?? null,
 		roaster: { name: roaster.name, slug: roaster.slug },
+		tastingNotes: log.tastingNotes ?? null,
 		user: {
 			handle: user.handle,
 			id: user._id,
@@ -213,11 +234,12 @@ export const createLog = mutation({
 		notes: v.optional(v.string()),
 		productId: v.id("products"),
 		rating: v.optional(v.number()),
+		tastingNotes: v.optional(v.array(tastingNoteValidator)),
 	},
 	handler: async (ctx, args) => {
 		const userId = await requireUserId(ctx);
 		const notes = args.notes?.trim();
-		checkInput(args.rating, notes);
+		checkInput(args.rating, notes, args.tastingNotes);
 		const product = await ctx.db.get(args.productId);
 		if (product === null) {
 			throw new Error("Unknown lot");
@@ -227,6 +249,10 @@ export const createLog = mutation({
 			notes: notes === "" ? undefined : notes,
 			productId: args.productId,
 			rating: args.rating,
+			tastingNotes:
+				args.tastingNotes !== undefined && args.tastingNotes.length > 0
+					? args.tastingNotes
+					: undefined,
 			userId,
 		});
 	},
@@ -243,6 +269,7 @@ export const updateLog = mutation({
 		logId: v.id("logs"),
 		notes: v.optional(v.union(v.string(), v.null())),
 		rating: v.optional(v.union(v.number(), v.null())),
+		tastingNotes: v.optional(v.union(v.array(tastingNoteValidator), v.null())),
 	},
 	handler: async (ctx, args) => {
 		const userId = await requireUserId(ctx);
@@ -257,13 +284,23 @@ export const updateLog = mutation({
 		// distinguishes "leave alone" (absent) from "clear" (null).
 		const rating = args.rating ?? undefined;
 		const notes = args.notes?.trim();
-		checkInput(rating, notes);
-		const patch: { notes?: string; rating?: number } = {};
+		checkInput(rating, notes, args.tastingNotes);
+		const patch: {
+			notes?: string;
+			rating?: number;
+			tastingNotes?: TastingNote[];
+		} = {};
 		if (args.rating !== undefined) {
 			patch.rating = rating;
 		}
 		if (args.notes !== undefined) {
 			patch.notes = notes === "" ? undefined : notes;
+		}
+		if (args.tastingNotes !== undefined) {
+			patch.tastingNotes =
+				args.tastingNotes === null || args.tastingNotes.length === 0
+					? undefined
+					: args.tastingNotes;
 		}
 		await ctx.db.patch(args.logId, patch);
 		return null;

@@ -86,6 +86,89 @@ describe("rating rules", () => {
 	});
 });
 
+describe("tasting notes", () => {
+	test("a log carries its picks and the feed card hydrates them", async () => {
+		const { lotId, t, userId } = await setup();
+		await asUser(t, userId).mutation(api.logs.createLog, {
+			productId: lotId,
+			rating: 4,
+			tastingNotes: ["floral", "berry"],
+		});
+		const feed = await t.query(api.logs.recentLogs, {});
+		expect(feed[0]?.tastingNotes).toEqual(["floral", "berry"]);
+	});
+
+	test("a log without picks reads as null, not an empty array", async () => {
+		const { lotId, t, userId } = await setup();
+		await asUser(t, userId).mutation(api.logs.createLog, {
+			productId: lotId,
+			rating: 4,
+		});
+		const feed = await t.query(api.logs.recentLogs, {});
+		expect(feed[0]?.tastingNotes).toBeNull();
+	});
+
+	test("five picks are rejected", async () => {
+		const { lotId, t, userId } = await setup();
+		await expect(
+			asUser(t, userId).mutation(api.logs.createLog, {
+				productId: lotId,
+				tastingNotes: [
+					"fruity",
+					"berry",
+					"citrus fruit",
+					"dried fruit",
+					"other fruit",
+				],
+			})
+		).rejects.toThrow("capped at 4");
+	});
+
+	test("a duplicate pick is rejected", async () => {
+		const { lotId, t, userId } = await setup();
+		await expect(
+			asUser(t, userId).mutation(api.logs.createLog, {
+				productId: lotId,
+				tastingNotes: ["floral", "floral"],
+			})
+		).rejects.toThrow("picked once");
+	});
+
+	test("a term outside the wheel fails validation", async () => {
+		const { lotId, t, userId } = await setup();
+		await expect(
+			asUser(t, userId).mutation(api.logs.createLog, {
+				productId: lotId,
+				// The roaster's own vocabulary is freeform; the taster's picks
+				// come only from the wheel.
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				tastingNotes: ["stone fruit" as never],
+			})
+		).rejects.toThrow();
+	});
+
+	test("update can replace or clear the picks", async () => {
+		const { lotId, t, userId } = await setup();
+		const logId = await asUser(t, userId).mutation(api.logs.createLog, {
+			productId: lotId,
+			tastingNotes: ["floral", "citrus fruit"],
+		});
+		await asUser(t, userId).mutation(api.logs.updateLog, {
+			logId,
+			tastingNotes: ["fruity"],
+		});
+		let feed = await t.query(api.logs.recentLogs, {});
+		expect(feed[0]?.tastingNotes).toEqual(["fruity"]);
+
+		await asUser(t, userId).mutation(api.logs.updateLog, {
+			logId,
+			tastingNotes: null,
+		});
+		feed = await t.query(api.logs.recentLogs, {});
+		expect(feed[0]?.tastingNotes).toBeNull();
+	});
+});
+
 describe("logs", () => {
 	test("a log hydrates into the activity feed with user, lot and roaster", async () => {
 		const { lotId, t, userId } = await setup();
