@@ -43,9 +43,9 @@ Backend commits the new surfaces' data before any UI mounts it.
 
 Built once, used by every table. Do before rebuilding any page that contains a table.
 
-- [ ] **Arrow cell.** The short right arrow replaces the circle on `DropTable`, joins the roasters directory and the lot catalog, links to the lot page everywhere.
-- [ ] **Floating hover image.** One element per table, about 280 pixels wide at 3:2, above-right of the pointer, clamped to the viewport, `pointer-events: none`, fine pointer only, keyboard-focus parity anchored to the row's leading edge. The in-cell slide and the fading row number go. Rows carry an image URL; the directory shows nothing.
-- [ ] **One link-class constant.** `navLinkClass` (header), `footerLink` (site-footer) and `capsLink` (roasters.index) collapse into one shared definition.
+- [x] **Arrow cell.** The short right arrow replaces the circle on `DropTable`, joins the roasters directory and the lot catalog, links to the lot page everywhere.
+- [x] **Floating hover image.** One element per table, about 280 pixels wide at 3:2, above-right of the pointer, clamped to the viewport, `pointer-events: none`, fine pointer only, keyboard-focus parity anchored to the row's leading edge. The in-cell slide and the fading row number go. Rows carry an image URL; the directory shows nothing.
+- [x] **One link-class constant.** `navLinkClass` (header), `footerLink` (site-footer) and `capsLink` (roasters.index) collapse into one shared definition.
 
 ## Batch 4: chrome (ADRs-0012, 0013)
 
@@ -91,6 +91,7 @@ The biggest item. Dependent on nothing else in this plan except batch 0, but gat
 | Date | Batch | What landed |
 | --- | --- | --- |
 | 2026-09-20 | 6 | Batch 6 page (`1c816b1`): `/next-bag` rebuilt on the loop — one text box, consent toggle with its grey sentence, run + thread subscriptions, live step list from the streamed tool-call parts, up to five cards with the validated why under a caps OPENAI label, HOW IT LOOKED collapsed. New public `recommendationThreads.list` authorizes through run ownership; two tests pin it. Page reads verified at 1440 and 390 in both themes; the signed-in live run (step streaming against the real model) still needs a session on dev. |
+| 2026-09-20 | 3 | Batch 3 table primitives done (`22b21a4`, `87056e5`). Backend first: lot rows now carry `imageUrl` (string or null) through `toLotRow`, pinned by a test. UI: `table.tsx` with `ArrowCell` (row-end arrow → the lot page; on the directory → the roaster page) and `TableHoverImage` (one fixed element per table, 280px at 3:2, above-right of the pointer and clamped to the viewport, fine pointer only, focus shows it at the row's leading edge, rows opt in via `data-image-url`, the directory mounts none). The drop table's circle, in-cell slide and fading number are gone; the catalog lost its Log/Close cell and inline log form to the arrow. The three caps-link constants collapsed into `lib/ui.ts` beside `headCell`/`bodyCell`. `tsc` clean, Ultracite clean, 553 tests pass. Live visual check of the floating image, arrow and both themes still needs a session on dev. |
 | 2026-09-20 | - | All seven ADRs recorded (`f78ba65`) and every open question settled in the grill (`59e618f`). Nothing implemented. |
 | 2026-09-20 | 0 | Agent component mounted (`d55296d`), Caveat self-hosted (`02e02bf`), plate serving exports defringed into `public/plate/` (`e38eb91`). Owner still owes the pre-rotated hero. |
 | 2026-09-20 | 1 | User handles backend (`8839eca`): handle derivation at sign-in, RESERVED_ROUTES, `logs.profile` resolving handle/redirect/legacy id. ADR-0011 amended for the `handleRedirects` table. |
