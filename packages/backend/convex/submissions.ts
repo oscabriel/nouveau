@@ -27,6 +27,7 @@ import { probeAndStoreMode } from "./crawler";
 import { startCrawl } from "./crawlSources";
 import { crawlStatusValidator, getCrawlStatus, isCrawlRunning } from "./health";
 import { optionalUserId, requireUserId } from "./identity";
+import { claimRoasterSlug, slugifyDomain } from "./slugs";
 import { sourceModeValidator } from "./sourceMode";
 import { ensureWatch } from "./watches";
 
@@ -90,7 +91,8 @@ export const normalizeShopUrl = (input: string): NormalizedShop | null => {
 	return {
 		domain,
 		productPageUrl: `${url.origin}${path}`,
-		slug: domain.replace(/\.[^.]+$/u, ""),
+		// The candidate; uniqueness is claimed at submit (claimRoasterSlug).
+		slug: slugifyDomain(domain),
 		websiteUrl: url.origin,
 	};
 };
@@ -164,7 +166,7 @@ export const submit = mutation({
 			domain: shop.domain,
 			name,
 			productPageUrl: shop.productPageUrl,
-			slug: shop.slug,
+			slug: await claimRoasterSlug(ctx, shop.slug),
 			source: "user-submitted",
 			state,
 			status: "pending",

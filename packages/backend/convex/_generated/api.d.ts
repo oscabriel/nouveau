@@ -41,6 +41,7 @@ import type * as roasters from "../roasters.js";
 import type * as savedCoffees from "../savedCoffees.js";
 import type * as seed from "../seed.js";
 import type * as shopMarket from "../shopMarket.js";
+import type * as slugs from "../slugs.js";
 import type * as sourceMode from "../sourceMode.js";
 import type * as submissions from "../submissions.js";
 import type * as users from "../users.js";
@@ -87,6 +88,7 @@ declare const fullApi: ApiFromModules<{
   savedCoffees: typeof savedCoffees;
   seed: typeof seed;
   shopMarket: typeof shopMarket;
+  slugs: typeof slugs;
   sourceMode: typeof sourceMode;
   submissions: typeof submissions;
   users: typeof users;

@@ -2,6 +2,7 @@ import { v } from "convex/values";
 
 import { internalMutation } from "./_generated/server";
 import { DEFAULT_CADENCE_MINUTES } from "./constants";
+import { slugifyDomain } from "./slugs";
 
 // The 20 verified US roasters from issue #3 (all Shopify, /products.json
 // confirmed live 2026-08-30). Product page for Coava lives on a subdomain; its
@@ -172,8 +173,6 @@ const SEED_ROASTERS = [
 	},
 ] as const;
 
-const slugOf = (domain: string): string => domain.replace(/\.[^.]+$/u, "");
-
 type SeedRoaster = (typeof SEED_ROASTERS)[number];
 
 const cadenceOf = (roaster: SeedRoaster): number =>
@@ -199,7 +198,7 @@ export const seedCuratedRoasters = internalMutation({
 		const existing = await ctx.db.query("roasters").take(1000);
 		const seenSlugs = new Set(existing.map((roaster) => roaster.slug));
 		const fresh = SEED_ROASTERS.filter(
-			(roaster) => !seenSlugs.has(slugOf(roaster.domain))
+			(roaster) => !seenSlugs.has(slugifyDomain(roaster.domain))
 		);
 
 		const roasterIds = await Promise.all(
@@ -211,7 +210,7 @@ export const seedCuratedRoasters = internalMutation({
 					domain: roaster.domain,
 					name: roaster.name,
 					productPageUrl,
-					slug: slugOf(roaster.domain),
+					slug: slugifyDomain(roaster.domain),
 					source: "curated",
 					state: roaster.state,
 					status: "pending",
@@ -251,7 +250,7 @@ export const applySeedCadence = internalMutation({
 			SEED_ROASTERS.map(async (seed) => {
 				const roaster = await ctx.db
 					.query("roasters")
-					.withIndex("by_slug", (q) => q.eq("slug", slugOf(seed.domain)))
+					.withIndex("by_slug", (q) => q.eq("slug", slugifyDomain(seed.domain)))
 					.unique();
 				if (roaster === null) {
 					return "missing";
@@ -292,7 +291,7 @@ export const applySeedUrls = internalMutation({
 			SEED_ROASTERS.map(async (seed) => {
 				const roaster = await ctx.db
 					.query("roasters")
-					.withIndex("by_slug", (q) => q.eq("slug", slugOf(seed.domain)))
+					.withIndex("by_slug", (q) => q.eq("slug", slugifyDomain(seed.domain)))
 					.unique();
 				if (roaster === null) {
 					return "missing";

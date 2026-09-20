@@ -6,7 +6,10 @@ import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { api } from "./_generated/api";
-import { MAX_ACTIVE_SUBMISSIONS_PER_USER } from "./constants";
+import {
+	DEFAULT_CADENCE_MINUTES,
+	MAX_ACTIVE_SUBMISSIONS_PER_USER,
+} from "./constants";
 import schema from "./schema";
 import { normalizeShopUrl } from "./submissions";
 import { asUser } from "./test.helpers";
@@ -304,5 +307,70 @@ describe("submit (§7.1)", () => {
 			todayOk: true,
 		});
 		expect(await submitN(2, "later")).toEqual(["submitted", "quota"]);
+	});
+});
+
+describe("slug hygiene (ADR-0011)", () => {
+	test("a slug already taken by another domain gets the first free suffix", async () => {
+		const { t, user } = await setup();
+		stubWooShop();
+		await t.run(async (ctx) => {
+			const roaster = await ctx.db.insert("roasters", {
+				city: "Portland",
+				claimed: false,
+				domain: "other.example.com",
+				name: "Other Coffee",
+				productPageUrl: "https://other.example.com/coffee",
+				slug: "example",
+				source: "curated",
+				state: "OR",
+				status: "active",
+				websiteUrl: "https://other.example.com",
+			});
+			await ctx.db.insert("crawlSources", {
+				cadenceMinutes: DEFAULT_CADENCE_MINUTES,
+				consecutiveFailures: 0,
+				health: "watching",
+				mode: "products_json",
+				nextCrawlDueAt: 0,
+				roasterId: roaster,
+			});
+		});
+		const result = await user.mutation(api.submissions.submit, jbc);
+		expect(result.status).toBe("submitted");
+		const [mine] = await user.query(api.submissions.mine, {});
+		expect(mine?.slug).toBe("example-2");
+	});
+
+	test("a slug that lands on a reserved route name is suffixed", async () => {
+		const { user } = await setup();
+		stubWooShop();
+		const result = await user.mutation(api.submissions.submit, {
+			...jbc,
+			url: "settings.example/shop",
+		});
+		expect(result.status).toBe("submitted");
+		const [mine] = await user.query(api.submissions.mine, {});
+		expect(mine?.slug).toBe("settings-2");
+	});
+
+	test("two submissions of colliding domains both land, slugs distinct", async () => {
+		const { user } = await setup();
+		stubWooShop();
+		await user.mutation(api.submissions.submit, {
+			...jbc,
+			url: "eastpole.coffee",
+		});
+		await user.mutation(api.submissions.submit, {
+			...jbc,
+			name: "Eastpole Two",
+			url: "eastpole.com",
+		});
+		const mine = await user.query(api.submissions.mine, {});
+		// oxlint-disable-next-line unicorn/no-array-sort -- ES2021 backend; map copies first
+		expect(mine.map((roaster) => roaster.slug).sort()).toEqual([
+			"eastpole",
+			"eastpole-2",
+		]);
 	});
 });
