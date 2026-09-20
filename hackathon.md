@@ -67,7 +67,7 @@ Re-planned against the All Gas criteria. An honest fit assessment found the app 
 
 ### 2026-09-12 - a08463d
 
-Shipped Find my next bag (Gate 2), the OpenAI feature. `/next-bag` takes a request in plain words, an optional USD cap and minimum bag size, and up to five of the user's own logs. Candidates come from roasters whose homepage confirmed US/USD in the past hour, round-robin across roasters. Firecrawl scrapes up to two product pages per request, kept only where the value is absent from the feed. One OpenAI Responses call returns up to three product ids with a verbatim passage each; the server rejects unknown ids, changed quotes, and anything out of stock or off-price before showing a buying link. Results cache 24h and quotas queue through a workpool. Three live dev runs moved page extraction to Firecrawl's JSON format; the third run quoted fact lines the feed does not carry.
+Shipped Find my next bag (Gate 2), the OpenAI feature. `/next-bag` takes a request in plain words, an optional USD cap and minimum bag size, and up to five of the user's own logs. Candidates come from US/USD-confirmed roasters, round-robin, and Firecrawl scrapes up to two product pages per request for facts the feed lacks. One OpenAI Responses call returns up to three product ids with a verbatim passage each; the server rejects unknown ids, changed quotes, and anything out of stock or off-price before showing a buying link. Results cache 24h and quotas queue through a workpool. Three live dev runs moved page extraction to Firecrawl's JSON format.
 
 ### 2026-09-12 - 7be5a24
 
@@ -115,7 +115,7 @@ ADR-0007: one event per variant burst. A restock of four bag sizes had been four
 
 ### 2026-09-18 - 6c8fb2f
 
-ADR-0008/0009: crawl-time page reads for thin lots. After each successful crawl, a scheduled sweep reads the product page of every lot missing any of seven facts (25 per roaster, two seconds apart), Jev picks one verified span per field, and Firecrawl's rendered-page scrape is the first choice with the shop's own page as fallback under a token-bucket budget. Only image alt text paid as structured page data; JSON-LD and SEO descriptions are rejected after surveying all 20 roasters, and every Jev question names the lot after a featured-products block leaked another blend's notes onto 54 of 55 Sweet Bloom lots. Tasting-notes coverage went from about 55% to 76% of 3,030 lots. Deployed to prod; the backfill finished with 729 reads and no failures, and the sweep skips sold-out lots after Sey's 874 sold-out lots delayed the purchasable ones by nine hours.
+ADR-0008/0009: crawl-time page reads for thin lots. After each successful crawl, a scheduled sweep reads the product page of every lot missing any of seven facts (25 per roaster, two seconds apart), Jev picks one verified span per field, and Firecrawl's rendered-page scrape is the first choice with the shop's own page as fallback under a token-bucket budget. Of the structured page data surveyed across all 20 roasters, only image alt text paid; every Jev question names the lot after a featured-products block leaked another blend's notes onto 54 of 55 Sweet Bloom lots. Tasting-notes coverage went from about 55% to 76% of 3,030 lots. Deployed to prod; the backfill finished with 729 reads and no failures. The sweep skips sold-out lots after Sey's 874 delayed the purchasable ones by nine hours.
 
 ### 2026-09-19 - bb30df1
 
