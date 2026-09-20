@@ -33,11 +33,11 @@ The foundation everything routes on. Backend first, routes after. No page change
 
 Backend commits the new surfaces' data before any UI mounts it.
 
-- [ ] **SCA wheel enum.** One module, shared by backend and web, holding the tasting-note vocabulary as a TypeScript enum with a Convex validator. Decide the cut of the wheel here (top-level categories, or top two levels; the full wheel is about a hundred leaves). `logs` gains the descriptor array, capped at four picks. Tests.
-- [ ] **Rated-tiles query.** Most recent rated logs joined to lot image, name, roaster slug and handle; pad with recent drops; dedupe by user when more than three exist; Shuffle draws from the most recent fifty with photos. Tests.
-- [ ] **`logs.profile` splits.** Public branch: logs only, never watches or the try list, enforced in the query. Owner branch adds watches (with health, mute) and the try list (with unsave, stock at last check). Tests.
-- [ ] **Log removes save.** Logging a lot that is on the try list removes the save, with the undo toast still able to restore it. Tests.
-- [ ] **Roaster notes beside personal notes.** The lot page and profile queries return `roasterNotes` beside the log's picks where the UI needs both.
+- [x] **SCA wheel enum.** One module, shared by backend and web, holding the tasting-note vocabulary as a TypeScript enum with a Convex validator. Decide the cut of the wheel here (top-level categories, or top two levels; the full wheel is about a hundred leaves). `logs` gains the descriptor array, capped at four picks. Tests. (`0fff17d`; cut = top two levels, recorded in ADR-0016; the module is a literal-union type, not the `enum` keyword)
+- [x] **Rated-tiles query.** Most recent rated logs joined to lot image, name, roaster slug and handle; pad with recent drops; dedupe by user when more than three exist; Shuffle draws from the most recent fifty with photos. Tests. (`ce7612d`; `tiles.ratedTiles`, shuffle seeded by the client so the draw is stable inside the query cache; drop padding reuses the feed's card hydration via `feed.dropCards`)
+- [x] **`logs.profile` splits.** Public branch: logs only, never watches or the try list, enforced in the query. Owner branch adds watches (with health, mute) and the try list (with unsave, stock at last check). Tests. (`28cb33a`; `kind: "public" | "owner"` discriminates the branches; watch hydration moved to `watchCards`, saves to `savedCards`)
+- [x] **Log removes save.** Logging a lot that is on the try list removes the save, with the undo toast still able to restore it. Tests. (`fa43bd8`; createLog deletes the save in the same transaction and returns its `fromRunId` for the undo)
+- [x] **Roaster notes beside personal notes.** The lot page and profile queries return `roasterNotes` beside the log's picks where the UI needs both. (`712c6e7`; already in via the log-card hydration and the lot page's merged facts, tests pinned)
 
 ## Batch 3: shared table primitives (ADR-0015)
 
@@ -97,3 +97,4 @@ The biggest item. Dependent on nothing else in this plan except batch 0, but gat
 | 2026-09-20 | 1 | Slug hygiene backend (`6d8dc96`): shared `slugifyDomain`, submission-time slug claim with numeric suffix, reserved names enforced. ADR-0011 amendment recorded. All three batch-1 backend items are in. |
 | 2026-09-20 | 1 | Alert email paths (`8cb5475`): lot → `/roaster/$slug/$handle`, roaster → `/roaster/$slug`, mute → `/settings/alerts`. Dev template verification still open. |
 | 2026-09-20 | 1 | Route tree (`183acab`): all new addresses and redirect routes in, every link passing the (roaster slug, lot handle) pair, `tsc` clean and tests passing. Batch 1 done except the notifications email-template check on dev. |
+| 2026-09-20 | 2 | Batch 2 backend complete. SCA wheel cut to its top two levels, `tasting.ts` shared by both apps, `logs.tastingNotes` capped at four picks (`0fff17d`). Rated-tiles query with drop padding and a seeded shuffle (`ce7612d`). `logs.profile` split into public and owner branches (`28cb33a`). Log-removes-save with the undo's `fromRunId` (`fa43bd8`). Roaster-notes-beside-picks pinned by tests (`712c6e7`). Functions pushed to dev. |
