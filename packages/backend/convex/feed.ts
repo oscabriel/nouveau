@@ -21,8 +21,9 @@ const PER_ROASTER_LIMIT = 10;
  * Card shape for feed rendering; the lot links to the roaster's own shop.
  * Carries the lot image and the roaster's city so the landing can render
  * the image row and the table (lot, roaster, city, origin, process, price).
+ * Exported because the landing tiles' drop padding hydrates the same rows.
  */
-const feedCard = {
+export const feedCardValidator = v.object({
 	detectedAt: v.number(),
 	eventId: v.id("dropEvents"),
 	imageUrl: v.union(v.string(), v.null()),
@@ -48,11 +49,11 @@ const feedCard = {
 	// burst cited (the pre-collapse events carry only the headline).
 	variantName: v.union(v.string(), v.null()),
 	variantNames: v.array(v.string()),
-};
+});
 
 type AlertType = (typeof ALERT_WORTHY_TYPES)[number];
 
-interface FeedCard {
+export interface FeedCard {
 	detectedAt: number;
 	eventId: Id<"dropEvents">;
 	imageUrl: string | null;
@@ -177,26 +178,31 @@ const mergeDesc = <T>(lists: T[][], by: (item: T) => number): T[] => {
  * Global live feed (build spec §8.1): recent alert-worthy drops across all
  * roasters, newest first. One desc scan per alert-worthy type, merged.
  */
+export const dropCards = async (
+	ctx: QueryCtx,
+	limit: number
+): Promise<FeedCard[]> => {
+	const perType = await Promise.all(
+		ALERT_WORTHY_TYPES.map((type) =>
+			ctx.db
+				.query("dropEvents")
+				.withIndex("by_type_and_detected_at", (q) => q.eq("type", type))
+				.order("desc")
+				.take(limit)
+		)
+	);
+	const merged = mergeDesc(perType, (event) => event.detectedAt);
+	const cards = await Promise.all(
+		merged.filter(isAlertWorthy).map((e) => toCard(ctx, e))
+	);
+	return cards.filter(nonNull).slice(0, limit);
+};
+
 export const globalFeed = query({
 	args: { limit: v.optional(v.number()) },
-	handler: async (ctx, args) => {
-		const limit = Math.min(args.limit ?? FEED_LIMIT, 100);
-		const perType = await Promise.all(
-			ALERT_WORTHY_TYPES.map((type) =>
-				ctx.db
-					.query("dropEvents")
-					.withIndex("by_type_and_detected_at", (q) => q.eq("type", type))
-					.order("desc")
-					.take(limit)
-			)
-		);
-		const merged = mergeDesc(perType, (event) => event.detectedAt);
-		const cards = await Promise.all(
-			merged.filter(isAlertWorthy).map((e) => toCard(ctx, e))
-		);
-		return cards.filter(nonNull).slice(0, limit);
-	},
-	returns: v.array(v.object(feedCard)),
+	handler: (ctx, args) =>
+		dropCards(ctx, Math.min(args.limit ?? FEED_LIMIT, 100)),
+	returns: v.array(feedCardValidator),
 });
 
 /** Drop history for one roaster page: alert-worthy events, newest first. */
@@ -216,7 +222,7 @@ export const roasterFeed = query({
 		);
 		return cards.filter(nonNull).slice(0, limit);
 	},
-	returns: v.array(v.object(feedCard)),
+	returns: v.array(feedCardValidator),
 });
 
 /**
@@ -285,7 +291,7 @@ export const personalizedFeed = query({
 	},
 	returns: v.array(
 		v.object({
-			...feedCard,
+			...feedCardValidator.fields,
 			deliveryStatus: v.union(
 				v.literal("pending"),
 				v.literal("sent"),

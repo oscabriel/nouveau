@@ -108,6 +108,14 @@ export const INBOX_CLAIM_TTL_MS = 5 * 60_000;
 // Logs returned by the global activity feed (build spec §14.3).
 export const LOG_FEED_LIMIT = 30;
 
+// Landing tiles (ADR-0014). Shuffle draws three from the most recent rated
+// logs whose lot has a photo; the scan bound keeps the photo check from
+// reading the whole log history when few logs carry both a rating and a
+// photo.
+export const TILE_COUNT = 3;
+export const MAX_TILE_POOL = 50;
+export const TILE_SCAN_LIMIT = 200;
+
 // Logs rendered on a public profile (§14.2); the profile is a highlight, not
 // an archive dump.
 export const MAX_PROFILE_LOGS = 50;
