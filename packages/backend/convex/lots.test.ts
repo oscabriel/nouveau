@@ -211,6 +211,25 @@ describe("lots.get", () => {
 		expect(page?.logs[0]?.rating).toBe(4);
 	});
 
+	test("the roaster's notes sit beside the taster's picks on the page", async () => {
+		const fx = await setup({
+			roasterNotes: ["peach", "melon", "red tea"],
+		});
+		await addLog(fx, 2000, {
+			rating: 4,
+			tastingNotes: ["floral", "berry"],
+		});
+		const page = await fx.t.query(api.lots.get, {
+			lot: "mullugeta",
+			roaster: "sey",
+		});
+		// The lot carries the roaster's descriptors; the log card carries the
+		// taster's picks and the roaster's notes both (ADR-0016).
+		expect(page?.lot.facts.notes).toEqual(["peach", "melon", "red tea"]);
+		expect(page?.logs[0]?.tastingNotes).toEqual(["floral", "berry"]);
+		expect(page?.logs[0]?.lot.roasterNotes).toBe("peach, melon, red tea");
+	});
+
 	test("a malformed or unknown address resolves to null", async () => {
 		const fx = await setup();
 		expect(

@@ -516,6 +516,24 @@ describe("logs", () => {
 		});
 	});
 
+	test("profile log cards carry the roaster's notes beside the taster's picks", async () => {
+		const { lotId, t, userId } = await setup();
+		await t.run(async (ctx) => {
+			await ctx.db.patch(lotId, { roasterNotes: ["peach", "melon"] });
+		});
+		await asUser(t, userId).mutation(api.logs.createLog, {
+			productId: lotId,
+			rating: 4,
+			tastingNotes: ["floral", "berry"],
+		});
+
+		const profile = await t.query(api.logs.profile, { userId });
+		expect(profile?.logs[0]).toMatchObject({
+			lot: { roasterNotes: "peach, melon" },
+			tastingNotes: ["floral", "berry"],
+		});
+	});
+
 	test("profile resolves a malformed or unknown id to null, not an error", async () => {
 		const { t, userId } = await setup();
 		expect(await t.query(api.logs.profile, { userId: "not-an-id" })).toBeNull();
