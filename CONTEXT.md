@@ -34,15 +34,23 @@ A drop-alert service with a social layer for home coffee brewers: watches US spe
 
 **Submission**: A user's attempt to add a roaster by pasting its URL. Validated automatically; a submission becomes a roaster when its baseline crawl succeeds, or fails visibly with a retry. _Avoid_: Request, suggestion
 
+**Handle**: The short name that addresses a user (`/$user`) or a roaster (`/roaster/$roaster`, where it is also called the slug) in a URL. Unique within its kind; never a reserved route name. _Avoid_: Username (for users, the handle is not a login), id
+
 **Alert inbox**: The per-user AgentMail address that receives the user's alert emails. Provisioned at first sign-in; one per user. _Avoid_: Email address (that's the Google account's), mailbox
 
 **Degraded alert**: An alert sent when structured extraction failed but the raw page shows something changed. Worse data beats no alert.
 
 **Log**: A user's record of trying a lot: the lot, an optional rating, optional personal notes, and when it was logged. The unit of the social layer; logs are public. _Avoid_: Review, check-in, entry
 
+**Save**: Putting a lot on one's try list. Private, no email, no watch; a save is an intention, a log is a record. _Avoid_: Bookmark, wishlist, favourite
+
+**Try list**: A user's private list of saved lots, the ones they want to try. Shown only to its owner, on their profile. _Avoid_: Want to try (the old section title), saved coffees (the table's name is fine in code)
+
 **Rating**: A log's 1–5 star score, half steps allowed. A log can exist without one. _Avoid_: Score, stars (stars are the display, not the value)
 
 **Notes**: The taster's own words on a log. _Avoid_: Tasting notes unqualified — unqualified "tasting notes" means the roaster's (see Roaster notes), and an alert email's summary is neither
+
+**Personal tasting notes**: The taster's own descriptors for a lot, recorded on a log and kept apart from the roaster's notes so the two can disagree. Shape undecided (ADR-0016). _Avoid_: Notes (that's the prose), tags
 
 **Roaster notes**: Tasting descriptors taken from the roaster's own copy — description prose and tags on the lot's shop page. Only descriptors literally present count; nothing is invented. _Avoid_: AI summary (that's the alert email's generated line)
 
@@ -50,8 +58,10 @@ A drop-alert service with a social layer for home coffee brewers: watches US spe
 
 **Thin lot**: A current lot with no process, no variety or no notes after its feed facts and page facts are merged. The lot page's badge. A page read is due more widely: whenever any page fact is missing. _Avoid_: Incomplete, sparse
 
-**Profile**: A user's public page: their logs, ratings and notes, plus the roasters they watch. One per user. _Avoid_: Account (that's the sign-in); Taste profile (that's the deferred matching concept)
+**Profile**: A user's public page (`/$user`): their logs, ratings and notes. One per user. Viewed by its owner, the same page is where they manage their logs, watches and try list; those last two never show to anyone else. _Avoid_: Account (that's the sign-in and its settings); Taste profile (that's the deferred matching concept)
 
-**Activity feed**: The public feed of recent logs across all users. _Avoid_: Timeline, social feed; the drop feed (§8.1 of the build spec) is the other feed and stays distinct
+**Activity feed**: The public feed of recent logs across all users (`/activity`). _Avoid_: Timeline, social feed; the drop feed is the other feed and stays distinct
 
-**Lot page**: The lot's own public page (`/lots/$lotId`): its published copy, its roaster, and its logs. Every surface naming a lot links here. _Avoid_: Product page (that's the roaster's shop URL the lot page links out to)
+**Drop feed**: The public feed of recent drop events across all watched roasters (`/drops`). _Avoid_: Feed unqualified, news
+
+**Lot page**: The lot's own public page (`/roaster/$roaster/$lot`): its published copy, its roaster, and its logs. Every surface naming a lot links here, and saving, logging and rating a lot start here. _Avoid_: Product page (that's the roaster's shop URL the lot page links out to)
