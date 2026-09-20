@@ -33,6 +33,7 @@ import type * as notifications from "../notifications.js";
 import type * as pageFacts from "../pageFacts.js";
 import type * as platform from "../platform.js";
 import type * as productPages from "../productPages.js";
+import type * as recommendationAgent from "../recommendationAgent.js";
 import type * as recommendationCatalog from "../recommendationCatalog.js";
 import type * as recommendationRules from "../recommendationRules.js";
 import type * as recommendationWorker from "../recommendationWorker.js";
@@ -82,6 +83,7 @@ declare const fullApi: ApiFromModules<{
   pageFacts: typeof pageFacts;
   platform: typeof platform;
   productPages: typeof productPages;
+  recommendationAgent: typeof recommendationAgent;
   recommendationCatalog: typeof recommendationCatalog;
   recommendationRules: typeof recommendationRules;
   recommendationWorker: typeof recommendationWorker;

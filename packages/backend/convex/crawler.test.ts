@@ -347,13 +347,7 @@ describe("product_pages mode", () => {
 					lot,
 					bag,
 					source,
-					{
-						includeNotes: false,
-						logIds: [],
-						maxPriceCents: 3000,
-						minGrams: 200,
-						preferences: "",
-					},
+					{ maxPriceCents: 3000, minGrams: 200 },
 					T0 + 60 * 60_000
 				)
 			).toBe(true);

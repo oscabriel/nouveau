@@ -1,6 +1,5 @@
 import type { Infer } from "convex/values";
 import { ConvexError, v } from "convex/values";
-import { z } from "zod";
 
 export const CANDIDATE_LIMIT = 20;
 // Total lots inspected per request, across every roaster.
@@ -15,8 +14,16 @@ export const EVIDENCE_TTL_MS = 24 * FRESHNESS_MS;
 // A failed or empty scrape blocks retries for an hour, not a day.
 export const EMPTY_EVIDENCE_TTL_MS = FRESHNESS_MS;
 export const MAX_ATTEMPTS = 2;
+// Page reads one run may reserve, shared with the crawler's budget (ADR-0010).
 export const MAX_ENRICHMENTS = 2;
 export const RUN_TIMEOUT_MS = 5 * 60 * 1000;
+// Model steps (tool rounds) per run, so a confused loop ends before the watchdog.
+export const MAX_STEPS = 12;
+// Lots the tools may contribute to a run's candidate set across searches.
+export const MAX_RUN_CANDIDATES = 40;
+export const MAX_PICKS = 5;
+// One or two sentences from the model per card.
+export const WHY_MAX_CHARS = 480;
 // A reasoning model at low effort. The run stores the model string the API
 // returns, so the build log records the exact snapshot behind this alias.
 export const OPENAI_MODEL = "gpt-5.6-luna";
@@ -24,19 +31,45 @@ export const OPENAI_REASONING_EFFORT = "low";
 // Reasoning tokens count against this cap, so it is well above the JSON size.
 export const OPENAI_MAX_OUTPUT_TOKENS = 4000;
 
+/**
+ * One text box (ADR-0017): the whole request in plain language, and the
+ * consent toggle that lets the search read the user's own logs.
+ */
 export const recommendationInput = v.object({
 	includeNotes: v.boolean(),
-	logIds: v.array(v.id("logs")),
-	maxPriceCents: v.optional(v.number()),
-	minGrams: v.optional(v.number()),
 	preferences: v.string(),
 });
 export type RecommendationInput = Infer<typeof recommendationInput>;
 
-export const preferenceValidator = v.object({
-	id: v.string(),
-	text: v.string(),
+/** The budget half of a catalog search: what the variant must satisfy. */
+export const budgetFilters = v.object({
+	maxPriceCents: v.optional(v.number()),
+	minGrams: v.optional(v.number()),
 });
+export type BudgetFilters = Infer<typeof budgetFilters>;
+
+/** What a catalog search is asked for (the structured reading plus query). */
+export const searchFilters = v.object({
+	maxPriceCents: v.optional(v.number()),
+	minGrams: v.optional(v.number()),
+	preferences: v.string(),
+});
+export type SearchFilters = Infer<typeof searchFilters>;
+
+/**
+ * The typed search filters Jev's parallel batch turns the request into
+ * (ADR-0017). The search tool takes them as typed args; the model may still
+ * run extra searches beyond them.
+ */
+export const structuredFilters = v.object({
+	flavour: v.optional(v.string()),
+	maxGrams: v.optional(v.number()),
+	maxPriceCents: v.optional(v.number()),
+	minGrams: v.optional(v.number()),
+	origin: v.optional(v.string()),
+	process: v.optional(v.string()),
+});
+export type StructuredFilters = Infer<typeof structuredFilters>;
 export const evidenceValidator = v.object({
 	id: v.string(),
 	observedAt: v.number(),
@@ -68,114 +101,25 @@ export const candidateValidator = v.object({
 	variantName: v.string(),
 });
 export type Candidate = Infer<typeof candidateValidator>;
-export type Preference = Infer<typeof preferenceValidator>;
 export type Evidence = Infer<typeof evidenceValidator>;
 
-export const selectionValidator = v.object({
-	evidenceId: v.string(),
-	preferenceId: v.string(),
+/**
+ * One ranked card (ADR-0017): a chosen lot and the model's why. The array
+ * order is the model's ranking, top first; the server re-checks stock and
+ * price before storing, and the read re-checks again.
+ */
+export const pickValidator = v.object({
 	productId: v.id("products"),
-	quote: v.string(),
-	// One model sentence comparing the quote with the preference. Empty when
-	// the sentence failed the fact filter; the quote and label still stand.
-	reason: v.string(),
-	relation: v.union(
-		v.literal("similar"),
-		v.literal("contrast"),
-		v.literal("explore")
-	),
+	why: v.string(),
 });
-export type Selection = Infer<typeof selectionValidator>;
+export type Pick = Infer<typeof pickValidator>;
 
 export const validateInput = (input: RecommendationInput): void => {
-	if (
-		input.logIds.length > 5 ||
-		new Set(input.logIds).size !== input.logIds.length
-	) {
-		throw new ConvexError("Choose up to five different logs.");
-	}
-	if (
-		input.preferences.length > 500 ||
-		(!input.preferences.trim() && input.logIds.length === 0)
-	) {
+	if (input.preferences.length > 500 || !input.preferences.trim()) {
 		throw new ConvexError(
-			"Choose a coffee from your history or describe what you want in up to 500 characters."
+			"Describe what you are looking for in up to 500 characters."
 		);
 	}
-	for (const value of [input.maxPriceCents, input.minGrams]) {
-		if (
-			value !== undefined &&
-			(!Number.isSafeInteger(value) || value <= 0 || value > 100_000)
-		) {
-			throw new ConvexError(
-				"Budget and bag size must be positive numbers within the form limits."
-			);
-		}
-	}
-};
-
-// The quote is extractive and checked byte for byte. The reason is the one
-// generated sentence, and it may only compare; anything that looks like a
-// fact (numbers, money, stock, shipping) or a promise is dropped, not shown.
-const modelSelection = z
-	.object({
-		evidenceId: z.string(),
-		preferenceId: z.string(),
-		productId: z.string(),
-		quote: z.string().min(8).max(350),
-		reason: z.string().max(240),
-		relation: z.enum(["similar", "contrast", "explore"]),
-	})
-	.strict();
-const modelOutput = z
-	.object({ selections: z.array(modelSelection).max(3) })
-	.strict();
-
-const REASON_FACT_CLAIM =
-	/[\d$€£%]|https?:|\b(?:price|cost|cheap|expensive|stock|available|availability|sold out|shipping|ships?|delivery|tax|discount|sale|guarantee[ds]?|certainly|definitely|you will|you'll|you are going to)\b/iu;
-
-/** Keep a comparison sentence; drop anything asserting facts or outcomes. */
-export const filterReason = (reason: string): string => {
-	const text = reason.replaceAll(/\s+/gu, " ").trim();
-	if (text.length < 12 || text.length > 240 || REASON_FACT_CLAIM.test(text)) {
-		return "";
-	}
-	return text;
-};
-
-export const validateSelections = (
-	value: unknown,
-	candidates: Candidate[],
-	preferences: Preference[]
-): Selection[] => {
-	const parsed = modelOutput.safeParse(value);
-	if (!parsed.success) {
-		throw new Error("Invalid recommendation output");
-	}
-	const seen = new Set<string>();
-	return parsed.data.selections.map((selection) => {
-		const candidate = candidates.find(
-			(item) => item.productId === selection.productId
-		);
-		const evidence = candidate?.evidence.find(
-			(item) => item.id === selection.evidenceId
-		);
-		if (
-			!candidate ||
-			!evidence ||
-			seen.has(selection.productId) ||
-			evidence.passage !== selection.quote ||
-			!preferences.some((item) => item.id === selection.preferenceId)
-		) {
-			throw new Error("Unsupported recommendation output");
-		}
-		seen.add(selection.productId);
-		return {
-			...selection,
-			productId: candidate.productId,
-			reason: filterReason(selection.reason),
-		};
-	});
 };
 
 const STOP_WORDS = new Set([
@@ -667,37 +611,3 @@ export const pagePassages = (
 		? sentences
 		: enrichmentPassages(page.markdown ?? "", known);
 };
-
-export const recommendationOutputSchema = {
-	additionalProperties: false,
-	properties: {
-		selections: {
-			items: {
-				additionalProperties: false,
-				properties: {
-					evidenceId: { type: "string" },
-					preferenceId: { type: "string" },
-					productId: { type: "string" },
-					quote: { type: "string" },
-					reason: { type: "string" },
-					relation: {
-						enum: ["similar", "contrast", "explore"],
-						type: "string",
-					},
-				},
-				required: [
-					"productId",
-					"evidenceId",
-					"quote",
-					"preferenceId",
-					"relation",
-					"reason",
-				],
-				type: "object",
-			},
-			type: "array",
-		},
-	},
-	required: ["selections"],
-	type: "object",
-} as const;

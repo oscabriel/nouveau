@@ -1,36 +1,34 @@
 import { HOUR, RateLimiter } from "@convex-dev/rate-limiter";
 import { Workpool, vOnCompleteValidator } from "@convex-dev/workpool";
-import {
-	paginationOptsValidator,
-	paginationResultValidator,
-} from "convex/server";
 import { ConvexError, v } from "convex/values";
 
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalMutation, mutation, query } from "./_generated/server";
+import {
+	internalMutation,
+	internalQuery,
+	mutation,
+	query,
+} from "./_generated/server";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { requireUserId } from "./identity";
-import { joinNotes } from "./lotFacts";
-import {
-	candidateStillAvailable,
-	catalogText,
-	selectCandidates,
-} from "./recommendationCatalog";
+import { candidateStillAvailable, catalogText } from "./recommendationCatalog";
 import {
 	candidateValidator,
 	EMPTY_EVIDENCE_TTL_MS,
 	EVIDENCE_TTL_MS,
 	MAX_ATTEMPTS,
 	MAX_ENRICHMENTS,
-	preferenceValidator,
+	MAX_PICKS,
+	MAX_RUN_CANDIDATES,
+	OPENAI_MODEL,
 	recommendationInput,
 	RUN_TIMEOUT_MS,
-	selectionValidator,
+	pickValidator,
+	structuredFilters,
 	validateInput,
-	validateSelections,
+	WHY_MAX_CHARS,
 } from "./recommendationRules";
-import type { Preference, RecommendationInput } from "./recommendationRules";
 import schema from "./schema";
 
 const pool = new Workpool(components.recommendationPool, {
@@ -48,44 +46,6 @@ const activeAttempt = (
 	run: Doc<"recommendationRuns"> | null,
 	attempt: number
 ) => run !== null && run.attempt === attempt && run.status === "running";
-
-const preferencesFor = async (
-	ctx: QueryCtx,
-	userId: Id<"users">,
-	input: RecommendationInput
-): Promise<Preference[]> => {
-	const preferences: Preference[] = input.preferences.trim()
-		? [{ id: "request", text: input.preferences.trim() }]
-		: [];
-	for (const [index, id] of input.logIds.entries()) {
-		// oxlint-disable-next-line no-await-in-loop -- at most five owner-checked logs
-		const log = await ctx.db.get(id);
-		if (!log || log.userId !== userId) {
-			throw new ConvexError("Choose logs from your own history.");
-		}
-		// oxlint-disable-next-line no-await-in-loop -- at most five coffees
-		const product = await ctx.db.get(log.productId);
-		if (!product) {
-			throw new ConvexError("A selected coffee is no longer in the catalog.");
-		}
-		preferences.push({
-			id: `history:${index}`,
-			text: [
-				`Selected coffee: ${product.name}.`,
-				log.rating === undefined
-					? "No rating recorded."
-					: `Your rating: ${log.rating}/5.`,
-				joinNotes(product.roasterNotes) === null
-					? ""
-					: `Roaster descriptors: ${joinNotes(product.roasterNotes)}.`,
-				input.includeNotes && log.notes ? `Your note: ${log.notes}` : "",
-			]
-				.filter(Boolean)
-				.join(" "),
-		});
-	}
-	return preferences;
-};
 
 const consumeQuota = async (
 	ctx: MutationCtx,
@@ -172,7 +132,6 @@ export const request = mutation({
 		if (previous) {
 			return previous._id;
 		}
-		const preferences = await preferencesFor(ctx, userId, input);
 		await ensureNoActiveRun(ctx, userId);
 		await consumeQuota(ctx, userId);
 		const now = Date.now();
@@ -182,8 +141,7 @@ export const request = mutation({
 			createdAt: now,
 			enrichments: 0,
 			input,
-			message: "Waiting to check the catalog.",
-			preferences,
+			message: "Waiting to read the catalog.",
 			requestKey,
 			selections: [],
 			status: "queued",
@@ -207,16 +165,15 @@ export const retry = mutation({
 		if (run.status !== "failed" || run.attempt >= MAX_ATTEMPTS) {
 			throw new ConvexError("This request cannot be retried.");
 		}
-		const preferences = await preferencesFor(ctx, userId, run.input);
 		await ensureNoActiveRun(ctx, userId);
 		await consumeQuota(ctx, userId);
 		const attempt = run.attempt + 1;
 		await ctx.db.patch(runId, {
 			attempt,
 			candidates: [],
+			enrichments: 0,
 			message: "Waiting to retry.",
 			model: undefined,
-			preferences,
 			selections: [],
 			status: "queued",
 			updatedAt: Date.now(),
@@ -235,13 +192,12 @@ export const claim = internalMutation({
 			return null;
 		}
 		const now = Date.now();
-		// Deleted or reassigned logs must not reach the provider from a queued request.
-		const preferences = await preferencesFor(ctx, run.userId, run.input);
-		const candidates = await selectCandidates(ctx, run.input, now);
+		// The tools build the candidate list; the run starts empty and the
+		// search tool fills it (ADR-0017).
 		await ctx.db.patch(runId, {
-			candidates,
-			message: "Checking source details and comparing coffees.",
-			preferences,
+			candidates: [],
+			enrichments: 0,
+			message: "Searching the catalog and reading details.",
 			status: "running",
 			updatedAt: now,
 		});
@@ -378,55 +334,227 @@ export const purgeEvidence = internalMutation({
 	returns: v.number(),
 });
 
-export const prepareModel = internalMutation({
-	args: attemptArgs,
-	handler: async (ctx, { attempt, runId }) => {
+/**
+ * Records the Jev reading of the request text (ADR-0017). One call per run,
+ * before the loop; absent when Jev was unavailable.
+ */
+export const setStructured = internalMutation({
+	args: { ...attemptArgs, filters: v.union(structuredFilters, v.null()) },
+	handler: async (ctx, { attempt, filters, runId }) => {
+		if (!activeAttempt(await ctx.db.get(runId), attempt)) {
+			return null;
+		}
+		await ctx.db.patch(runId, { structured: filters ?? undefined });
+		return null;
+	},
+	returns: v.null(),
+});
+
+/**
+ * Stores the thread id once the worker created it, so the client can watch
+ * the steps and the thread query can authorize through run ownership.
+ */
+export const startThread = internalMutation({
+	args: { ...attemptArgs, threadId: v.string() },
+	handler: async (ctx, { attempt, runId, threadId }) => {
+		if (!activeAttempt(await ctx.db.get(runId), attempt)) {
+			return null;
+		}
+		await ctx.db.patch(runId, { threadId });
+		return null;
+	},
+	returns: v.null(),
+});
+
+const recordedValidator = v.object({
+	added: v.number(),
+	total: v.number(),
+});
+
+/**
+ * Merges the lots a search returned into the run's candidate set, deduped by
+ * variant, capped at MAX_RUN_CANDIDATES so a chatty loop stays bounded.
+ */
+export const recordCandidates = internalMutation({
+	args: { ...attemptArgs, candidates: v.array(candidateValidator) },
+	handler: async (ctx, { attempt, candidates, runId }) => {
 		const run = await ctx.db.get(runId);
 		if (!run || !activeAttempt(run, attempt)) {
 			return null;
 		}
-		const preferences = await preferencesFor(ctx, run.userId, run.input);
-		await ctx.db.patch(runId, { preferences });
-		return { ...run, preferences };
+		const known = new Set(run.candidates.map((item) => item.variantId));
+		const fresh = candidates.filter((item) => !known.has(item.variantId));
+		const room = Math.max(0, MAX_RUN_CANDIDATES - run.candidates.length);
+		const added = fresh.slice(0, room);
+		if (added.length === 0) {
+			return { added: 0, total: run.candidates.length };
+		}
+		await ctx.db.patch(runId, {
+			candidates: [...run.candidates, ...added],
+			updatedAt: Date.now(),
+		});
+		return { added: added.length, total: run.candidates.length + added.length };
+	},
+	returns: v.union(recordedValidator, v.null()),
+});
+
+const submitArgs = {
+	...attemptArgs,
+	picks: v.array(
+		v.object({
+			productId: v.id("products"),
+			why: v.string(),
+		})
+	),
+};
+
+/**
+ * The submitPicks tool's write (ADR-0017): validates every id against the
+ * lots the tools found this run, re-checks stock and price, and stores the
+ * ranked list. Throws the error the model must fix; availability is not the
+ * model's fault, so unavailable lots are dropped rather than failed.
+ */
+export const submitPicks = internalMutation({
+	args: submitArgs,
+	handler: async (ctx, { attempt, picks, runId }) => {
+		const run = await ctx.db.get(runId);
+		if (!run || !activeAttempt(run, attempt)) {
+			throw new Error("This request is no longer active.");
+		}
+		const seen = new Set<string>();
+		for (const pick of picks) {
+			if (seen.has(pick.productId)) {
+				throw new Error(
+					`Pick ${pick.productId} appears twice; submit each coffee once.`
+				);
+			}
+			seen.add(pick.productId);
+			if (pick.why.length > WHY_MAX_CHARS) {
+				throw new Error(
+					`Pick ${pick.productId}: the why sentence is over ${WHY_MAX_CHARS} characters.`
+				);
+			}
+			if (!run.candidates.some((item) => item.productId === pick.productId)) {
+				throw new Error(
+					`Pick ${pick.productId} is not a coffee the tools found. Search the catalog first and pick only from search results.`
+				);
+			}
+		}
+		if (picks.length > MAX_PICKS) {
+			throw new Error(`Submit at most ${MAX_PICKS} picks.`);
+		}
+		const now = Date.now();
+		const available = await Promise.all(
+			picks.map(async (pick) => {
+				const candidate = run.candidates.find(
+					(item) => item.productId === pick.productId
+				);
+				return candidate && (await candidateStillAvailable(ctx, candidate, now))
+					? { productId: pick.productId, why: pick.why.trim() }
+					: null;
+			})
+		);
+		const kept = available.filter((item) => item !== null);
+		if (picks.length > 0 && kept.length === 0) {
+			throw new Error(
+				"None of the picks is currently in stock at the recorded price. Search again and pick different coffees."
+			);
+		}
+		await ctx.db.patch(runId, {
+			model: OPENAI_MODEL,
+			selections: kept,
+			status: "ready",
+			updatedAt: now,
+		});
+		await cancelWatchdog(ctx, run);
+		return { kept: kept.length, offered: picks.length };
+	},
+	returns: v.object({ kept: v.number(), offered: v.number() }),
+});
+
+/**
+ * Maintenance: drop old runs (their threads stay). Runs are transient; the
+ * threads keep the HOW IT LOOKED record.
+ */
+export const purgeRuns = internalMutation({
+	args: { before: v.number() },
+	handler: async (ctx, { before }) => {
+		const rows = await ctx.db
+			.query("recommendationRuns")
+			.withIndex("by_creation_time", (q) => q.lt("_creationTime", before))
+			.take(500);
+		await Promise.all(rows.map((row) => ctx.db.delete(row._id)));
+		return rows.length;
+	},
+	returns: v.number(),
+});
+
+/** The worker and the tools read the run through this attempt-checked query. */
+export const getRun = internalQuery({
+	args: attemptArgs,
+	handler: async (ctx, { attempt, runId }) => {
+		const run = await ctx.db.get(runId);
+		return activeAttempt(run, attempt) ? run : null;
 	},
 	returns: v.union(schema.doc("recommendationRuns"), v.null()),
 });
 
-export const finish = internalMutation({
-	args: {
-		...attemptArgs,
-		message: v.string(),
-		model: v.optional(v.string()),
-		selections: v.array(selectionValidator),
-		status: v.union(v.literal("ready"), v.literal("failed")),
-	},
-	handler: async (ctx, { attempt, runId, ...result }) => {
+/**
+ * The checkAvailability tool's read: the same re-check the server runs
+ * before storing, plus the variant's current price and size.
+ */
+export const checkCandidate = internalQuery({
+	args: { ...attemptArgs, productId: v.id("products") },
+	handler: async (ctx, { attempt, productId, runId }) => {
 		const run = await ctx.db.get(runId);
 		if (!run || !activeAttempt(run, attempt)) {
 			return null;
 		}
-		const selections = validateSelections(
-			{ selections: result.selections },
-			run.candidates,
-			run.preferences
+		const candidate = run.candidates.find(
+			(item) => item.productId === productId
 		);
-		const available = await Promise.all(
-			selections.map(async (selection) => {
-				const candidate = run.candidates.find(
-					(item) => item.productId === selection.productId
-				);
-				return candidate &&
-					(await candidateStillAvailable(ctx, candidate, run.input, Date.now()))
-					? selection
-					: null;
-			})
-		);
+		if (!candidate) {
+			return null;
+		}
+		const variant = await ctx.db.get(candidate.variantId);
+		return {
+			available: await candidateStillAvailable(ctx, candidate, Date.now()),
+			grams: variant?.grams ?? null,
+			priceCents: variant?.priceCents ?? null,
+		};
+	},
+	returns: v.union(
+		v.object({
+			available: v.boolean(),
+			grams: v.union(v.number(), v.null()),
+			priceCents: v.union(v.number(), v.null()),
+		}),
+		v.null()
+	),
+});
+
+/**
+ * The loop's last touch: the model's final prose becomes the summary line
+ * (ADR-0017), with a note when the Jev claim check blanked a why sentence.
+ */
+export const summarize = internalMutation({
+	args: { ...attemptArgs, blanked: v.number(), summary: v.string() },
+	handler: async (ctx, { attempt, blanked, runId, summary }) => {
+		const run = await ctx.db.get(runId);
+		if (!run || run.attempt !== attempt || run.status !== "ready") {
+			return null;
+		}
+		const note =
+			blanked > 0
+				? " A why sentence was dropped because it did not match the facts."
+				: "";
 		await ctx.db.patch(runId, {
-			...result,
-			selections: available.filter((item) => item !== null),
+			message:
+				summary.length > 0
+					? `${summary}${note}`
+					: `Compared the lots the tools found.${note} Fewer than five matches is a valid result.`,
 			updatedAt: Date.now(),
 		});
-		await cancelWatchdog(ctx, run);
 		return null;
 	},
 	returns: v.null(),
@@ -481,13 +609,6 @@ export const onComplete = internalMutation({
 	returns: v.null(),
 });
 
-const resultValidator = v.object({
-	canBuy: v.boolean(),
-	candidate: candidateValidator,
-	preference: v.string(),
-	selection: selectionValidator,
-});
-
 export const latest = query({
 	args: { now: v.number() },
 	handler: async (ctx, { now }) => {
@@ -504,20 +625,19 @@ export const latest = query({
 			return null;
 		}
 		const results = await Promise.all(
-			run.selections.map(async (selection) => {
+			run.selections.map(async (pick) => {
 				const candidate = run.candidates.find(
-					(item) => item.productId === selection.productId
+					(item) => item.productId === pick.productId
 				);
 				if (!candidate) {
 					return null;
 				}
+				const product = await ctx.db.get(pick.productId);
 				return {
-					canBuy: await candidateStillAvailable(ctx, candidate, run.input, now),
+					canBuy: await candidateStillAvailable(ctx, candidate, now),
 					candidate,
-					preference:
-						run.preferences.find((item) => item.id === selection.preferenceId)
-							?.text ?? "",
-					selection,
+					imageUrl: product?.imageUrl ?? null,
+					pick,
 				};
 			})
 		);
@@ -529,9 +649,9 @@ export const latest = query({
 			input: run.input,
 			message: run.message,
 			model: run.model ?? null,
-			preferences: run.preferences,
-			results: results.filter((item) => item !== null),
+			picks: results.filter((item) => item !== null),
 			status: run.status,
+			structured: run.structured ?? null,
 		};
 	},
 	returns: v.union(
@@ -544,49 +664,16 @@ export const latest = query({
 			input: recommendationInput,
 			message: v.string(),
 			model: v.union(v.string(), v.null()),
-			preferences: v.array(preferenceValidator),
-			results: v.array(resultValidator),
+			picks: v.array(
+				v.object({
+					canBuy: v.boolean(),
+					candidate: candidateValidator,
+					imageUrl: v.union(v.string(), v.null()),
+					pick: pickValidator,
+				})
+			),
 			status: schema.doc("recommendationRuns").fields.status,
+			structured: v.union(structuredFilters, v.null()),
 		})
 	),
-});
-
-const historyOption = v.object({
-	id: v.id("logs"),
-	loggedAt: v.number(),
-	name: v.string(),
-	notes: v.union(v.string(), v.null()),
-	rating: v.union(v.number(), v.null()),
-});
-export const history = query({
-	args: { paginationOpts: paginationOptsValidator },
-	handler: async (ctx, { paginationOpts }) => {
-		const userId = await requireUserId(ctx);
-		if (
-			!Number.isInteger(paginationOpts.numItems) ||
-			paginationOpts.numItems < 1 ||
-			paginationOpts.numItems > 50
-		) {
-			throw new ConvexError("Choose a history page size between 1 and 50.");
-		}
-		const page = await ctx.db
-			.query("logs")
-			.withIndex("by_user_and_logged_at", (q) => q.eq("userId", userId))
-			.order("desc")
-			.paginate(paginationOpts);
-		const items = await Promise.all(
-			page.page.map(async (log) => {
-				const product = await ctx.db.get(log.productId);
-				return {
-					id: log._id,
-					loggedAt: log.loggedAt,
-					name: product?.name ?? "Coffee no longer in catalog",
-					notes: log.notes ?? null,
-					rating: log.rating ?? null,
-				};
-			})
-		);
-		return { ...page, page: items };
-	},
-	returns: paginationResultValidator(historyOption),
 });

@@ -14,20 +14,24 @@ import {
 	PRODUCTS_PER_ROASTER,
 	SOURCE_SCAN_LIMIT,
 } from "./recommendationRules";
-import type { Candidate, RecommendationInput } from "./recommendationRules";
+import type {
+	BudgetFilters,
+	Candidate,
+	SearchFilters,
+} from "./recommendationRules";
 
 const meetsConstraints = (
 	variant: Doc<"productVariants">,
-	input: RecommendationInput
+	filters: BudgetFilters
 ): boolean =>
 	variant.grams !== undefined &&
 	Number.isFinite(variant.grams) &&
 	variant.grams > 0 &&
 	Number.isSafeInteger(variant.priceCents) &&
 	variant.priceCents > 0 &&
-	(input.maxPriceCents === undefined ||
-		variant.priceCents <= input.maxPriceCents) &&
-	(input.minGrams === undefined || variant.grams >= input.minGrams);
+	(filters.maxPriceCents === undefined ||
+		variant.priceCents <= filters.maxPriceCents) &&
+	(filters.minGrams === undefined || variant.grams >= filters.minGrams);
 
 /**
  * When the source last read every product. A product_pages crawl whose
@@ -60,7 +64,7 @@ export const eligibleVariant = (
 	product: Doc<"products">,
 	variant: Doc<"productVariants">,
 	source: Doc<"crawlSources">,
-	input: RecommendationInput,
+	filters: BudgetFilters,
 	now: number
 ): boolean =>
 	eligibleSource(source, now) &&
@@ -70,7 +74,7 @@ export const eligibleVariant = (
 	variant.observedAt === product.lastSeenAt &&
 	variant.sizeObservedAt === product.lastSeenAt &&
 	variant.available &&
-	meetsConstraints(variant, input);
+	meetsConstraints(variant, filters);
 
 /**
  * Everything the feed already says about a lot. Page evidence is deduplicated
@@ -92,7 +96,7 @@ const makeCandidate = async (
 	product: Doc<"products">,
 	roaster: Doc<"roasters">,
 	source: Doc<"crawlSources">,
-	input: RecommendationInput,
+	filters: SearchFilters,
 	now: number
 ): Promise<Candidate | null> => {
 	const url = lotShopUrl(roaster, product);
@@ -113,7 +117,7 @@ const makeCandidate = async (
 		return null;
 	}
 	const [variant] = variants
-		.filter((item) => eligibleVariant(product, item, source, input, now))
+		.filter((item) => eligibleVariant(product, item, source, filters, now))
 		// oxlint-disable-next-line unicorn/no-array-sort -- ES2021 backend; filter created a new array
 		.sort((a, b) => a.priceCents - b.priceCents);
 	if (!variant || variant.grams === undefined) {
@@ -222,14 +226,14 @@ const roasterQueue = async (
  */
 export const selectCandidates = async (
 	ctx: QueryCtx,
-	input: RecommendationInput,
+	filters: SearchFilters,
 	now: number
 ): Promise<Candidate[]> => {
 	const sources = await ctx.db
 		.query("crawlSources")
 		.withIndex("by_health", (q) => q.eq("health", "watching"))
 		.take(SOURCE_SCAN_LIMIT);
-	const tokens = preferenceTokens(input.preferences);
+	const tokens = preferenceTokens(filters.preferences);
 	const maybeQueues = await Promise.all(
 		sources
 			.filter((source) => eligibleSource(source, now))
@@ -255,7 +259,7 @@ export const selectCandidates = async (
 				product,
 				queue.roaster,
 				queue.source,
-				input,
+				filters,
 				now
 			);
 			if (candidate) {
@@ -276,7 +280,6 @@ export const selectCandidates = async (
 export const candidateStillAvailable = async (
 	ctx: QueryCtx,
 	candidate: Candidate,
-	input: RecommendationInput,
 	now: number
 ): Promise<boolean> => {
 	const [product, variant] = await Promise.all([
@@ -298,7 +301,7 @@ export const candidateStillAvailable = async (
 		!!roaster &&
 		roaster.status === "active" &&
 		lotShopUrl(roaster, product) === candidate.url &&
-		eligibleVariant(product, variant, source, input, now) &&
+		eligibleVariant(product, variant, source, {}, now) &&
 		variant.priceCents === candidate.priceCents &&
 		variant.grams === candidate.grams
 	);

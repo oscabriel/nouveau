@@ -12,6 +12,7 @@
 	},
 	"dependencies": {
 		"@agentmail/convex": "0.1.0",
+		"@ai-sdk/openai": "^4.0.71",
 		"@convex-dev/agent": "^0.7.3",
 		"@convex-dev/aggregate": "^0.3.0",
 		"@convex-dev/auth": "2.0.0-alpha.1",
@@ -20,6 +21,7 @@
 		"@convex-dev/static-hosting": "^0.2.1",
 		"@convex-dev/workpool": "0.3.2",
 		"@firecrawl/firecrawl-convex": "0.1.1",
+		"ai": "^7.0.0",
 		"convex": "catalog:",
 		"dotenv": "catalog:",
 		"jose": "^6.2.10",

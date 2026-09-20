@@ -5,9 +5,9 @@ import { healthValidator } from "./health";
 import { pageFactsValidator } from "./lotFacts";
 import {
 	candidateValidator,
-	preferenceValidator,
+	pickValidator,
 	recommendationInput,
-	selectionValidator,
+	structuredFilters,
 } from "./recommendationRules";
 import { shopMarketValidator } from "./shopMarket";
 import { sourceModeValidator } from "./sourceMode";
@@ -287,21 +287,27 @@ export default defineSchema({
 		input: recommendationInput,
 		message: v.string(),
 		model: v.optional(v.string()),
-		preferences: v.array(preferenceValidator),
+		// Idempotency key the client mints per form submit.
 		requestKey: v.string(),
-		selections: v.array(selectionValidator),
+		// The validated ranked list the submitPicks tool wrote (ADR-0017).
+		selections: v.array(pickValidator),
 		status: v.union(
 			v.literal("queued"),
 			v.literal("running"),
 			v.literal("ready"),
 			v.literal("failed")
 		),
+		// Jev's typed search filters from the request text.
+		structured: v.optional(structuredFilters),
+		// The agent thread this run drives; one fresh thread per run.
+		threadId: v.optional(v.string()),
 		updatedAt: v.number(),
 		userId: v.id("users"),
 	})
 		.index("by_user_id_and_created_at", ["userId", "createdAt"])
 		.index("by_user_id_and_status", ["userId", "status"])
-		.index("by_user_id_and_request_key", ["userId", "requestKey"]),
+		.index("by_user_id_and_request_key", ["userId", "requestKey"])
+		.index("by_user_id_and_thread", ["userId", "threadId"]),
 
 	roasters: defineTable({
 		city: v.string(),

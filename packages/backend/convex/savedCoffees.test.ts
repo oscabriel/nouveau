@@ -89,13 +89,9 @@ const insertRun = (f: Fixture, userId: Id<"users">) =>
 			enrichments: 0,
 			input: {
 				includeNotes: false,
-				logIds: [],
-				maxPriceCents: 3000,
-				minGrams: 200,
 				preferences: "A floral washed coffee",
 			},
 			message: "Ready",
-			preferences: [],
 			requestKey: "k",
 			selections: [],
 			status: "ready",
