@@ -51,8 +51,9 @@ const NextBagPage = () => {
 					Find my next bag
 				</h1>
 				<p className="text-muted-foreground mt-2 max-w-prose">
-					Choose coffees you liked, or tell us what you want to try. Compare up
-					to three coffees with the roasters&apos; own words beside them.
+					One sentence is enough. The agent searches the catalog, reads pages,
+					checks price and stock, and hands back a ranked shortlist — and you
+					watch it work.
 				</p>
 				<Link
 					className="mt-3 inline-flex min-h-11 items-center text-sm underline underline-offset-4"

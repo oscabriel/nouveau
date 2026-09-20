@@ -36,6 +36,7 @@ import type * as productPages from "../productPages.js";
 import type * as recommendationAgent from "../recommendationAgent.js";
 import type * as recommendationCatalog from "../recommendationCatalog.js";
 import type * as recommendationRules from "../recommendationRules.js";
+import type * as recommendationThreads from "../recommendationThreads.js";
 import type * as recommendationWorker from "../recommendationWorker.js";
 import type * as recommendations from "../recommendations.js";
 import type * as roasters from "../roasters.js";
@@ -86,6 +87,7 @@ declare const fullApi: ApiFromModules<{
   recommendationAgent: typeof recommendationAgent;
   recommendationCatalog: typeof recommendationCatalog;
   recommendationRules: typeof recommendationRules;
+  recommendationThreads: typeof recommendationThreads;
   recommendationWorker: typeof recommendationWorker;
   recommendations: typeof recommendations;
   roasters: typeof roasters;

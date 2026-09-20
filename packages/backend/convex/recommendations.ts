@@ -651,7 +651,10 @@ export const latest = query({
 			model: run.model ?? null,
 			picks: results.filter((item) => item !== null),
 			status: run.status,
+			// The client watches the run's thread for the loop's steps; absent
+			// until the worker created it, and on runs from before the field.
 			structured: run.structured ?? null,
+			threadId: run.threadId ?? null,
 		};
 	},
 	returns: v.union(
@@ -674,6 +677,7 @@ export const latest = query({
 			),
 			status: schema.doc("recommendationRuns").fields.status,
 			structured: v.union(structuredFilters, v.null()),
+			threadId: v.union(v.string(), v.null()),
 		})
 	),
 });

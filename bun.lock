@@ -24,6 +24,7 @@
       "name": "web",
       "version": "0.0.0",
       "dependencies": {
+        "@convex-dev/agent": "^0.7.3",
         "@convex-dev/auth": "2.0.0-alpha.1",
         "@fontsource-variable/caveat": "^5.3.0",
         "@fontsource-variable/schibsted-grotesk": "^5.3.0",
