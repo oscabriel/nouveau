@@ -65,6 +65,8 @@ export const getCurrentUser = query({
 		const config = await ctx.db.query("appConfig").unique();
 		return {
 			alertInboxAddress: config?.alertInbox?.address,
+			// The /$user address (ADR-0011); absent on rows predating the field.
+			handle: user.handle,
 			id: user._id,
 			imageUrl: user.imageUrl,
 			name: user.name,
@@ -74,6 +76,7 @@ export const getCurrentUser = query({
 		v.null(),
 		v.object({
 			alertInboxAddress: v.optional(v.string()),
+			handle: v.optional(v.string()),
 			id: v.id("users"),
 			imageUrl: v.optional(v.string()),
 			name: v.optional(v.string()),
