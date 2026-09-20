@@ -27,7 +27,7 @@ The foundation everything routes on. Backend first, routes after. No page change
 - [x] **Lot addressing, backend.** Index `products` on `(roasterId, handle)`. `lots.get` takes `(roaster slug, handle)`. At upsert, a duplicate handle gets the archived lot's last-seen year appended (`ethiopia-guji-2024`), detected through the new index, no scans. Every drop, catalog, saved and recommendation query returns the roaster slug and the handle with each row. Tests. (`e68479b`; `lots.addressById` added for the old-id redirect)
 - [x] **Slug hygiene, backend.** Submission enforces slug uniqueness and reserved names; `seed.ts`'s `slugOf` and `submissions.ts`'s `normalizeShopUrl` collapse into one function. This closes the `eastpole` duplicate-slug throw. (`6d8dc96`; suffix resolution recorded in ADR-0011)
 - [ ] **Route tree.** New routes: `/roaster/$roaster`, `/roaster/$roaster/$lot`, `/drops`, `/settings` (+ existing `/settings/alerts`, new `/settings/appearance`, `/settings/account`), `/$user`, `/about`. Old paths (`/roasters/$slug`, `/lots/$lotId`, `/feed`, `/profile/$userId`, `/watches`, `/saved`) become real routes that redirect on mount and stay forever. Every `Link` that passed `lotId` passes the pair instead.
-- [ ] **`notifications.ts` writes the new paths** (lot links, mute link to `/settings/alerts`). Verify against a sent email template on dev.
+- [ ] **`notifications.ts` writes the new paths** (lot links, mute link to `/settings/alerts`). Verify against a sent email template on dev. Backend half in (`8cb5475`); the dev email-template check waits for the route tree + a real SITE_URL.
 
 ## Batch 2: record and queries (ADRs-0014, 0016)
 
@@ -95,3 +95,4 @@ The biggest item. Dependent on nothing else in this plan except batch 0, but gat
 | 2026-09-20 | 1 | User handles backend (`8839eca`): handle derivation at sign-in, RESERVED_ROUTES, `logs.profile` resolving handle/redirect/legacy id. ADR-0011 amended for the `handleRedirects` table. |
 | 2026-09-20 | 1 | Lot addressing backend (`e68479b`): `(roasterId, handle)` index, `lots.get` by pair, year-append on duplicate archived handles, handle + roaster slug on feed/log/saved/candidate rows. |
 | 2026-09-20 | 1 | Slug hygiene backend (`6d8dc96`): shared `slugifyDomain`, submission-time slug claim with numeric suffix, reserved names enforced. ADR-0011 amendment recorded. All three batch-1 backend items are in. |
+| 2026-09-20 | 1 | Alert email paths (`8cb5475`): lot → `/roaster/$slug/$handle`, roaster → `/roaster/$slug`, mute → `/settings/alerts`. Dev template verification still open. |
