@@ -193,9 +193,13 @@ export const run = internalAction({
 				{ saveStreamDeltas: true }
 			);
 			await result.consumeStream();
-			const settled = await ctx.runQuery(internal.recommendations.getRun, args);
+			const settled = await ctx.runQuery(
+				internal.recommendations.readRun,
+				args
+			);
 			if (!settled) {
-				// The watchdog expired mid-loop; the run is already failed.
+				// The watchdog expired mid-loop or a retry re-claimed the run;
+				// this attempt's work is done either way.
 				return null;
 			}
 			if (settled.status !== "ready") {
@@ -216,8 +220,12 @@ export const run = internalAction({
 				blanked: checked.blanked,
 				summary,
 			});
-		} catch {
-			// Swallow raw provider errors before workpool can log private inputs.
+		} catch (error) {
+			// Swallow raw provider errors before workpool can log private inputs;
+			// the name alone is safe to print (messages can quote source pages).
+			console.error(
+				`next-bag worker: ${error instanceof Error ? error.name : "unknown"}`
+			);
 			await ctx.runMutation(internal.recommendations.expire, {
 				...args,
 				providerFailed: true,

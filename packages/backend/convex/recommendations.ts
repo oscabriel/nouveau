@@ -500,6 +500,20 @@ export const getRun = internalQuery({
 });
 
 /**
+ * The worker tail's read: this attempt's run in whatever state it is in; the
+ * caller branches on status. A ready run must still be visible here so the
+ * loop can write the summary line and run the why check after submitPicks.
+ */
+export const readRun = internalQuery({
+	args: attemptArgs,
+	handler: async (ctx, { attempt, runId }) => {
+		const run = await ctx.db.get(runId);
+		return run !== null && run.attempt === attempt ? run : null;
+	},
+	returns: v.union(schema.doc("recommendationRuns"), v.null()),
+});
+
+/**
  * The checkAvailability tool's read: the same re-check the server runs
  * before storing, plus the variant's current price and size.
  */

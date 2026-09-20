@@ -811,6 +811,37 @@ test("submitPicks validates ids, dedupes and length before storing", async () =>
 	});
 });
 
+test("a settled run stays readable to the worker tail but not to the running-only guard", async () => {
+	const f = await setup();
+	const { run } = await claimWithCandidates(f);
+	await f.t.mutation(internal.recommendations.submitPicks, {
+		attempt: 1,
+		picks: [{ productId: f.productId, why: "Jasmine echoes the request." }],
+		runId: run._id,
+	});
+	// The worker tail must see the ready run to write the summary line.
+	expect(
+		await f.t.query(internal.recommendations.readRun, {
+			attempt: 1,
+			runId: run._id,
+		})
+	).toMatchObject({ status: "ready" });
+	// A running-only read correctly stops seeing it, and a stale attempt
+	// sees neither.
+	expect(
+		await f.t.query(internal.recommendations.getRun, {
+			attempt: 1,
+			runId: run._id,
+		})
+	).toBeNull();
+	expect(
+		await f.t.query(internal.recommendations.readRun, {
+			attempt: 2,
+			runId: run._id,
+		})
+	).toBeNull();
+});
+
 test("a price change before the handoff removes the pick", async () => {
 	const f = await setup();
 	const { run } = await claimWithCandidates(f);
