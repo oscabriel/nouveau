@@ -183,10 +183,16 @@ export const run = internalAction({
 				{ threadId },
 				{
 					prompt: buildPrompt(claimed.input.preferences, filters, initial.rows),
-					// The reasoning effort the Responses pipeline pinned; set here
-					// because the agent component's callSettings merge drops it.
+					// The reasoning effort the Responses pipeline pinned, and the
+					// no-persistence rule that pipeline kept (store: false, the
+					// user's request and logs must not outlive the run OpenAI-side).
+					// Set here because the agent component's callSettings merge
+					// drops provider options.
 					providerOptions: {
-						openai: { reasoningEffort: OPENAI_REASONING_EFFORT },
+						openai: {
+							reasoningEffort: OPENAI_REASONING_EFFORT,
+							store: false,
+						},
 					},
 					stopWhen: stepCountIs(MAX_STEPS),
 				},
