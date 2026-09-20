@@ -15,9 +15,9 @@ The hackathon closes **2026-09-22 at noon Pacific**. The next-bag loop carries a
 
 Everything later is unblocked by this batch; it runs in parallel.
 
-- [ ] **Install `@convex-dev/agent`** (ADR-0017). Add the package and `app.use(agent, ...)` to `packages/backend/convex/convex.config.ts`, run `npx convex dev` once so `components.agent` generates. No code uses it yet.
-- [ ] **Plate assets** (ADR-0012). The owner supplies the fresh hero export in `apps/web/public/`. Agent work: downscaled footer export of the branch, serving-size exports of the six details (they are 113 to 486 pixels on their long side), cream-fringe fix riding along in every cut. The 33.8 MB and 10.7 MB source-resolution files stay untracked.
-- [ ] **Caveat, self-hosted** (ADR-0012). Download the font, add it to the web app per `DESIGN.md`'s font rule, and register it in the type scale as the caption face.
+- [x] **Install `@convex-dev/agent`** (ADR-0017). Add the package and `app.use(agent, ...)` to `packages/backend/convex/convex.config.ts`, run `npx convex dev` once so `components.agent` generates. No code uses it yet. (`d55296d`)
+- [ ] **Plate assets** (ADR-0012). The owner supplies the fresh hero export in `apps/web/public/`. Agent work: downscaled footer export of the branch, serving-size exports of the six details (they are 113 to 486 pixels on their long side), cream-fringe fix riding along in every cut. The 33.8 MB and 10.7 MB source-resolution files stay untracked. Agent half done (`e38eb91`), `apps/web/public/plate/`; only the hero export remains.
+- [x] **Caveat, self-hosted** (ADR-0012). Download the font, add it to the web app per `DESIGN.md`'s font rule, and register it in the type scale as the caption face. (`02e02bf`, `@fontsource-variable/caveat`, registered as `font-caveat`)
 
 ## Batch 1: addressing (ADR-0011)
 
@@ -91,3 +91,4 @@ The biggest item. Dependent on nothing else in this plan except batch 0, but gat
 | Date | Batch | What landed |
 | --- | --- | --- |
 | 2026-09-20 | - | All seven ADRs recorded (`f78ba65`) and every open question settled in the grill (`59e618f`). Nothing implemented. |
+| 2026-09-20 | 0 | Agent component mounted (`d55296d`), Caveat self-hosted (`02e02bf`), plate serving exports defringed into `public/plate/` (`e38eb91`). Owner still owes the pre-rotated hero. |
