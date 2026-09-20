@@ -7,13 +7,13 @@ import type { FunctionReturnType } from "convex/server";
 import { ArrowUpRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { headCell, bodyCell } from "@/components/drop-index";
 import Loader from "@/components/loader";
 import { LogCard } from "@/components/log-card";
 import { LogForm } from "@/components/log-form";
 import { SaveButton } from "@/components/save-button";
 import { SignInCta } from "@/components/sign-in-cta";
 import { formatGrams, formatPrice } from "@/lib/format";
+import { bodyCell, headCell } from "@/lib/ui";
 
 export type LotPageData = FunctionReturnType<typeof api.lots.get>;
 type LotData = NonNullable<LotPageData>["lot"];

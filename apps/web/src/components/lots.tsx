@@ -1,16 +1,15 @@
-import { useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
 import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
 import { Link } from "@tanstack/react-router";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionArgs, FunctionReturnType } from "convex/server";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
-import { bodyCell, headCell } from "@/components/drop-index";
 import Loader from "@/components/loader";
-import { LogForm } from "@/components/log-form";
 import { SearchField } from "@/components/search-field";
+import { ArrowCell, TableHoverImage } from "@/components/table";
 import { displayPriceCents, formatGrams, formatPrice } from "@/lib/format";
+import { bodyCell, headCell } from "@/lib/ui";
 
 type LotRow = FunctionReturnType<typeof api.roasters.listLots>["page"][number];
 
@@ -28,20 +27,12 @@ const fromPrice = (minPriceCents: number | null): string => {
 };
 
 const LotTableRow = ({
-	canLog,
 	index,
-	isOpen,
 	lot,
-	onClose,
-	onOpen,
 	slug,
 }: {
-	canLog: boolean;
 	index: number;
-	isOpen: boolean;
 	lot: LotRow;
-	onClose: () => void;
-	onOpen: () => void;
 	slug: string;
 }) => {
 	const archived = lot.status === "archived";
@@ -49,113 +40,76 @@ const LotTableRow = ({
 	// neither dimmed nor labelled. Only a known sold-out lot says so.
 	const soldOut = !archived && lot.available === false;
 	return (
-		<>
-			<tr
-				className={`group hover:bg-muted focus-within:bg-muted transition-colors ${isOpen ? "bg-muted" : "border-b"} ${archived || soldOut ? "opacity-50" : ""}`}
+		<tr
+			className={`group hover:bg-muted focus-within:bg-muted border-b transition-colors ${archived || soldOut ? "opacity-50" : ""}`}
+			data-image-url={lot.imageUrl ?? undefined}
+		>
+			<td
+				className={`${bodyCell} text-muted-foreground tnum w-10 pr-2 text-xs md:w-28 md:pr-3`}
 			>
-				<td
-					className={`${bodyCell} text-muted-foreground tnum w-10 pr-2 text-xs md:w-28 md:pr-3`}
+				{index + 1}
+			</td>
+			<td
+				className={`${bodyCell} pr-4 ${archived ? "text-muted-foreground" : ""}`}
+			>
+				<Link
+					className="hover:underline"
+					params={{ lot: lot.handle, roaster: slug }}
+					to="/roaster/$roaster/$lot"
 				>
-					{index + 1}
-				</td>
-				<td
-					className={`${bodyCell} pr-4 ${archived ? "text-muted-foreground" : ""}`}
-				>
-					<Link
-						className="hover:underline"
-						params={{ lot: lot.handle, roaster: slug }}
-						to="/roaster/$roaster/$lot"
-					>
-						{lot.name}
-					</Link>
-					{archived && (
-						<span className="label-caps ml-3 align-middle opacity-70">
-							Archived
-						</span>
-					)}
-					{soldOut && (
-						<span className="label-caps ml-3 align-middle opacity-70">
-							Sold out
-						</span>
-					)}
-				</td>
-				<td
-					className={`${bodyCell} text-muted-foreground hidden max-w-0 truncate pr-4 md:table-cell md:w-[40%]`}
-				>
-					{lot.roasterNotes ?? ""}
-				</td>
-				<td
-					className={`${bodyCell} text-muted-foreground hidden pr-4 lg:table-cell`}
-				>
-					{lot.origin ?? ""}
-				</td>
-				<td
-					className={`${bodyCell} text-muted-foreground tnum hidden pr-4 whitespace-nowrap sm:table-cell`}
-				>
-					{fromPrice(lot.minPriceCents)}
-				</td>
-				{canLog && (
-					<td className={`${bodyCell} w-12 py-0 text-right align-middle`}>
-						{isOpen ? (
-							<button
-								className="label-caps inline-flex min-h-11 items-center hover:underline"
-								onClick={onClose}
-								type="button"
-							>
-								Close
-							</button>
-						) : (
-							<button
-								className="label-caps inline-flex min-h-11 items-center hover:underline"
-								onClick={onOpen}
-								type="button"
-							>
-								Log
-							</button>
-						)}
-					</td>
+					{lot.name}
+				</Link>
+				{archived && (
+					<span className="label-caps ml-3 align-middle opacity-70">
+						Archived
+					</span>
 				)}
-			</tr>
-			{canLog && isOpen && (
-				<tr className="bg-muted border-b">
-					{/* Spans Lot, Notes and Log; the spacer sits under N° from md. */}
-					<td aria-hidden className="hidden md:table-cell" />
-					<td className="pr-4 pb-5" colSpan={4}>
-						<LogForm
-							lotId={lot.id}
-							onDone={onClose}
-							roasterNotes={lot.roasterNotes}
-						/>
-					</td>
-				</tr>
-			)}
-		</>
+				{soldOut && (
+					<span className="label-caps ml-3 align-middle opacity-70">
+						Sold out
+					</span>
+				)}
+			</td>
+			<td
+				className={`${bodyCell} text-muted-foreground hidden max-w-0 truncate pr-4 md:table-cell md:w-[40%]`}
+			>
+				{lot.roasterNotes ?? ""}
+			</td>
+			<td
+				className={`${bodyCell} text-muted-foreground hidden pr-4 lg:table-cell`}
+			>
+				{lot.origin ?? ""}
+			</td>
+			<td
+				className={`${bodyCell} text-muted-foreground tnum hidden pr-4 whitespace-nowrap sm:table-cell`}
+			>
+				{fromPrice(lot.minPriceCents)}
+			</td>
+			<ArrowCell
+				label={`Open ${lot.name}`}
+				params={{ lot: lot.handle, roaster: slug }}
+				to="/roaster/$roaster/$lot"
+			/>
+		</tr>
 	);
 };
 
 const LotsBody = ({
-	isAuthenticated,
 	loading,
-	onClose,
-	onOpen,
-	openLotId,
 	pages,
 	searching,
 	slug,
 	term,
 	visible,
 }: {
-	isAuthenticated: boolean;
 	loading: boolean;
-	onClose: () => void;
-	onOpen: (lotId: Id<"products">) => void;
-	openLotId: Id<"products"> | null;
 	pages: { loadMore: (count: number) => void; status: string };
 	searching: boolean;
 	slug: string;
 	term: string;
 	visible: LotRow[] | undefined;
 }) => {
+	const tableRef = useRef<HTMLTableElement>(null);
 	if (loading || visible === undefined) {
 		return (
 			<div className="py-16">
@@ -174,7 +128,7 @@ const LotsBody = ({
 	}
 	return (
 		<>
-			<table className="mt-8 w-full border-collapse">
+			<table className="mt-8 w-full border-collapse" ref={tableRef}>
 				<thead>
 					<tr className="border-b">
 						<th className={`${headCell} w-10 md:w-28`} scope="col">
@@ -195,30 +149,18 @@ const LotsBody = ({
 						>
 							Price
 						</th>
-						{isAuthenticated && (
-							<th className={headCell} scope="col">
-								<span className="sr-only">Log</span>
-							</th>
-						)}
+						<th className={headCell} scope="col">
+							<span className="sr-only">Open the lot</span>
+						</th>
 					</tr>
 				</thead>
 				<tbody>
 					{visible.map((lot, index) => (
-						<LotTableRow
-							canLog={isAuthenticated}
-							index={index}
-							isOpen={openLotId === lot.id}
-							key={lot.id}
-							lot={lot}
-							onClose={onClose}
-							onOpen={() => {
-								onOpen(lot.id);
-							}}
-							slug={slug}
-						/>
+						<LotTableRow index={index} key={lot.id} lot={lot} slug={slug} />
 					))}
 				</tbody>
 			</table>
+			<TableHoverImage tableRef={tableRef} />
 			{!searching && pages.status === "CanLoadMore" && (
 				<div className="flex justify-center pt-8">
 					<button
@@ -317,14 +259,15 @@ const LotFilterRow = ({
 );
 
 /**
- * The roaster's lot catalog (screen inventory §11), the place a log starts:
- * find the lot you tried, hit Log, rate it, keep a note. Browsing pages the
+ * The roaster's lot catalog (screen inventory §11). Browsing pages the
  * full catalog; typing in the filter switches to a name search over the
  * whole catalog (Sey runs ~887 lots, so paging alone would never find
  * anything). Same hairline table as the index; the roaster's notes fill the
- * wide column. The stock boundary is explicit: unavailable lots dim and say
- * so, and filters (size, price, origin, in stock) run against the whole
- * catalog.
+ * wide column; hovering a row floats the lot's photo above the table
+ * (ADR-0015). Logging happens on the lot page, so the catalog's rows end
+ * in the arrow instead of a Log button. The stock boundary is explicit:
+ * unavailable lots dim and say so, and filters (size, price, origin, in
+ * stock) run against the whole catalog.
  */
 export const Lots = ({
 	roasterId,
@@ -333,8 +276,6 @@ export const Lots = ({
 	roasterId: Id<"roasters">;
 	slug: string;
 }) => {
-	const { isAuthenticated } = useConvexAuth();
-	const [openLotId, setOpenLotId] = useState<Id<"products"> | null>(null);
 	const [search, setSearch] = useState("");
 	const [inStockOnly, setInStockOnly] = useState(false);
 	const [maxPriceDollars, setMaxPriceDollars] = useState("");
@@ -411,13 +352,7 @@ export const Lots = ({
 				weightOptions={weightOptions}
 			/>
 			<LotsBody
-				isAuthenticated={isAuthenticated}
 				loading={loading}
-				onClose={() => {
-					setOpenLotId(null);
-				}}
-				onOpen={setOpenLotId}
-				openLotId={openLotId}
 				pages={pages}
 				searching={searching}
 				slug={slug}

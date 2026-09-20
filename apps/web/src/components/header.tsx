@@ -8,11 +8,9 @@ import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect } from "react";
 
-import { ModeToggle } from "./mode-toggle";
+import { navLinkClass } from "@/lib/ui";
 
-/** Caps text link, 44px tall hit area, underline on hover. */
-export const navLinkClass =
-	"label-caps inline-flex min-h-11 items-center hover:underline";
+import { ModeToggle } from "./mode-toggle";
 
 /** The current route stays underlined so the nav doubles as a "you are here". */
 const activeProps = { className: "underline" };

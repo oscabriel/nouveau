@@ -5,18 +5,17 @@ import { useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useState } from "react";
 
-import { bodyCell, headCell } from "@/components/drop-index";
 import Loader from "@/components/loader";
 import { PageTitle } from "@/components/page-title";
 import { SearchField } from "@/components/search-field";
 import { SiteFooter } from "@/components/site-footer";
 import { StatusChip } from "@/components/status-chip";
+import { ArrowCell } from "@/components/table";
 import { WatchButton } from "@/components/watch-button";
 import { matchesRoaster } from "@/lib/roaster-search";
+import { bodyCell, headCell, navLinkClass } from "@/lib/ui";
 
 type Roaster = FunctionReturnType<typeof api.roasters.listActive>[number];
-
-const capsLink = "label-caps inline-flex min-h-11 items-center hover:underline";
 
 const RoasterRow = ({
 	canWatch,
@@ -60,6 +59,11 @@ const RoasterRow = ({
 				<WatchButton roasterId={roaster.id} />
 			</td>
 		)}
+		<ArrowCell
+			label={`Open ${roaster.name}`}
+			to="/roaster/$roaster"
+			params={{ roaster: roaster.slug }}
+		/>
 	</tr>
 );
 
@@ -115,6 +119,9 @@ const Directory = ({
 							<span className="sr-only">Watch</span>
 						</th>
 					)}
+					<th className={headCell} scope="col">
+						<span className="sr-only">Open the roaster</span>
+					</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -151,11 +158,11 @@ const RoastersComponent = () => {
 			<div className="px-5 pt-10 md:px-10 md:pt-14">
 				<PageTitle count={roasters?.length} title="Roasters">
 					{isAuthenticated && (
-						<Link className={capsLink} to="/settings/alerts">
+						<Link className={navLinkClass} to="/settings/alerts">
 							Your watches
 						</Link>
 					)}
-					<Link className={capsLink} to="/roasters/submit">
+					<Link className={navLinkClass} to="/roasters/submit">
 						Add a roaster
 					</Link>
 				</PageTitle>

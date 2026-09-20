@@ -1,9 +1,11 @@
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
-import { DROP_TYPE_LABEL, formatDropDate, thumbUrl } from "@/lib/drops";
+import { ArrowCell, TableHoverImage } from "@/components/table";
+import { DROP_TYPE_LABEL, formatDropDate } from "@/lib/drops";
 import type { DropRow, DropType } from "@/lib/drops";
 import { displayPriceCents, formatPrice } from "@/lib/format";
+import { bodyCell, headCell } from "@/lib/ui";
 
 type Filter = "all" | DropType;
 
@@ -23,10 +25,6 @@ const onePerLot = (rows: DropRow[]): DropRow[] => {
 		return true;
 	});
 };
-
-/** Table head and body cell classes, shared by every index table. */
-export const headCell = "label-caps text-foreground pb-3 text-left font-medium";
-export const bodyCell = "py-5 align-top text-sm leading-snug md:text-[15px]";
 
 const FilterTabs = ({
 	counts,
@@ -78,21 +76,14 @@ const DropTableRow = ({
 	const price = displayPriceCents(row.newPriceCents);
 	const oldPrice = displayPriceCents(row.oldPriceCents);
 	return (
-		<tr className="group hover:bg-muted focus-within:bg-muted border-b transition-colors">
-			<td className={`${bodyCell} relative w-10 pr-2 md:w-28 md:pr-3`}>
-				<span className="text-muted-foreground tnum text-xs transition-opacity group-focus-within:opacity-0 group-hover:opacity-0">
-					{index + 1}
-				</span>
-				{row.imageUrl !== null && (
-					<img
-						alt=""
-						aria-hidden
-						className="absolute inset-y-0 left-0 hidden h-full w-28 -translate-x-3 object-cover opacity-0 transition duration-300 ease-out group-focus-within:translate-x-0 group-focus-within:opacity-100 group-hover:translate-x-0 group-hover:opacity-100 motion-reduce:transition-none md:block"
-						decoding="async"
-						loading="lazy"
-						src={thumbUrl(row.imageUrl, 240)}
-					/>
-				)}
+		<tr
+			className="group hover:bg-muted focus-within:bg-muted border-b transition-colors"
+			data-image-url={row.imageUrl ?? undefined}
+		>
+			<td
+				className={`${bodyCell} text-muted-foreground tnum w-10 pr-2 text-xs md:w-28 md:pr-3`}
+			>
+				{index + 1}
 			</td>
 			<td className={`${bodyCell} pr-4`}>
 				<Link
@@ -151,27 +142,21 @@ const DropTableRow = ({
 				)}
 				{price === null ? "" : formatPrice(price)}
 			</td>
-			<td className={`${bodyCell} w-6 text-right md:w-8`}>
-				<a
-					aria-label={`Open ${row.productName} at ${row.roasterName}`}
-					className="inline-flex size-6 items-center justify-center"
-					href={row.lotUrl}
-					rel="noreferrer"
-					target="_blank"
-				>
-					<span className="size-2.5 rounded-full border border-current transition-colors group-hover:bg-current" />
-				</a>
-			</td>
+			<ArrowCell
+				label={`Open ${row.productName} at ${row.roasterName}`}
+				params={{ lot: row.lotHandle, roaster: row.roasterSlug }}
+				to="/roaster/$roaster/$lot"
+			/>
 		</tr>
 	);
 };
 
 /**
  * The hairline drop table on its own: N°, lot, roaster and city (unless the
- * page is that roaster's), origin, process, event, date, price, shop link.
- * Hovering a row slides the lot's photo in from the left over its number.
- * The lot name opens the Nouveau lot page; the circle at the row's end
- * opens the roaster's own shop.
+ * page is that roaster's), origin, process, event, date, price. The lot
+ * name and the arrow at the row's end both open the Nouveau lot page
+ * (ADR-0015); hovering a row floats the lot's photo above the table,
+ * following the pointer.
  */
 export const DropTable = ({
 	className = "",
@@ -182,61 +167,67 @@ export const DropTable = ({
 	rows: DropRow[];
 	/** Off on a roaster's own page, where the name is the title. */
 	showRoaster?: boolean;
-}) => (
-	<table className={`w-full border-collapse ${className}`}>
-		<thead>
-			<tr className="border-b">
-				<th className={`${headCell} w-10 md:w-28`} scope="col">
-					N°
-				</th>
-				<th className={headCell} scope="col">
-					Lot
-				</th>
-				{showRoaster && (
-					<>
+}) => {
+	const tableRef = useRef<HTMLTableElement>(null);
+	return (
+		<>
+			<table className={`w-full border-collapse ${className}`} ref={tableRef}>
+				<thead>
+					<tr className="border-b">
+						<th className={`${headCell} w-10 md:w-28`} scope="col">
+							N°
+						</th>
 						<th className={headCell} scope="col">
-							Roaster
+							Lot
+						</th>
+						{showRoaster && (
+							<>
+								<th className={headCell} scope="col">
+									Roaster
+								</th>
+								<th className={`${headCell} hidden lg:table-cell`} scope="col">
+									City
+								</th>
+							</>
+						)}
+						<th className={`${headCell} hidden md:table-cell`} scope="col">
+							Origin
 						</th>
 						<th className={`${headCell} hidden lg:table-cell`} scope="col">
-							City
+							Process
 						</th>
-					</>
-				)}
-				<th className={`${headCell} hidden md:table-cell`} scope="col">
-					Origin
-				</th>
-				<th className={`${headCell} hidden lg:table-cell`} scope="col">
-					Process
-				</th>
-				<th className={`${headCell} hidden sm:table-cell`} scope="col">
-					Event
-				</th>
-				<th className={headCell} scope="col">
-					Released
-				</th>
-				<th
-					className={`${headCell} hidden text-right sm:table-cell`}
-					scope="col"
-				>
-					Price
-				</th>
-				<th className={headCell} scope="col">
-					<span className="sr-only">Shop</span>
-				</th>
-			</tr>
-		</thead>
-		<tbody>
-			{rows.map((row, index) => (
-				<DropTableRow
-					index={index}
-					key={row.eventId}
-					row={row}
-					showRoaster={showRoaster}
-				/>
-			))}
-		</tbody>
-	</table>
-);
+						<th className={`${headCell} hidden sm:table-cell`} scope="col">
+							Event
+						</th>
+						<th className={headCell} scope="col">
+							Released
+						</th>
+						<th
+							className={`${headCell} hidden text-right sm:table-cell`}
+							scope="col"
+						>
+							Price
+						</th>
+						<th className={headCell} scope="col">
+							<span className="sr-only">Open the lot</span>
+						</th>
+					</tr>
+				</thead>
+				<tbody>
+					{rows.map((row, index) => (
+						<DropTableRow
+							index={index}
+							key={row.eventId}
+							row={row}
+							showRoaster={showRoaster}
+						/>
+					))}
+				</tbody>
+			</table>
+			<TableHoverImage tableRef={tableRef} />
+		</>
+	);
+};
 
 /**
  * The index: every lot with a recent alert-worthy drop, newest first,

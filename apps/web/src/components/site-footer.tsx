@@ -3,8 +3,7 @@ import { useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
 import { Link } from "@tanstack/react-router";
 
-const footerLink =
-	"label-caps inline-flex min-h-11 items-center hover:underline";
+import { navLinkClass } from "@/lib/ui";
 
 const scrollToTop = () => {
 	window.scrollTo({ behavior: "smooth", top: 0 });
@@ -42,27 +41,27 @@ export const SiteFooter = () => {
 			</div>
 			<div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-5 pt-4 pb-5 md:px-10">
 				<nav className="flex gap-4 md:gap-5">
-					<Link className={footerLink} to="/roasters">
+					<Link className={navLinkClass} to="/roasters">
 						Roasters
 					</Link>
-					<Link className={footerLink} to="/activity">
+					<Link className={navLinkClass} to="/activity">
 						Activity
 					</Link>
-					<Link className={footerLink} to="/drops">
+					<Link className={navLinkClass} to="/drops">
 						Feed
 					</Link>
 				</nav>
-				<button className={footerLink} onClick={scrollToTop} type="button">
+				<button className={navLinkClass} onClick={scrollToTop} type="button">
 					Back to the top
 				</button>
 				<nav className="flex gap-4 md:gap-5">
 					{isAuthenticated ? (
-						<Link className={footerLink} to="/settings/alerts">
+						<Link className={navLinkClass} to="/settings/alerts">
 							Watches
 						</Link>
 					) : (
 						<button
-							className={footerLink}
+							className={navLinkClass}
 							onClick={() => {
 								startSignIn();
 							}}
@@ -72,7 +71,7 @@ export const SiteFooter = () => {
 						</button>
 					)}
 					<a
-						className={footerLink}
+						className={navLinkClass}
 						href="https://github.com/oscabriel/nouveau"
 						rel="noreferrer"
 						target="_blank"
