@@ -317,8 +317,8 @@ describe("logs", () => {
 		expect(all.every((lot) => lot.handle.length > 0)).toBe(true);
 	});
 
-	test("profile returns the user's logs newest first plus watched roasters", async () => {
-		const { lotId, t, userB, userId } = await setup();
+	test("a public profile returns logs only, never watches or the try list", async () => {
+		const { lotId, t, userId } = await setup();
 		await t.run(async (ctx) => {
 			const roasterB = await ctx.db.insert("roasters", {
 				city: "Portland",
@@ -338,6 +338,9 @@ describe("logs", () => {
 				userId,
 			});
 		});
+		await asUser(t, userId).mutation(api.savedCoffees.save, {
+			productId: lotId,
+		});
 		await asUser(t, userId).mutation(api.logs.createLog, {
 			productId: lotId,
 			rating: 4,
@@ -347,18 +350,70 @@ describe("logs", () => {
 			rating: 5,
 		});
 
-		const profile = await t.query(api.logs.profile, { userId });
-		expect(profile?.user).toMatchObject({ name: "Taster One" });
-		expect(profile?.logs).toHaveLength(2);
-		expect(profile?.logs[0]?.rating).toBe(5);
-		expect(profile?.logs[1]?.rating).toBe(4);
-		expect(profile?.roasters).toHaveLength(1);
-		expect(profile?.roasters[0]).toMatchObject({ name: "Heart" });
+		// Signed-out viewer.
+		const signedOut = await t.query(api.logs.profile, { userId });
+		expect(signedOut?.kind).toBe("public");
+		expect(signedOut?.user).toMatchObject({ name: "Taster One" });
+		expect(signedOut?.logs).toHaveLength(2);
+		expect(signedOut?.logs[0]?.rating).toBe(5);
+		expect(signedOut?.logs[1]?.rating).toBe(4);
+		expect(signedOut).not.toHaveProperty("watches");
+		expect(signedOut).not.toHaveProperty("saved");
 
-		const other = await t.query(api.logs.profile, { userId: userB });
-		expect(other?.user).toMatchObject({ name: "Taster Two" });
-		expect(other?.logs).toHaveLength(0);
-		expect(other?.logsTruncated).toBe(false);
+		// A signed-in viewer who is not the user sees the same branch.
+		const other = await t.run((ctx) =>
+			ctx.db.insert("users", {
+				name: "Taster Three",
+				providerAccountId: "google-3",
+			})
+		);
+		const viewer = await asUser(t, other).query(api.logs.profile, { userId });
+		expect(viewer?.kind).toBe("public");
+		expect(viewer).not.toHaveProperty("watches");
+		expect(viewer).not.toHaveProperty("saved");
+	});
+
+	test("the owner's profile adds watches with health and the try list with stock", async () => {
+		const { lotId, t, userId } = await setup();
+		await t.run(async (ctx) => {
+			const roasterB = await ctx.db.insert("roasters", {
+				city: "Portland",
+				claimed: false,
+				domain: "heart.example.com",
+				name: "Heart",
+				productPageUrl: "https://heart.example.com/coffee",
+				slug: "heart",
+				source: "curated",
+				state: "OR",
+				status: "active",
+				websiteUrl: "https://heart.example.com",
+			});
+			await ctx.db.insert("watches", {
+				muted: true,
+				roasterId: roasterB,
+				userId,
+			});
+		});
+		await asUser(t, userId).mutation(api.savedCoffees.save, {
+			productId: lotId,
+		});
+
+		const profile = await asUser(t, userId).query(api.logs.profile, { userId });
+		if (profile === null || profile.kind !== "owner") {
+			throw new Error("expected the owner branch");
+		}
+		expect(profile.watches).toHaveLength(1);
+		expect(profile.watches[0]).toMatchObject({
+			muted: true,
+			roaster: { name: "Heart" },
+		});
+		expect(profile.watches[0]?.status.health).toBe("watching");
+		expect(profile.saved).toHaveLength(1);
+		expect(profile.saved[0]).toMatchObject({
+			available: null,
+			lot: { handle: "mullugeta", name: "Ethiopia Mullugeta Muntasha" },
+			roaster: { slug: "sey" },
+		});
 	});
 
 	test("profile resolves a malformed or unknown id to null, not an error", async () => {

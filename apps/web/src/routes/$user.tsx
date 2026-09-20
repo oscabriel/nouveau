@@ -74,27 +74,28 @@ const ProfileComponent = () => {
 					<p className="text-muted-foreground text-sm">
 						{profile.logsTruncated
 							? `${profile.logs.length}+ logs`
-							: plural(profile.logs.length, "log")}{" "}
-						· {plural(profile.roasters.length, "roaster")} watched
+							: plural(profile.logs.length, "log")}
+						{profile.kind === "owner" &&
+							` · ${plural(profile.watches.length, "roaster")} watched`}
 					</p>
 				</div>
 			</header>
 
-			{profile.roasters.length > 0 && (
+			{profile.kind === "owner" && profile.watches.length > 0 && (
 				<section className="mb-6">
 					<h2 className="mb-2 font-semibold">Watching</h2>
 					<div className="flex flex-wrap gap-2">
-						{profile.roasters.map((roaster) => (
+						{profile.watches.map((watch) => (
 							<span
 								className="rounded-full border px-3 py-1 text-sm"
-								key={roaster.id}
+								key={watch.roaster.id}
 							>
 								<Link
 									className="hover:underline"
-									params={{ roaster: roaster.slug }}
+									params={{ roaster: watch.roaster.slug }}
 									to="/roaster/$roaster"
 								>
-									{roaster.name}
+									{watch.roaster.name}
 								</Link>
 							</span>
 						))}

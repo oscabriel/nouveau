@@ -11,14 +11,15 @@ import { mutation, query } from "./_generated/server";
 import {
 	LOG_FEED_LIMIT,
 	MAX_PROFILE_LOGS,
-	MAX_WATCHES_PER_USER,
+	MAX_PROFILE_SAVED,
 } from "./constants";
 import { redirectTarget } from "./handles";
-import { requireUserId } from "./identity";
+import { optionalUserId, requireUserId } from "./identity";
 import { joinNotes } from "./lotFacts";
-import { roasterCardValidator } from "./roasters";
+import { savedCards, savedCoffeeValidator } from "./savedCoffees";
 import { MAX_TASTING_NOTES, tastingNoteValidator } from "./tasting";
 import type { TastingNote } from "./tasting";
+import { watchCards, watchCardValidator } from "./watches";
 /** Ratings are 1–5 in half steps (spec §14.1); anything else is rejected. */
 export const isValidRating = (rating: number): boolean =>
 	Number.isInteger(rating * 2) && rating >= 1 && rating <= 5;
@@ -155,14 +156,18 @@ export const recentLogs = query({
 });
 
 /**
- * One public profile (§14.2). ADR-0011: the address is the user's handle, but
- * the arg keeps the old name and accepts all three shapes a URL can carry:
- * the current handle, a handle the user once held (old-handle redirect), or a
- * legacy users-document id from a pre-handle /profile link. A malformed or
- * unknown one resolves to null (the "no taster here" page) instead of
- * failing argument validation. `logs` is capped at MAX_PROFILE_LOGS;
- * `logsTruncated` says when the cap hit. The returned user carries the
- * current handle so a stale address can redirect to the canonical one.
+ * One public profile (§14.2), split by viewer (ADR-0016). The address
+ * accepts all three shapes a URL can carry: the current handle, a handle
+ * the user once held (old-handle redirect), or a legacy users-document id
+ * from a pre-handle /profile link. A malformed or unknown one resolves to
+ * null (the "no taster here" page) instead of failing argument validation.
+ *
+ * `kind` is the branch: a viewer who is not the user gets logs only, never
+ * the watches, never the try list, enforced here in the query. The owner
+ * also gets their watches (with health and mute) and the try list (with
+ * stock at last check), each capped to the profile's highlight budget. The
+ * returned user carries the current handle so a stale address can redirect
+ * to the canonical one.
  */
 export const profile = query({
 	args: { userId: v.string() },
@@ -187,43 +192,48 @@ export const profile = query({
 			.withIndex("by_user_and_logged_at", (q) => q.eq("userId", userId))
 			.order("desc")
 			.take(MAX_PROFILE_LOGS + 1);
-		const watches = await ctx.db
-			.query("watches")
-			.withIndex("by_user_id", (q) => q.eq("userId", userId))
-			.take(MAX_WATCHES_PER_USER);
-		const roasterCards = await Promise.all(
-			watches.map(async (watch) => {
-				const roaster = await ctx.db.get(watch.roasterId);
-				return roaster === null
-					? null
-					: {
-							city: roaster.city,
-							id: roaster._id,
-							name: roaster.name,
-							slug: roaster.slug,
-							state: roaster.state,
-						};
-			})
-		);
+		const hydrated = await hydrateAll(ctx, logs.slice(0, MAX_PROFILE_LOGS));
+		const logsTruncated = logs.length > MAX_PROFILE_LOGS;
+		const userCard = {
+			handle: user.handle,
+			id: user._id,
+			imageUrl: user.imageUrl,
+			name: user.name,
+		};
+		const viewerId = await optionalUserId(ctx);
+		if (viewerId !== userId) {
+			// Public branch: never the watches, never the try list.
+			return {
+				kind: "public" as const,
+				logs: hydrated,
+				logsTruncated,
+				user: userCard,
+			};
+		}
 		return {
-			logs: await hydrateAll(ctx, logs.slice(0, MAX_PROFILE_LOGS)),
-			logsTruncated: logs.length > MAX_PROFILE_LOGS,
-			roasters: roasterCards.filter((card) => card !== null),
-			user: {
-				handle: user.handle,
-				id: user._id,
-				imageUrl: user.imageUrl,
-				name: user.name,
-			},
+			kind: "owner" as const,
+			logs: hydrated,
+			logsTruncated,
+			saved: await savedCards(ctx, userId, MAX_PROFILE_SAVED),
+			user: userCard,
+			watches: await watchCards(ctx, userId),
 		};
 	},
 	returns: v.union(
 		v.null(),
 		v.object({
+			kind: v.literal("public"),
 			logs: v.array(logCardValidator),
 			logsTruncated: v.boolean(),
-			roasters: v.array(roasterCardValidator),
 			user: tasterValidator,
+		}),
+		v.object({
+			kind: v.literal("owner"),
+			logs: v.array(logCardValidator),
+			logsTruncated: v.boolean(),
+			saved: v.array(savedCoffeeValidator),
+			user: tasterValidator,
+			watches: v.array(watchCardValidator),
 		})
 	),
 });

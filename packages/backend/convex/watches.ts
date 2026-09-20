@@ -1,8 +1,9 @@
 import { v } from "convex/values";
+import type { Infer } from "convex/values";
 
 import type { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { MAX_WATCHES_PER_USER } from "./constants";
 import { followerCounts } from "./followerCounts";
 import { crawlStatusValidator, getCrawlStatus } from "./health";
@@ -99,7 +100,47 @@ export const setWatchMuted = mutation({
 	returns: v.null(),
 });
 
-/** Watch rows for the signed-in user, with roaster + status-chip data. */
+/** Watch rows with roaster + status-chip data: the mute list and the profile. */
+export const watchCardValidator = v.object({
+	muted: v.boolean(),
+	roaster: roasterCardValidator,
+	status: crawlStatusValidator,
+});
+
+export type WatchCard = Infer<typeof watchCardValidator>;
+
+/** Hydrate one user's watches with health and the status chip. */
+export const watchCards = async (
+	ctx: QueryCtx,
+	userId: Id<"users">
+): Promise<WatchCard[]> => {
+	const watches = await ctx.db
+		.query("watches")
+		.withIndex("by_user_id", (q) => q.eq("userId", userId))
+		.take(MAX_WATCHES_PER_USER);
+	return Promise.all(
+		watches.map(async (watch) => {
+			const roaster = await ctx.db.get(watch.roasterId);
+			if (roaster === null) {
+				throw new Error(
+					`Watch ${watch._id} references missing roaster ${watch.roasterId}`
+				);
+			}
+			return {
+				muted: watch.muted,
+				roaster: {
+					city: roaster.city,
+					id: roaster._id,
+					name: roaster.name,
+					slug: roaster.slug,
+					state: roaster.state,
+				},
+				status: await getCrawlStatus(ctx, watch.roasterId),
+			};
+		})
+	);
+};
+
 export const listMyWatches = query({
 	args: {},
 	handler: async (ctx) => {
@@ -107,39 +148,9 @@ export const listMyWatches = query({
 		if (userId === null) {
 			return [];
 		}
-		const watches = await ctx.db
-			.query("watches")
-			.withIndex("by_user_id", (q) => q.eq("userId", userId))
-			.take(MAX_WATCHES_PER_USER);
-		return Promise.all(
-			watches.map(async (watch) => {
-				const roaster = await ctx.db.get(watch.roasterId);
-				if (roaster === null) {
-					throw new Error(
-						`Watch ${watch._id} references missing roaster ${watch.roasterId}`
-					);
-				}
-				return {
-					muted: watch.muted,
-					roaster: {
-						city: roaster.city,
-						id: roaster._id,
-						name: roaster.name,
-						slug: roaster.slug,
-						state: roaster.state,
-					},
-					status: await getCrawlStatus(ctx, watch.roasterId),
-				};
-			})
-		);
+		return watchCards(ctx, userId);
 	},
-	returns: v.array(
-		v.object({
-			muted: v.boolean(),
-			roaster: roasterCardValidator,
-			status: crawlStatusValidator,
-		})
-	),
+	returns: v.array(watchCardValidator),
 });
 
 /** Ids the signed-in user watches, for watch-button state anywhere. */

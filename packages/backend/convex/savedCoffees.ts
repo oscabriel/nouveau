@@ -7,6 +7,7 @@ import {
 	paginationOptsValidator,
 	paginationResultValidator,
 } from "convex/server";
+import type { Infer } from "convex/values";
 import { v } from "convex/values";
 
 import type { Doc, Id } from "./_generated/dataModel";
@@ -40,6 +41,8 @@ export const savedCoffeeValidator = v.object({
 	savedAt: v.number(),
 	savedId: v.id("savedCoffees"),
 });
+
+export type SavedCard = Infer<typeof savedCoffeeValidator>;
 
 const findSave = (
 	ctx: QueryCtx | MutationCtx,
@@ -151,6 +154,20 @@ export const mySavedProductIds = query({
 	},
 	returns: v.array(v.id("products")),
 });
+
+/** Every save of one user, newest first, capped for a highlight list. */
+export const savedCards = async (
+	ctx: QueryCtx,
+	userId: Id<"users">,
+	limit: number
+): Promise<SavedCard[]> => {
+	const saves = await ctx.db
+		.query("savedCoffees")
+		.withIndex("by_user_and_saved_at", (q) => q.eq("userId", userId))
+		.order("desc")
+		.take(limit);
+	return hydrateAll(ctx, saves);
+};
 
 /** The newest few saves for the signed-in home's "Want to try" section. */
 export const recentMine = query({

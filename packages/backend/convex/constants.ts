@@ -117,8 +117,9 @@ export const MAX_TILE_POOL = 50;
 export const TILE_SCAN_LIMIT = 200;
 
 // Logs rendered on a public profile (§14.2); the profile is a highlight, not
-// an archive dump.
+// an archive dump. The owner's try list caps the same way.
 export const MAX_PROFILE_LOGS = 50;
+export const MAX_PROFILE_SAVED = 50;
 
 // Lots rendered on one lot page (§15); a highlight, like the profile.
 export const LOT_PAGE_LOGS_LIMIT = 20;
