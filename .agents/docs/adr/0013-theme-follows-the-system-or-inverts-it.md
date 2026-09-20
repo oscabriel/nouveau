@@ -12,7 +12,7 @@ Decided 2026-09-20 (owner), recorded before any code. Implementation is a later 
 
 ## Decision
 
-The preference has two values, relative to the operating system: **system** (default) and **inverted**. There is no absolute light or dark choice. The control is one switch on `/settings/appearance`; the header has no theme control. A signed-out visitor gets the system theme with no way to change it, which is acceptable because the pages are designed for both themes and the OS setting is the visitor's own.
+The preference has two values, relative to the operating system: **system** (default) and **inverted**. There is no absolute light or dark choice. The control is a single switch that flips between the words LIGHT and DARK, and its default side is whatever the user's system theme is, so a dark-OS visitor lands on the DARK side of the switch showing the dark page. It lives on `/settings/appearance`, and the header's handle dropdown carries the same pair (ADR-0012): one state, two mounts. A signed-out visitor gets the system theme with no control, which is acceptable because the pages are designed for both themes and the OS setting is the visitor's own.
 
 The stored value is the relation, not a colour. When the OS flips, an inverted user flips with it. The value stays in `localStorage` per browser, as today, because it describes this device's OS relative to this device's page.
 
@@ -26,9 +26,8 @@ The stored value is the relation, not a colour. When the OS flips, an inverted u
 - The default changes from light to system. Anyone with a dark OS sees the dark theme on first visit from now on. The design pass reviews both themes at every stage already, so no page is unprepared.
 - `next-themes` handles `system` natively; "inverted" is computed from its `systemTheme` and needs a `matchMedia` listener so a live OS change re-inverts without a reload.
 - The existing stored `light` and `dark` values are discarded on first load after the change; nobody has a preference worth migrating.
-- `ModeToggle` and its `min-h-11 w-9` hydration spacer leave the header. `DESIGN.md`'s header entry drops its last item.
+- `ModeToggle` and its `min-h-11 w-9` hydration spacer leave the standalone header row; the theme pair moves into the handle dropdown, which is new chrome. `DESIGN.md`'s header entry drops its last item and the title loses "not the header".
 
 ## Open questions
 
-- **Copy for the switch.** "Match my system" versus "Opposite of my system", or one caps toggle pair in the vocabulary the roasters table uses (WATCH / WATCHING). A single labelled switch is the recommendation.
-- **A signed-out escape hatch.** None planned. If a tester asks for one, the answer is sign in, not a header toggle.
+None. The switch copy (LIGHT / DARK, default following the system) and the signed-out behaviour are settled by the owner, 2026-09-20.

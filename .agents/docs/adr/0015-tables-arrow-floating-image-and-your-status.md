@@ -18,9 +18,11 @@ The drop table ends each row with a 10 pixel hairline circle that fills on hover
 
 **The image floats and follows the cursor.** On hover the lot's photo appears above the table, larger than the row, anchored to the pointer and moving with it across the table, so it never sits inside a cell. It is one element per table, `pointer-events: none`, shown only for a fine pointer; touch gets no hover image. Keyboard focus on a row shows the same image anchored to the row's leading edge, since there is no pointer to follow. The in-cell slide and the fading row number are gone. Tables whose rows have no image (the roasters directory) show nothing.
 
-**The roasters directory shows your status, not the crawler's.** The crawl-health Status column is removed from the directory; health stays on the roaster page's status line, on `/settings/alerts`, and in the owner's watches list. The WATCH / WATCHING toggle column becomes the directory's Status column, labelled as such, showing the viewer's own relation to each roaster.
+**The roasters directory shows your status, not the crawler's.** The crawl-health Status column is removed from the directory; health stays on the roaster page's status line, on `/settings/alerts`, and in the owner's watches list. The WATCH / WATCHING toggle column becomes the directory's Status column, labelled as such, showing the viewer's own relation to each roaster. For a signed-out viewer the column is removed entirely rather than filled with sign-in links; the signed-out directory simply has one fewer column, and the header's LOGIN is the sign-in affordance.
 
-**`/drops` is a table.** The feed cards become `DropTable` rows with the landing's filter tabs. The lot name links to the lot page; the row-end arrow is the second link to it. The "Log" action goes; logging happens on the lot page. The variant list goes; the price cell shows the lot's lowest available price, prefixed "from" when the lot is also sold in a larger or dearer size.
+**`/drops` is a table.** The feed cards become `DropTable` rows with the landing's filter tabs. The lot name links to the lot page; the row-end arrow is the second link to it. The "Log" action goes; logging happens on the lot page. Rows are per event, as the roaster page is, except that variants dropping together (the same event across multiple weights) are one row, which is how the feed already groups them. The per-variant list goes; the price cell shows the event's own price, with the old price struck through on a price-drop row, and the lot's lowest available price prefixed "from" otherwise.
+
+**Floating image size.** About 280 pixels wide at 3:2, floating above-right of the pointer so the cursor never covers it, clamped inside the viewport. One size lives in the design tokens for every table.
 
 ## Considered alternatives
 
@@ -31,17 +33,13 @@ The drop table ends each row with a 10 pixel hairline circle that fills on hover
 
 ## Consequences
 
-- Where the arrow goes is the main open question below, because today's circle opens the shop and today's lot name opens the lot page.
-- Signed out, the directory's Status column has no relation to show. It needs a defined state (empty, or a SIGN IN caps link that starts the sign-in flow).
+- Where the arrow goes is the one open question below, because today's circle opens the shop and today's lot name opens the lot page.
+- Signed out, the directory loses its Status column; the queries behind it already branch on `optionalUserId`, so the column's absence is a component-level branch on the same value.
 - The lot catalog on the roaster page loses its Log / Close cell to the arrow, which means the inline log form on that page goes and logging happens on the lot page only. `lots.tsx`, `log-form.tsx`'s catalog mount, and the tinted second row all simplify.
-- The floating image needs the row's image URL on every table row, which the drop queries already return and the catalog and saved queries need to add. The `thumbUrl` size grows from 240 to whatever the floating size is.
-- Price-drop rows in `/drops` lose their per-event struck price if the cell shows the lot's minimum instead of the changed variant's price. That is the second open question.
-- `/drops` collapsing to one row per lot (as the landing does) or keeping one row per event (as the roaster page does) is the third.
+- The floating image needs the row's image URL on every table row, which the drop queries already return and the catalog and saved queries need to add. The `thumbUrl` size grows from 240 to the floating size (about 280 pixels wide).
+- Price-drop rows in `/drops` keep their struck old price because the cell shows the event's price, not the lot's minimum.
+- Grouped-variant rows on `/drops` mean the event's price cell may need the group's own price (the dropped variants' price on a price-drop event), which the feed already computes.
 
 ## Open questions
 
-- **Arrow destination.** Same page as the lot name (Nouveau's lot page), or the roaster's shop as the circle did. Recommendation: the lot page, so every mark in a row goes to Nouveau and the shop is one click further, on the lot page, where the price and stock line is. If the shop link stays, it should use the up-right arrow the feed card already uses for external links, so the two arrows say different things.
-- **Price cell on `/drops`.** The lot's lowest available price with "from", as decided, loses the old-price strike on a price-drop row. Options: keep the strike when the event is a price drop and the dropped variant is the cheapest; or show the event's own price on `/drops` and the "from" price elsewhere. Recommendation: the event's price with its strike on a price-drop row, "from" the minimum otherwise.
-- **One row per lot or per event on `/drops`.** The landing collapses; the roaster page does not. A feed is a log of events, so per event is the natural reading; a lot that dropped and restocked in a week would then appear twice.
-- **Floating image size.** Not set. Something near 240 pixels wide at 3:2, offset from the pointer so the cursor never covers it, and clamped inside the viewport.
-- **Directory rows for a signed-out viewer.** Empty Status cell or SIGN IN link. Recommendation: SIGN IN in the caps link style, which also gives the signed-out directory a reason to exist.
+None. The arrow goes to the lot page, same as the name: every mark in a row points at Nouveau, and the shop is one click further, on the lot page, where the price and stock line is. Settled by the owner, 2026-09-20.

@@ -14,20 +14,22 @@ The hero is `apps/web/public/coffea-arabica.png`, the whole Thornton 1808 branch
 
 ## Decision
 
-**Header.** Left: NOUVEAU (home), ROASTERS (`/roasters`), DROPS (`/drops`). Right: two or three links at most. The theme toggle leaves the header (ADR-0013). Sign out leaves the header and lives in `/settings/account`. The owner left the exact right-hand set open; the proposal recorded here is:
+**Header.** Left: NOUVEAU (home), ROASTERS (`/roasters`), DROPS (`/drops`). Right: two or three links at most. The theme toggle leaves the header (ADR-0013). Sign out leaves the header and lives in `/settings/account`. The owner settled the right-hand set:
 
 | State | Right side |
 |---|---|
-| signed out | ACTIVITY, SIGN IN |
-| signed in | ACTIVITY, the user's handle (`/$user`), SETTINGS |
+| signed out | ACTIVITY, LOGIN |
+| signed in | ACTIVITY, the user's handle (`/$user`) |
 
-The split is that the left names what the site is about (roasters, drops) and the right names the people (the community feed, you). Activity could equally sit on the left; that is the open question below. One nav, not two mounts: below `md` the right group wraps under the left instead of rendering twice.
+The split is that the left names what the site is about (roasters, drops) and the right names the people (the community feed, you). Signed out, the second link reads LOGIN; signed in, it becomes the user's handle. The handle carries a dropdown holding SETTINGS and the theme pair (LIGHT / DARK, ADR-0013), so sign-out, settings and theme are all one click deep without spending header links. One nav, not two mounts: below `md` the right group wraps under the left instead of rendering twice.
 
 **Footer.** Every route ends in the footer, including the signed-in and settings pages. Its link row mirrors the header on the left (NOUVEAU, ROASTERS, DROPS), keeps BACK TO THE TOP in the middle, and shows ABOUT and GITHUB on the right. No user links in the footer. `/about` is a new route.
 
-**The plant replaces the marquee.** The scrolling wordmark goes. In its place the footer shows the plate's parts, each with a caption in a script face naming the part and linking to its Wikipedia article: the stamens, the pistil, the berry, the berry halves, the seed, and the seed in its aril. Under or beside them, a much larger rendering of the branch links to the Coffea arabica article. The captions are content, not decoration, so the images carry alt text and the block is not `aria-hidden`.
+**The plant replaces the marquee.** The scrolling wordmark goes. In its place the footer shows the plate's parts, each with a caption in a script face naming the part and linking to its Wikipedia article: Stamen (the stamens), Gynoecium (the pistil), Drupe (the berry and the berry halves), Seed, and Aril (the seed in its aril cup), no section anchors. Under or beside them, a much larger rendering of the branch links to the Coffea arabica article. The captions are content, not decoration, so the images carry alt text and the block is not `aria-hidden`.
 
-**Hero.** The branch turns on its side, about 80 degrees, so the leaves hang down almost flat, and renders somewhat larger than today's 224 and 272 pixels. It stays the signed-out and signed-in landing's opening image (ADR-0014).
+**The caption face is Caveat, self-hosted**, per the design system's font rule. It reads at caption size on both themes; Pinyon Script is the fallback if Caveat reads too casual next to the plate.
+
+**Hero.** The branch turns on its side, about 80 degrees, leaves hanging left, as a pre-rotated export rather than a CSS transform, so the layout box is right and the cream-fringe fix rides along in the same cut. It renders somewhat larger than today's 224 and 272 pixels. It stays the signed-out and signed-in landing's opening image (ADR-0014). The owner will supply a fresh export in `apps/web/public/`.
 
 ## Considered alternatives
 
@@ -37,16 +39,8 @@ The split is that the left names what the site is about (roasters, drops) and th
 
 ## Consequences
 
-- A script typeface enters the type scale. `DESIGN.md` has nine ramps, all grotesk and one serif lede; the caption face is new and needs choosing and loading.
-- The plate assets must be exported at serving size before anything references them. A 33.8 MB PNG in `public/` ships verbatim through Vite. The details are small already (113 to 486 pixels on their long side) and may need a cleaner cutout; the branch needs a downscaled export for the footer and a rotated export for the hero.
+- A script typeface enters the type scale. `DESIGN.md` has nine ramps, all grotesk and one serif lede; Caveat is the first entry in the new slot and must be self-hosted.
+- The plate assets must be exported at serving size before anything references them. A 33.8 MB PNG in `public/` ships verbatim through Vite. The details are small already (113 to 486 pixels on their long side) and may need a cleaner cutout; the branch needs a downscaled export for the footer and a rotated export for the hero. The owner is re-exporting the hero asset themselves.
 - The hero's cream fringe (the "Not canonized" note in `DESIGN.md`) gets fixed in the same export, since the image is being re-cut anyway.
 - `navLinkClass` in `header.tsx`, `footerLink` in `site-footer.tsx` and `capsLink` in `roasters.index.tsx` are the same string three times; the footer mirroring the header is the moment to keep one.
 - `/about` needs copy. The hackathon log's "What it does" line and `PRODUCT.md`'s tone section are the sources.
-
-## Open questions
-
-- **Where Activity goes.** Right (with the people) as proposed, or left (as a third content link, making the right side just SIGN IN or handle plus SETTINGS). Either satisfies "two or three".
-- **Whether SETTINGS is a header link or lives inside `/$user`'s own view.** Dropping it makes the signed-in right side ACTIVITY and the handle, which is the tightest set.
-- **Which Wikipedia targets.** Stamen, Gynoecium (for the pistil), Coffee bean or Drupe for the berry, Seed, Aril; and whether to link a section anchor where the article's relevant paragraph is deep. Coffea arabica for the branch is settled.
-- **Rotation direction and method.** A CSS transform keeps the unrotated layout box, so an 80 degree turn of a 580 by 900 image reserves the wrong space; a pre-rotated export is simpler and lets the fringe fix ride along. Which way the branch turns (leaves hanging left or right) is the owner's eye.
-- **Script face.** No candidate named. It should read at caption size on both themes and be loaded from Google Fonts or self-hosted, per the design system's font rule.

@@ -28,15 +28,8 @@ The tiles show the three latest drops with photos, a white name chip bottom-left
 
 ## Consequences
 
-- A new public query: the most recent rated logs joined to their lot's image, name, roaster slug and handle, with a limit and a random draw for Shuffle. Per the design-pass rule, that is a backend commit with tests before the tile change.
-- The tiles cite a person's log, so the tile links to the lot page, not the log; the taster is not named on the tile. Whether to name them is open below.
+- A new public query: the most recent rated logs joined to their lot's image, name, roaster slug and handle, with a limit and a random draw for Shuffle. Per the design-pass rule, that is a backend commit with tests before the tile change. Its rules, settled by the owner: **pad** the tiles with recent drops so the first rating appears the moment it exists; **dedupe by user** when more than three rated logs exist, so one taster cannot fill all three; **Shuffle draws from the most recent fifty** rated logs with photos, keeping the query bounded; **the taster is not named** on the tile, which is already the tile's link rule, so the query need not return the handle.
+- The tiles cite a person's log, so the tile links to the lot page, not the log; the taster is not named on the tile.
 - The Sign in button and the Find my next bag button share one slot and one primary-button component; the copy and the destination differ by state.
 - The unhealthy-watch banner, which today only ever rendered on the signed-in home, needs its new home built in the same pass or it disappears. ADR-0016 places it in the owner's watches section.
 - `DESIGN.md`'s drop table entry loses Process and the year.
-
-## Open questions
-
-- **Padding the fallback.** With one or two rated logs, show them plus recent drops, or all drops until there are three. Recommendation: pad, so the first rating appears the moment it exists.
-- **One taster filling all three.** Three recent ratings from one user show one person's week. Dedupe by user when more than three rated logs exist, or leave it. Recommendation: dedupe.
-- **Shuffle pool.** All rated logs with photos, or the most recent fifty. Fifty keeps the query bounded; all makes Shuffle more surprising as the record grows.
-- **Naming the taster.** A small handle on the tile makes it social; the owner asked only for stars. Leave for the tile to be seen first.

@@ -47,14 +47,13 @@ Reserved names. Every static top-level route (`roasters`, `roaster`, `drops`, `a
 ## Consequences
 
 - `products` gains an index on roaster and handle, and `lots.get` takes `(roaster slug, handle)` instead of an id. Every `Link` that passes `lotId` (drop tables, tiles, the lot catalog, log cards, saved cards, recommendation results) passes the pair instead, which means the queries behind those surfaces return the handle and the roaster slug with each row.
-- Users need a handle. The `users` table gains one, unique, indexed, checked against the reserved list; `logs.profile` looks up by handle. How a handle is assigned is open (below).
+- Users need a handle, derived from the Google display name at first sign-in with a numeric suffix on collision, editable in `/settings/account`, with the previous handle kept as a redirect; `logs.profile` looks up by handle.
 - Submission enforces slug uniqueness and reserved names; the seed's and the submission's duplicated slug derivation collapse into one function.
 - The redirects are client-side route definitions (Convex static hosting serves one SPA), so the old paths are real routes that navigate on mount. That is fine for humans and for email links; it is not a 301 for crawlers, which the app does not court.
 - The design pass (handoff of 2026-09-20) had planned to leave route names alone. It now follows this map.
 
 ## Open questions
 
-- **Handle source.** Options: derive from the Google display name at first sign-in with a numeric suffix on collision, let the user choose one at first sign-in, or derive and let `/settings/account` change it. A change breaks every shared `/$user` link unless old handles are kept as redirects. The recommendation is derive at sign-in, editable once in settings, with the previous handle held for redirects.
-- **Handle reuse inside a roaster.** Shopify lets a merchant reuse a deleted product's handle. If an archived lot and a current lot share one, the current lot should win the URL and the archived one needs a suffix or an id fallback. Nothing enforces this today because nothing routes on handles yet.
-- **Product-page shops.** For `product_pages` mode the handle comes from the URL path; two products on odd paths could collide. The submission-time baseline crawl can detect this before the roaster goes live.
-- **Redirect window.** Whether the old paths stay forever or get removed after the hackathon. Recommendation: keep them; they cost one route file each.
+None on the user handle: the owner settled it, 2026-09-20. The handle is derived from the Google display name at first sign-in, with a numeric suffix on collision, and is editable in `/settings/account`; the previous handle is kept as a redirect (an `oldHandles` array on the user) so no shared `/$user` link rots.
+
+**Duplicate lot handles get the year, not a number.** When a current and an archived lot in one shop share a `products.handle`, the archived lot's URL gets the year appended, as film titles do (`ethiopia-guji-2024`), rather than a random or numeric suffix. Detection rides the upsert path: the new roaster-plus-handle index makes the conflict a cheap indexed lookup at write time, so no submission-time scan of archived lots is needed. The year is the archived lot's **last-seen year**, matching how a coffee person dates a coffee and needing no new field.

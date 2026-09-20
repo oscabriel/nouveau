@@ -22,9 +22,11 @@ The owner's framing: Letterboxd puts other people's activity on the signed-in fr
 
 **`/activity` stays the community feed** and is the only place other people's logs appear together. The home page carries none of it.
 
-**The vocabulary of the record, as the owner listed it:** watch a roaster; save a lot to the try list; log a lot you have tried; rate it; write notes on it. "Try list" is the name for the set of saved lots. The lot page is where a lot is saved, logged and rated (ADR-0015 removes the inline form from the catalog), so the record's actions all start from the object.
+**The vocabulary of the record, as the owner listed it:** watch a roaster; save a lot to the try list; log a lot you have tried; rate it; review it. "Try list" is the name for the set of saved lots. The lot page is where a lot is saved, logged and rated (ADR-0015 removes the inline form from the catalog), so the record's actions all start from the object.
 
-**Personal tasting notes are the user's own descriptors, distinct from the roaster's.** The owner wants a taster to record what they tasted, which may disagree with the roaster's notes. The glossary's "Notes" (prose) already exists; this adds a structured descriptor list on the log, shown beside the roaster's on the lot page and on the profile. The shape is open below.
+**Many logs per lot, the latest rating wins the display.** A user can hold several logs for one lot, as today; the profile rows and the landing tiles show the latest rating. Logging a saved lot removes it from the try list, with a toast that says so and an undo, because "want to try" is over once it is tried.
+
+**Personal tasting notes are structured; the freeform text is the review.** A log carries two things the prose field alone cannot hold. First, a bounded set of tasting descriptors: up to four picked from the standard roaster-notes vocabulary, stored as an array on the log, shown beside the roaster's own descriptors on the lot page and on the profile. The picker is a fixed list, not free text, and is never prefilled from the roaster's notes for that lot. Second, the freeform text field, labelled REVIEW, takes anything else the taster wants to say; the old "notes" prose becomes the review. ADR-0002's "log" stays the name of the record; "review" is the name of the text on it.
 
 ## Considered alternatives
 
@@ -37,14 +39,11 @@ The owner's framing: Letterboxd puts other people's activity on the signed-in fr
 - `logs.profile` grows: for the owner it also returns watches (with health) and the try list, or the page calls the three queries it already uses on the retired routes. The public branch must never include the private two, enforced in the query, not the component.
 - The personalized drop feed (`feed.personalizedFeed`) and its delivery lines lose their only mount when the signed-in home goes. Where they go is open below.
 - The alert email's mute link points at `/settings/alerts`, which is unchanged.
-- The log form gains the descriptor field once its shape is decided; that is a schema commit with tests.
-- `CONTEXT.md` gains "Try list" and "Handle", and "Profile" and "Lot page" take their new addresses.
+- The log form gains the descriptor picker and its field is relabelled; that is a schema commit with tests. The try-list removal on log is a backend commit with tests, since a save can outlive the unsave via undo.
+- `CONTEXT.md` gains "Try list" and "Handle", and "Profile" and "Lot page" take their new addresses. "Notes" changes meaning: the structured descriptors are personal tasting notes, the prose is the review.
 
 ## Open questions
 
-- **"Review" versus "notes".** The owner's message says "ratings and reviews". ADR-0002 chose "log" with "notes" and the glossary avoids "review". Recommendation: keep "notes" in the UI and the glossary; "review" invites essays, and a log is a diary entry.
-- **The shape of personal tasting notes.** A free list of short descriptors on the log (like `roasterNotes[]`), or a set of caps toggles drawn from the roaster's notes plus free additions. Recommendation: a free list, entered as comma-separated text, stored as an array, with the roaster's notes shown as reference and never prefilled (the log form already does this for prose).
-- **One log per lot or many.** Today many. A profile that manages "ratings" reads better with one rating per lot; a diary reads better with many logs. Letterboxd keeps one rating and many diary entries. Recommendation: many logs, and the lot's tile and profile rows show the latest rating.
-- **Logging a saved lot.** Whether a log removes the lot from the try list. Recommendation: yes, with a toast that says so and an undo, because "want to try" is over once it is tried.
-- **The personalized drop feed.** A "Your roasters" tab on `/drops` (signed-in only) is the natural home; the delivery lines (pending, sent, delivered) could then sit under those rows as the design handoff planned. Or drop the delivery lines and let `/settings/alerts` show delivery. Recommendation: the tab.
+- **The standard tasting-note list.** Settled by the owner, 2026-09-20: the vocabulary is a published industry-standard wheel (the SCA Coffee Taster's Flavor Wheel), held as a TypeScript enum type end to end so a descriptor is type-safe from the picker through the schema to the query results. Remaining shape question: the full wheel runs about a hundred leaf attributes across nested levels; the picker needs a cut of it (top-level categories only, or top two levels), and the enum needs one home both apps import.
+- **The personalized drop feed.** Settled by the owner, 2026-09-20: a "Your roasters" tab on `/drops` (signed-in only), with the delivery lines (pending, sent, delivered) under those rows.
 - **Watched roasters on the public profile.** The design handoff listed them; issue #20 says no. This record says no. Reopen only with a privacy toggle.
