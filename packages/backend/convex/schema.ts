@@ -228,6 +228,11 @@ export default defineSchema({
 		weightOptions: v.optional(v.array(v.number())),
 	})
 		.index("by_roaster_and_external_id", ["roasterId", "externalId"])
+		// Lot addressing (ADR-0011): /roaster/$roaster/$lot names the lot by
+		// its handle, scoped to the roaster, so the pair is the lookup key. The
+		// upsert also uses it to detect a duplicate handle against an archived
+		// lot without a scan.
+		.index("by_roaster_and_handle", ["roasterId", "handle"])
 		// Recommendation candidates: one roaster's current lots from its latest
 		// confirmed crawl, so no roaster's crawl timing crowds out the others.
 		.index("by_roaster_and_status_and_last_seen_at", [

@@ -27,6 +27,9 @@ export const savedCoffeeValidator = v.object({
 	available: lotAvailabilityValidator,
 	fromRunId: v.union(v.id("recommendationRuns"), v.null()),
 	lot: v.object({
+		// The lot's address pair (ADR-0011); url is the roaster's own product
+		// page.
+		handle: v.string(),
 		id: v.id("products"),
 		imageUrl: v.union(v.string(), v.null()),
 		name: v.string(),
@@ -64,6 +67,7 @@ const hydrateSave = async (ctx: QueryCtx, save: Doc<"savedCoffees">) => {
 		available: lotAvailability(product),
 		fromRunId: save.fromRunId ?? null,
 		lot: {
+			handle: product.handle,
 			id: product._id,
 			imageUrl: product.imageUrl ?? null,
 			name: product.name,

@@ -47,10 +47,16 @@ const tasterValidator = v.object({
 export const logCardValidator = v.object({
 	logId: v.id("logs"),
 	loggedAt: v.number(),
+	// The lot's address pair (ADR-0011): cards link /roaster/$slug/$handle.
 	// url is the roaster's own product page, the same link the drop feed's
 	// "See the lot" uses (feed.ts); roasterNotes are §14.4 descriptors from
 	// the roaster's copy, when the feed carries any.
 	lot: v.object({
+		// The lot's address pair (ADR-0011); url is the roaster's own product
+		// page, the same link the drop feed's "See the lot" uses (feed.ts);
+		// roasterNotes are §14.4 descriptors from the roaster's copy, when the
+		// feed carries any.
+		handle: v.string(),
 		id: v.id("products"),
 		name: v.string(),
 		roasterNotes: v.union(v.string(), v.null()),
@@ -84,6 +90,7 @@ const hydrateLog = async (
 		logId: log._id,
 		loggedAt: log.loggedAt,
 		lot: {
+			handle: product.handle,
 			id: product._id,
 			name: product.name,
 			roasterNotes: joinNotes(product.roasterNotes),

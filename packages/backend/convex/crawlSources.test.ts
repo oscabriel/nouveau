@@ -6,6 +6,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
 	COMMIT_BATCH_PRODUCTS,
+	ARCHIVE_STRIKES,
 	PRUNE_BATCH,
 	RAW_CAPTURE_SUCCESS_INTERVAL_MS,
 	rawCaptureRetentionMs,
@@ -1527,5 +1528,58 @@ describe("commit: market confirmation", () => {
 		expect(source?.lastSuccessAt).toBe(T0 + CADENCE_MS);
 		const { products } = await readAll(fx);
 		expect(products.some((doc) => doc.externalId === "a")).toBe(true);
+	});
+});
+
+describe("duplicate lot handles (ADR-0011)", () => {
+	test("an archived lot yields its handle with its last-seen year appended", async () => {
+		const fx = await setup();
+		// The shop sold this coffee in 2024 and archived it; the 2025 crawl
+		// brings a new lot with the same Shopify handle.
+		const lastSeenAt = Date.UTC(2024, 5, 1);
+		await fx.t.run(async (ctx) => {
+			await ctx.db.insert("products", {
+				externalId: "old-external",
+				firstSeenAt: 0,
+				handle: "ethiopia-guji",
+				lastSeenAt,
+				missedCrawls: ARCHIVE_STRIKES,
+				name: "Ethiopia Guji (2024)",
+				roasterId: fx.roasterId,
+				status: "archived",
+			});
+		});
+		await crawl(fx, T0 + CADENCE_MS, [
+			{ ...product("new-external"), handle: "ethiopia-guji" },
+		]);
+		const { products } = await readAll(fx);
+		const byHandle = Object.fromEntries(
+			products.map((doc) => [doc.handle, doc.status])
+		);
+		expect(byHandle["ethiopia-guji"]).toBe("current");
+		expect(byHandle["ethiopia-guji-2024"]).toBe("archived");
+	});
+
+	test("a handle collision with a current lot is left alone", async () => {
+		const fx = await setup();
+		await fx.t.run(async (ctx) => {
+			await ctx.db.insert("products", {
+				externalId: "other-external",
+				firstSeenAt: 0,
+				handle: "ethiopia-guji",
+				lastSeenAt: 1000,
+				missedCrawls: 0,
+				name: "Ethiopia Guji (current elsewhere)",
+				roasterId: fx.roasterId,
+				status: "current",
+			});
+		});
+		await crawl(fx, T0 + CADENCE_MS, [
+			{ ...product("new-external"), handle: "ethiopia-guji" },
+		]);
+		const { products } = await readAll(fx);
+		expect(
+			products.filter((doc) => doc.handle === "ethiopia-guji")
+		).toHaveLength(2);
 	});
 });

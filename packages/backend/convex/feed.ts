@@ -26,6 +26,8 @@ const feedCard = {
 	detectedAt: v.number(),
 	eventId: v.id("dropEvents"),
 	imageUrl: v.union(v.string(), v.null()),
+	// The lot's address pair (ADR-0011): links go /roaster/$roasterSlug/$lotHandle.
+	lotHandle: v.string(),
 	lotUrl: v.string(),
 	newPriceCents: v.union(v.number(), v.null()),
 	oldPriceCents: v.union(v.number(), v.null()),
@@ -54,6 +56,7 @@ interface FeedCard {
 	detectedAt: number;
 	eventId: Id<"dropEvents">;
 	imageUrl: string | null;
+	lotHandle: string;
 	lotUrl: string;
 	newPriceCents: number | null;
 	oldPriceCents: number | null;
@@ -103,6 +106,9 @@ const toCard = async (
 		detectedAt: event.detectedAt,
 		eventId: event._id,
 		imageUrl: product.imageUrl ?? null,
+		// The lot's address pair (ADR-0011): the drop table links
+		// /roaster/$roasterSlug/$lotHandle instead of the shop URL.
+		lotHandle: product.handle,
 		lotUrl: `${roaster.websiteUrl}/products/${product.handle}`,
 		newPriceCents: event.newPriceCents ?? null,
 		oldPriceCents: event.oldPriceCents ?? null,

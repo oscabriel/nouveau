@@ -114,26 +114,32 @@ const lotVariantRows = async (
 };
 
 /**
- * One lot page's data. The id arrives as a string straight from the URL, so
- * a malformed one resolves to null (the "no lot here" page) instead of
- * failing argument validation — the same contract as logs.profile. Archived
- * lots resolve fully: logs keep resolving (§14.1).
+ * One lot page's data, addressed by (roaster slug, lot handle) as
+ * /roaster/$roaster/$lot carries it (ADR-0011). A malformed slug or handle
+ * resolves to null (the "no lot here" page) instead of failing argument
+ * validation — the same contract as logs.profile. Archived lots resolve
+ * fully: logs keep resolving (§14.1).
  */
 export const get = query({
-	args: { lotId: v.string() },
+	args: { lot: v.string(), roaster: v.string() },
 	handler: async (ctx, args) => {
-		const lotId = ctx.db.normalizeId("products", args.lotId);
-		if (lotId === null) {
-			return null;
-		}
-		const lot = await ctx.db.get(lotId);
-		if (lot === null) {
-			return null;
-		}
-		const roaster = await ctx.db.get(lot.roasterId);
+		const roaster = await ctx.db
+			.query("roasters")
+			.withIndex("by_slug", (q) => q.eq("slug", args.roaster))
+			.unique();
 		if (roaster === null) {
 			return null;
 		}
+		const lot = await ctx.db
+			.query("products")
+			.withIndex("by_roaster_and_handle", (q) =>
+				q.eq("roasterId", roaster._id).eq("handle", args.lot)
+			)
+			.unique();
+		if (lot === null) {
+			return null;
+		}
+		const lotId = lot._id;
 		const logs = await ctx.db
 			.query("logs")
 			.withIndex("by_product_and_logged_at", (q) => q.eq("productId", lotId))
@@ -168,5 +174,33 @@ export const get = query({
 			lot: lotValidator,
 			roaster: v.object({ name: v.string(), slug: v.string() }),
 		})
+	),
+});
+
+/**
+ * Where an old /lots/$lotId address points now (ADR-0011): the pair the
+ * redirect needs. Null for an unknown id, so the redirect route falls
+ * through to its own not-found. Public — the redirect resolves on mount.
+ */
+export const addressById = query({
+	args: { lotId: v.string() },
+	handler: async (ctx, args) => {
+		const lotId = ctx.db.normalizeId("products", args.lotId);
+		if (lotId === null) {
+			return null;
+		}
+		const lot = await ctx.db.get(lotId);
+		if (lot === null) {
+			return null;
+		}
+		const roaster = await ctx.db.get(lot.roasterId);
+		if (roaster === null) {
+			return null;
+		}
+		return { handle: lot.handle, roasterSlug: roaster.slug };
+	},
+	returns: v.union(
+		v.null(),
+		v.object({ handle: v.string(), roasterSlug: v.string() })
 	),
 });

@@ -541,7 +541,10 @@ describe("pageFacts.store and the lot page", () => {
 			tastingNotes: ["peach", "melon", "red tea"],
 			variety: "Heirloom",
 		});
-		const page = await fx.t.query(api.lots.get, { lotId: fx.lotId });
+		const page = await fx.t.query(api.lots.get, {
+			lot: "mullugeta",
+			roaster: "sey",
+		});
 		expect(page?.lot).toMatchObject({
 			facts: {
 				elevation: "1,900 - 2,100 masl",

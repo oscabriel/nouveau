@@ -99,7 +99,10 @@ describe("lots.get", () => {
 				});
 			}
 		});
-		const page = await fx.t.query(api.lots.get, { lotId: fx.lotId });
+		const page = await fx.t.query(api.lots.get, {
+			lot: "mullugeta",
+			roaster: "sey",
+		});
 		expect(page?.lot.variants).toHaveLength(21);
 		expect(page?.lot.variants.filter((row) => row.grams === 2000)).toHaveLength(
 			7
@@ -117,7 +120,10 @@ describe("lots.get", () => {
 				productId: fx.lotId,
 			});
 		});
-		const page = await fx.t.query(api.lots.get, { lotId: fx.lotId });
+		const page = await fx.t.query(api.lots.get, {
+			lot: "mullugeta",
+			roaster: "sey",
+		});
 		expect(page?.lot.available).toBeNull();
 		expect(page?.lot.variants).toHaveLength(1);
 	});
@@ -141,7 +147,10 @@ describe("lots.get", () => {
 				productId: fx.lotId,
 			});
 		});
-		const page = await fx.t.query(api.lots.get, { lotId: fx.lotId });
+		const page = await fx.t.query(api.lots.get, {
+			lot: "mullugeta",
+			roaster: "sey",
+		});
 		expect(page?.lot.available).toBe(true);
 		expect(page?.lot.variants).toHaveLength(2);
 		// In-stock sizes go first; the grind option splits off the name.
@@ -172,7 +181,10 @@ describe("lots.get", () => {
 		});
 		await addLog(fx, 2000, { notes: "peach for days", rating: 4 });
 		await addLog(fx, 1000);
-		const page = await fx.t.query(api.lots.get, { lotId: fx.lotId });
+		const page = await fx.t.query(api.lots.get, {
+			lot: "mullugeta",
+			roaster: "sey",
+		});
 		expect(page).toMatchObject({
 			logsTruncated: false,
 			lot: {
@@ -199,19 +211,22 @@ describe("lots.get", () => {
 		expect(page?.logs[0]?.rating).toBe(4);
 	});
 
-	test("a malformed or unknown id resolves to null", async () => {
+	test("a malformed or unknown address resolves to null", async () => {
 		const fx = await setup();
-		expect(await fx.t.query(api.lots.get, { lotId: "garbage" })).toBeNull();
 		expect(
-			await fx.t.query(api.lots.get, {
-				lotId: "0000000000000000000000000000000",
-			})
+			await fx.t.query(api.lots.get, { lot: "garbage", roaster: "sey" })
+		).toBeNull();
+		expect(
+			await fx.t.query(api.lots.get, { lot: "mullugeta", roaster: "no-such" })
 		).toBeNull();
 	});
 
 	test("an archived lot still resolves (logs keep resolving, §14.1)", async () => {
 		const fx = await setup({ status: "archived" });
-		const page = await fx.t.query(api.lots.get, { lotId: fx.lotId });
+		const page = await fx.t.query(api.lots.get, {
+			lot: "mullugeta",
+			roaster: "sey",
+		});
 		expect(page?.lot.status).toBe("archived");
 	});
 
@@ -222,15 +237,40 @@ describe("lots.get", () => {
 				addLog(fx, 1000 + i)
 			)
 		);
-		const page = await fx.t.query(api.lots.get, { lotId: fx.lotId });
+		const page = await fx.t.query(api.lots.get, {
+			lot: "mullugeta",
+			roaster: "sey",
+		});
 		expect(page?.logs).toHaveLength(LOT_PAGE_LOGS_LIMIT);
 		expect(page?.logsTruncated).toBe(true);
 	});
 
 	test("a lot with no logs renders empty", async () => {
 		const fx = await setup();
-		const page = await fx.t.query(api.lots.get, { lotId: fx.lotId });
+		const page = await fx.t.query(api.lots.get, {
+			lot: "mullugeta",
+			roaster: "sey",
+		});
 		expect(page?.logs).toEqual([]);
 		expect(page?.logsTruncated).toBe(false);
+	});
+});
+
+describe("lots.addressById", () => {
+	test("returns the (roaster slug, handle) pair for the redirect", async () => {
+		const fx = await setup();
+		expect(await fx.t.query(api.lots.addressById, { lotId: fx.lotId })).toEqual(
+			{
+				handle: "mullugeta",
+				roasterSlug: "sey",
+			}
+		);
+	});
+
+	test("an unknown id resolves to null", async () => {
+		const fx = await setup();
+		expect(
+			await fx.t.query(api.lots.addressById, { lotId: "garbage" })
+		).toBeNull();
 	});
 });

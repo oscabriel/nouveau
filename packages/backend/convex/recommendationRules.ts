@@ -53,11 +53,16 @@ export const candidateValidator = v.object({
 	// one on it. Absent on runs from before the field.
 	factsKnown: v.optional(v.boolean()),
 	grams: v.number(),
+	// The lot's address pair (ADR-0011): a result links
+	// /roaster/$roasterSlug/$handle. Optional the same way factsKnown is:
+	// runs stored before the field keep validating.
+	handle: v.optional(v.string()),
 	market: v.literal("US"),
 	name: v.string(),
 	priceCents: v.number(),
 	productId: v.id("products"),
 	roasterName: v.string(),
+	roasterSlug: v.optional(v.string()),
 	url: v.string(),
 	variantId: v.id("productVariants"),
 	variantName: v.string(),

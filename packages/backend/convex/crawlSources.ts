@@ -488,6 +488,60 @@ const lotCopyFields = (product: ExtractedProduct): Partial<Doc<"products">> => {
 	};
 };
 
+/**
+ * Give a colliding archived lot its last-seen year (ADR-0011): a shop that
+ * sells "ethiopia-guji" again leaves the archived lot "ethiopia-guji-2024"
+ * and hands the original handle to the new lot. Detected through the
+ * by_roaster_and_handle index at upsert time, no scan. Only archived lots
+ * move; two current lots sharing a handle would be a source bug and the
+ * collision is left alone. A target still taken gets a numeric suffix.
+ */
+const yieldHandle = async (
+	ctx: MutationCtx,
+	roasterId: Id<"roasters">,
+	handle: string
+): Promise<void> => {
+	const others = await ctx.db
+		.query("products")
+		.withIndex("by_roaster_and_handle", (q) =>
+			q.eq("roasterId", roasterId).eq("handle", handle)
+		)
+		.collect();
+	const archived = others.find((doc) => doc.status === "archived");
+	if (archived === undefined) {
+		return;
+	}
+	const year = new Date(archived.lastSeenAt).getUTCFullYear();
+	let candidate = `${handle}-${year}`;
+	const stem = candidate;
+	const taken = await ctx.db
+		.query("products")
+		.withIndex("by_roaster_and_handle", (q) =>
+			q
+				.eq("roasterId", roasterId)
+				.gte("handle", stem)
+				.lt("handle", `${stem}\uFFFF`)
+		)
+		.collect();
+	if (taken.length > 0) {
+		// The same coffee archived twice in one year (or a lot already named
+		// with the year). The first free number after the taken stems.
+		const suffix = /-(?<num>\d+)$/u;
+		const used = new Set(
+			taken.flatMap((doc) => {
+				const hit = suffix.exec(doc.handle);
+				return hit === null ? [] : [Math.trunc(Number(hit.groups?.num))];
+			})
+		);
+		let n = 2;
+		while (used.has(n)) {
+			n += 1;
+		}
+		candidate = `${stem}-${n}`;
+	}
+	await ctx.db.patch(archived._id, { handle: candidate });
+};
+
 /** Insert or refresh one product (by roaster + externalId) and its variants. */
 const upsertProduct = async (
 	ctx: MutationCtx,
@@ -500,6 +554,9 @@ const upsertProduct = async (
 			q.eq("roasterId", roasterId).eq("externalId", product.externalId)
 		)
 		.unique();
+	if (current === null) {
+		await yieldHandle(ctx, roasterId, product.handle);
+	}
 	let productId: Id<"products">;
 	// The variant rollup comes from this crawl's fetched variants (the feed's
 	// own stock and price), not the stored ones: the feed is the truth.
