@@ -38,9 +38,6 @@ import {
 
 const AGENT_NAME = "next-bag";
 
-// The reasoning effort the Responses pipeline pinned, carried as provider
-// options on the stream call.
-export const OPENAI_REASONING_EFFORT = "low";
 // A Jev claim check under this probability blanks the why sentence.
 const WHY_NOUL_THRESHOLD = 0.5;
 
@@ -568,6 +565,12 @@ Work like this:
 7. Call submitPicks with the ranked list and one why per pick: one or two sentences (at most 480 characters) that say how this lot fits what was asked, citing only what the tools returned this run. An empty picks list is valid when nothing fits; say so instead of forcing matches.
 8. After submitPicks succeeds, your final message is one short sentence (under 200 characters) describing what you chose. The user sees it as the summary line.`;
 
+// Function tools with reasoning are unsupported for gpt-5.6-luna over
+// /v1/chat/completions, so the loop talks to /v1/responses (the endpoint the
+// single-call pipeline used). The effort that pipeline pinned rides as a
+// provider option on the stream call; the agent component's callSettings
+// drop provider options in its merge order, so it is set where the loop
+// streams, in recommendationWorker.ts.
 export const buildAgent = (
 	ctx: LoopContext,
 	includeNotes: boolean
@@ -578,7 +581,7 @@ export const buildAgent = (
 	}
 	return new Agent(components.agent, {
 		instructions: INSTRUCTIONS,
-		languageModel: createOpenAI({ apiKey }).chat(OPENAI_MODEL),
+		languageModel: createOpenAI({ apiKey }).responses(OPENAI_MODEL),
 		name: AGENT_NAME,
 		stopWhen: stepCountIs(MAX_STEPS),
 		tools: {

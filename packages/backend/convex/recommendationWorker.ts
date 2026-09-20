@@ -20,7 +20,11 @@ import {
 	checkWhys,
 	structureRequest,
 } from "./recommendationAgent";
-import { MAX_STEPS, pagePassages } from "./recommendationRules";
+import {
+	MAX_STEPS,
+	OPENAI_REASONING_EFFORT,
+	pagePassages,
+} from "./recommendationRules";
 
 const SUMMARY_MAX_CHARS = 240;
 
@@ -179,6 +183,11 @@ export const run = internalAction({
 				{ threadId },
 				{
 					prompt: buildPrompt(claimed.input.preferences, filters, initial.rows),
+					// The reasoning effort the Responses pipeline pinned; set here
+					// because the agent component's callSettings merge drops it.
+					providerOptions: {
+						openai: { reasoningEffort: OPENAI_REASONING_EFFORT },
+					},
 					stopWhen: stepCountIs(MAX_STEPS),
 				},
 				{ saveStreamDeltas: true }
