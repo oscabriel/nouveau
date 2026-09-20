@@ -249,6 +249,50 @@ describe("roasters", () => {
 		).toEqual([250, 500, 1000, 2000]);
 	});
 
+	test("lot rows carry the photo URL for the floating hover image (ADR-0015)", async () => {
+		const { active, t } = await setup();
+		await t.run(async (ctx) => {
+			await ctx.db.insert("products", {
+				externalId: "img1",
+				firstSeenAt: 1000,
+				handle: "photo-lot",
+				imageUrl: "https://cdn.shopify.com/beans.jpg",
+				lastSeenAt: 1000,
+				name: "Photo lot",
+				roasterId: active,
+				status: "current",
+			});
+			await ctx.db.insert("products", {
+				externalId: "img2",
+				firstSeenAt: 1000,
+				handle: "no-photo-lot",
+				lastSeenAt: 1000,
+				name: "No-photo lot",
+				roasterId: active,
+				status: "current",
+			});
+		});
+		const rows = await t.query(api.roasters.listLots, {
+			paginationOpts: { cursor: null, numItems: 10 },
+			roasterId: active,
+		});
+		const byName = Object.fromEntries(rows.page.map((row) => [row.name, row]));
+		expect(byName["Photo lot"]?.imageUrl).toBe(
+			"https://cdn.shopify.com/beans.jpg"
+		);
+		// A lot the crawl never gave a photo reads as null, not undefined.
+		expect(byName["No-photo lot"]?.imageUrl).toBeNull();
+		const filtered = await t.query(api.roasters.listLotsFiltered, {
+			roasterId: active,
+		});
+		// The filtered query maps through the same row builder: the field is
+		// always present, string or null.
+		expect(filtered.map((row) => row.imageUrl ?? null)).toEqual([
+			"https://cdn.shopify.com/beans.jpg",
+			null,
+		]);
+	});
+
 	test("listLotsFiltered applies every filter axis", async () => {
 		const { active, t } = await setup();
 		const lots = await t.run(async (ctx) => {

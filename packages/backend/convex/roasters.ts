@@ -91,6 +91,9 @@ const lotRowValidator = v.object({
 	grams: v.array(v.number()),
 	handle: v.string(),
 	id: v.id("products"),
+	// The lot's photo (the floating hover image, ADR-0015); null when the
+	// crawl has not seen one.
+	imageUrl: v.union(v.string(), v.null()),
 	// What the cheapest purchasable size costs; null when the feed gave no
 	// prices (unknown, not free).
 	minPriceCents: v.union(v.number(), v.null()),
@@ -109,6 +112,7 @@ const toLotRow = (lot: Doc<"products">): Infer<typeof lotRowValidator> => ({
 	grams: lot.weightOptions ?? [],
 	handle: lot.handle,
 	id: lot._id,
+	imageUrl: lot.imageUrl ?? null,
 	minPriceCents: lot.minPriceCents ?? null,
 	name: lot.name,
 	origin: lot.origin ?? null,
