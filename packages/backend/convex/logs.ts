@@ -16,7 +16,7 @@ import {
 import { redirectTarget } from "./handles";
 import { optionalUserId, requireUserId } from "./identity";
 import { joinNotes } from "./lotFacts";
-import { savedCards, savedCoffeeValidator } from "./savedCoffees";
+import { findSave, savedCards, savedCoffeeValidator } from "./savedCoffees";
 import { MAX_TASTING_NOTES, tastingNoteValidator } from "./tasting";
 import type { TastingNote } from "./tasting";
 import { watchCards, watchCardValidator } from "./watches";
@@ -254,7 +254,16 @@ export const createLog = mutation({
 		if (product === null) {
 			throw new Error("Unknown lot");
 		}
-		return ctx.db.insert("logs", {
+		// Logging a lot on the try list removes the save (ADR-0016): "want to
+		// try" is over once it is tried. The removed save's run id goes back so
+		// the undo toast can restore the save exactly as it was.
+		const existingSave = await findSave(ctx, userId, args.productId);
+		let removedSaveFromRunId: Id<"recommendationRuns"> | null = null;
+		if (existingSave !== null) {
+			await ctx.db.delete("savedCoffees", existingSave._id);
+			removedSaveFromRunId = existingSave.fromRunId ?? null;
+		}
+		const logId = await ctx.db.insert("logs", {
 			loggedAt: Date.now(),
 			notes: notes === "" ? undefined : notes,
 			productId: args.productId,
@@ -265,8 +274,12 @@ export const createLog = mutation({
 					: undefined,
 			userId,
 		});
+		return { logId, removedSaveFromRunId };
 	},
-	returns: v.id("logs"),
+	returns: v.object({
+		logId: v.id("logs"),
+		removedSaveFromRunId: v.union(v.id("recommendationRuns"), v.null()),
+	}),
 });
 
 /**

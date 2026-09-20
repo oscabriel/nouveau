@@ -44,6 +44,8 @@ import type * as shopMarket from "../shopMarket.js";
 import type * as slugs from "../slugs.js";
 import type * as sourceMode from "../sourceMode.js";
 import type * as submissions from "../submissions.js";
+import type * as tasting from "../tasting.js";
+import type * as tiles from "../tiles.js";
 import type * as users from "../users.js";
 import type * as watches from "../watches.js";
 import type * as woocommerce from "../woocommerce.js";
@@ -91,6 +93,8 @@ declare const fullApi: ApiFromModules<{
   slugs: typeof slugs;
   sourceMode: typeof sourceMode;
   submissions: typeof submissions;
+  tasting: typeof tasting;
+  tiles: typeof tiles;
   users: typeof users;
   watches: typeof watches;
   woocommerce: typeof woocommerce;

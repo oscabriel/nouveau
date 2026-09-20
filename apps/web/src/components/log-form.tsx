@@ -45,6 +45,7 @@ export const LogForm = ({
 
 	const create = useMutation(api.logs.createLog);
 	const update = useMutation(api.logs.updateLog);
+	const restore = useMutation(api.savedCoffees.save);
 	const checkboxId = `rate-${existing?.logId ?? lotId}`;
 
 	const save = async () => {
@@ -52,12 +53,28 @@ export const LogForm = ({
 		setSaving(true);
 		try {
 			if (existing === undefined) {
-				await create({
+				const { removedSaveFromRunId } = await create({
 					...(rateIt ? { rating } : {}),
 					...(trimmed === "" ? {} : { notes: trimmed }),
 					productId: lotId,
 				});
-				toast.success("Logged.");
+				// Logging a lot on the try list removes the save (ADR-0016); the
+				// undo puts it back exactly as it was, run citation included.
+				if (removedSaveFromRunId === null) {
+					toast.success("Logged.");
+				} else {
+					toast.success("Logged. Removed from Want to try.", {
+						action: {
+							label: "Undo",
+							onClick: () => {
+								void restore({
+									fromRunId: removedSaveFromRunId,
+									productId: lotId,
+								});
+							},
+						},
+					});
+				}
 			} else {
 				await update({
 					logId: existing.logId,

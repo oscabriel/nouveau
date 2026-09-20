@@ -44,7 +44,8 @@ export const savedCoffeeValidator = v.object({
 
 export type SavedCard = Infer<typeof savedCoffeeValidator>;
 
-const findSave = (
+/** The (user, lot) save row, for save-button state and the log-removes-save flow. */
+export const findSave = (
 	ctx: QueryCtx | MutationCtx,
 	userId: Id<"users">,
 	productId: Id<"products">

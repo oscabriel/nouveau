@@ -149,7 +149,7 @@ describe("tasting notes", () => {
 
 	test("update can replace or clear the picks", async () => {
 		const { lotId, t, userId } = await setup();
-		const logId = await asUser(t, userId).mutation(api.logs.createLog, {
+		const { logId } = await asUser(t, userId).mutation(api.logs.createLog, {
 			productId: lotId,
 			tastingNotes: ["floral", "citrus fruit"],
 		});
@@ -166,6 +166,106 @@ describe("tasting notes", () => {
 		});
 		feed = await t.query(api.logs.recentLogs, {});
 		expect(feed[0]?.tastingNotes).toBeNull();
+	});
+});
+
+describe("log removes save", () => {
+	test("logging a saved lot removes it from the try list", async () => {
+		const { lotId, t, userId } = await setup();
+		await asUser(t, userId).mutation(api.savedCoffees.save, {
+			productId: lotId,
+		});
+		expect(
+			await asUser(t, userId).query(api.savedCoffees.mySavedProductIds, {})
+		).toEqual([lotId]);
+
+		const { removedSaveFromRunId } = await asUser(t, userId).mutation(
+			api.logs.createLog,
+			{ productId: lotId, rating: 4 }
+		);
+		expect(removedSaveFromRunId).toBeNull();
+		expect(
+			await asUser(t, userId).query(api.savedCoffees.mySavedProductIds, {})
+		).toEqual([]);
+	});
+
+	test("the undo restores the save with its run citation", async () => {
+		const { lotId, t, userId } = await setup();
+		const runId = await t.run((ctx) =>
+			ctx.db.insert("recommendationRuns", {
+				attempt: 1,
+				candidates: [],
+				createdAt: 1000,
+				enrichments: 0,
+				input: {
+					includeNotes: false,
+					logIds: [],
+					maxPriceCents: 3000,
+					minGrams: 200,
+					preferences: "A floral washed coffee",
+				},
+				message: "Ready",
+				preferences: [],
+				requestKey: "k",
+				selections: [],
+				status: "ready",
+				updatedAt: 1000,
+				userId,
+			})
+		);
+		await asUser(t, userId).mutation(api.savedCoffees.save, {
+			fromRunId: runId,
+			productId: lotId,
+		});
+
+		const { removedSaveFromRunId } = await asUser(t, userId).mutation(
+			api.logs.createLog,
+			{ productId: lotId, rating: 4 }
+		);
+		expect(removedSaveFromRunId).toBe(runId);
+		expect(
+			await asUser(t, userId).query(api.savedCoffees.mySavedProductIds, {})
+		).toEqual([]);
+
+		// The undo toast restores the save, citation intact.
+		await asUser(t, userId).mutation(api.savedCoffees.save, {
+			fromRunId: removedSaveFromRunId ?? undefined,
+			productId: lotId,
+		});
+		const page = await asUser(t, userId).query(api.savedCoffees.listMine, {
+			paginationOpts: { cursor: null, numItems: 10 },
+		});
+		expect(page.page).toHaveLength(1);
+		expect(page.page[0]?.fromRunId).toBe(runId);
+	});
+
+	test("logging an unsaved lot leaves the try list alone", async () => {
+		const { archivedLotId, lotId, t, userId } = await setup();
+		await asUser(t, userId).mutation(api.savedCoffees.save, {
+			productId: archivedLotId,
+		});
+		const { removedSaveFromRunId } = await asUser(t, userId).mutation(
+			api.logs.createLog,
+			{ productId: lotId, rating: 4 }
+		);
+		expect(removedSaveFromRunId).toBeNull();
+		expect(
+			await asUser(t, userId).query(api.savedCoffees.mySavedProductIds, {})
+		).toEqual([archivedLotId]);
+	});
+
+	test("another taster's save is never removed by my log", async () => {
+		const { lotId, t, userB, userId } = await setup();
+		await asUser(t, userB).mutation(api.savedCoffees.save, {
+			productId: lotId,
+		});
+		await asUser(t, userId).mutation(api.logs.createLog, {
+			productId: lotId,
+			rating: 4,
+		});
+		expect(
+			await asUser(t, userB).query(api.savedCoffees.mySavedProductIds, {})
+		).toEqual([lotId]);
 	});
 });
 
@@ -248,7 +348,7 @@ describe("logs", () => {
 
 	test("only the author can edit or delete a log", async () => {
 		const { lotId, t, userB, userId } = await setup();
-		const logId = await asUser(t, userId).mutation(api.logs.createLog, {
+		const { logId } = await asUser(t, userId).mutation(api.logs.createLog, {
 			productId: lotId,
 			rating: 4,
 		});
@@ -281,7 +381,7 @@ describe("logs", () => {
 
 	test("update can clear a rating or notes with null", async () => {
 		const { lotId, t, userId } = await setup();
-		const logId = await asUser(t, userId).mutation(api.logs.createLog, {
+		const { logId } = await asUser(t, userId).mutation(api.logs.createLog, {
 			notes: "First take.",
 			productId: lotId,
 			rating: 4,
