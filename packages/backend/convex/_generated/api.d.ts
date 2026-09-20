@@ -124,6 +124,7 @@ export declare const components: {
   aggregate: import("@convex-dev/aggregate/_generated/component.js").ComponentApi<"aggregate">;
   rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
   recommendationPool: import("@convex-dev/workpool/_generated/component.js").ComponentApi<"recommendationPool">;
+  agent: import("@convex-dev/agent/_generated/component.js").ComponentApi<"agent">;
   firecrawl: import("@firecrawl/firecrawl-convex/_generated/component.js").ComponentApi<"firecrawl">;
   auth: import("@convex-dev/auth/core/_generated/component.js").ComponentApi<"auth">;
   oauthGoogle: import("@convex-dev/auth/providers/oauth/_generated/component.js").ComponentApi<"oauthGoogle">;

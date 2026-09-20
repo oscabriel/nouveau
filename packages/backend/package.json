@@ -12,6 +12,7 @@
 	},
 	"dependencies": {
 		"@agentmail/convex": "0.1.0",
+		"@convex-dev/agent": "^0.7.3",
 		"@convex-dev/aggregate": "^0.3.0",
 		"@convex-dev/auth": "2.0.0-alpha.1",
 		"@convex-dev/migrations": "^0.3.6",

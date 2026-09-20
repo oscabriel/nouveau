@@ -1,3 +1,4 @@
+import agent from "@convex-dev/agent/convex.config";
 import agentmail from "@agentmail/convex/convex.config";
 import aggregate from "@convex-dev/aggregate/convex.config";
 import auth from "@convex-dev/auth/core/convex.config";
@@ -50,6 +51,9 @@ app.use(agentmail, {
 app.use(aggregate);
 app.use(rateLimiter);
 app.use(workpool, { name: "recommendationPool" });
+// Durable threads and message history for the next-bag agent loop (ADR-0017).
+// Nothing calls it yet; the worker rewiring lands in batch 6.
+app.use(agent);
 // Mounts the crawl webhook route at <site>/firecrawl/webhook.
 app.use(firecrawl, {
 	env: {
