@@ -57,5 +57,8 @@ coverage
 tmp
 temp
 
+# Source-resolution plate cutouts (ADR-0012): exports live in public/plate/
+apps/web/public/coffea-arabica/
+
 # Agent harness scratch
 .pi/
