@@ -16,10 +16,10 @@ The hero is `apps/web/public/coffea-arabica.png`, the whole Thornton 1808 branch
 
 **Header.** Left: NOUVEAU (home), ROASTERS (`/roasters`), DROPS (`/drops`). Right: two or three links at most. The theme toggle leaves the header (ADR-0013). Sign out leaves the header and lives in `/settings/account`. The owner settled the right-hand set:
 
-| State | Right side |
-|---|---|
-| signed out | ACTIVITY, LOGIN |
-| signed in | ACTIVITY, the user's handle (`/$user`) |
+| State      | Right side                             |
+| ---------- | -------------------------------------- |
+| signed out | ACTIVITY, LOGIN                        |
+| signed in  | ACTIVITY, the user's handle (`/$user`) |
 
 The split is that the left names what the site is about (roasters, drops) and the right names the people (the community feed, you). Signed out, the second link reads LOGIN; signed in, it becomes the user's handle. The handle carries a dropdown holding SETTINGS and the theme pair (LIGHT / DARK, ADR-0013), so sign-out, settings and theme are all one click deep without spending header links. One nav, not two mounts: below `md` the right group wraps under the left instead of rendering twice.
 
