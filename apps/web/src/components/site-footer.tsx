@@ -35,6 +35,7 @@ const PlateDetail = ({
 		<img
 			alt={alt}
 			className="transition-opacity group-hover:opacity-80"
+			loading="lazy"
 			src={src}
 			style={{ height, width: "auto" }}
 		/>
@@ -51,14 +52,16 @@ const DrupePair = () => (
 			<a href="https://en.wikipedia.org/wiki/Drupe" className="group">
 				<img
 					alt="A ripe Coffea arabica cherry, whole, engraved and hand-colored for Thornton in 1808"
-					className="h-16 w-auto md:h-20"
+					className="h-16 w-auto transition-opacity group-hover:opacity-80 md:h-20"
+					loading="lazy"
 					src={berry}
 				/>
 			</a>
 			<a href="https://en.wikipedia.org/wiki/Drupe" className="group">
 				<img
 					alt="A Coffea arabica cherry cut in half, showing the two seeds in the pulp, engraved and hand-colored for Thornton in 1808"
-					className="h-16 w-auto md:h-20"
+					className="h-16 w-auto transition-opacity group-hover:opacity-80 md:h-20"
+					loading="lazy"
 					src={berryHalves}
 				/>
 			</a>
@@ -150,6 +153,7 @@ export const SiteFooter = () => (
 					<img
 						alt="The full Coffea arabica plate: a flowering and fruiting branch, engraved and hand-colored for Robert Thornton in 1808"
 						className="h-44 w-auto transition-opacity group-hover:opacity-80 md:h-64"
+						loading="lazy"
 						src={branch}
 					/>
 				</a>
