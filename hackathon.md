@@ -13,7 +13,7 @@
 - **Auth:** Convex Auth
 - **AI models:** OpenAI `gpt-5.6-luna` (Responses API, tool loop on @convex-dev/agent) for Find my next bag; TypeSafe System One `jev-1.13.0` picks and verifies spans in the page reader
 - **Started:** 2026-08-29T18:06:09Z
-- **Last updated:** 2026-09-21T17:23:52Z
+- **Last updated:** 2026-09-21T17:24:29Z
 
 ## Log
 
@@ -153,6 +153,6 @@ The loop is OpenAI only. Jev left the next-bag run (the request structuring befo
 
 Find my next bag is a pane that slides in from the right (`?bag=true`, `/next-bag` redirects), reachable from any page. `pickLot` replaced `submitPicks`: the model hands over one validated lot per call and its card lands live; the run settles when the model stops calling tools, and a shortlist ages out of the pane after an hour. The search tool has no word filters, only budget and size; words rank and never exclude. Live on dev signed in: "a lot from africa with blackberry or raspberry like notes" ran one search, three stock checks and three picks in about fifteen seconds, cards arriving one by one. After watching it: the step lines show only while working, a value at a filter's ceiling means no limit, and each card's actions are Save and Buy.
 
-### 2026-09-21 - d44f943
+### 2026-09-21 - 55ce15c
 
 The last scaffold-era pages and controls got the design pass. Stars are ink everywhere; Save is a dot toggle like Watch; tasting notes are text buttons, picked ones underlined, locked ones half grey but still reachable by keyboard; the log row and log form lost their card boxes; `/activity` and the lot page sit in the same inner-page shell as the rest, the lot page with its facts as a hairline list and Sizes as a table whose rows end in an up-right arrow to the exact bag. Every old URL was checked headless against dev and lands on its ADR-0011 address, including the links in an alert email sent before the route change. Both themes were checked full-page at 1440 and 390 on every rebuilt page; the one bug found was `/settings/account` spinning forever signed out. A third code review (`.agents/research/design-pass-review-2026-09-20-part-3.md`) was worked one fix per commit: one `DotToggle` component for the five dot-and-word controls, the try list called the try list everywhere, and the lot page no longer waiting on the viewer query.
