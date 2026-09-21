@@ -9,7 +9,7 @@ import { DropTable } from "@/components/drop-index";
 import Loader from "@/components/loader";
 import { PageTitle } from "@/components/page-title";
 import { DROP_TYPE_LABEL } from "@/lib/drops";
-import type { DropRow, DropType } from "@/lib/drops";
+import type { DropType } from "@/lib/drops";
 
 type GlobalRow = FunctionReturnType<typeof api.feed.globalFeed>[number];
 type PersonalizedRow = FunctionReturnType<
@@ -37,12 +37,18 @@ const deliveryLine = (row: PersonalizedRow): string =>
  * The delivery line's row: under its event row, aligned with the lot name,
  * carrying the hairline the event row gave up so the pair reads as one entry.
  */
-const DeliveryRow = ({ row }: { row: PersonalizedRow }) => (
+const DeliveryRow = ({
+	columnCount,
+	row,
+}: {
+	columnCount: number;
+	row: PersonalizedRow;
+}) => (
 	<tr className="border-b">
 		{/* pl matches the number column (w-10 md:w-28) so the line sits under the lot name. */}
 		<td
 			className="text-muted-foreground pb-5 pl-10 text-xs md:pl-28"
-			colSpan={10}
+			colSpan={columnCount}
 		>
 			{deliveryLine(row)}
 		</td>
@@ -50,8 +56,8 @@ const DeliveryRow = ({ row }: { row: PersonalizedRow }) => (
 );
 
 /** underRow for DropTable on the Your roasters tab. */
-const deliveryUnderRow = (row: DropRow) => (
-	<DeliveryRow row={row as PersonalizedRow} />
+const deliveryUnderRow = (row: PersonalizedRow, columnCount: number) => (
+	<DeliveryRow columnCount={columnCount} row={row} />
 );
 
 /** The filter strip above both bodies; counts come from the global feed. */
@@ -130,10 +136,7 @@ const GlobalDrops = ({
 		filter === "all" ? feed : feed.filter((row) => row.type === filter);
 	return (
 		<div className="px-5 md:px-10">
-			<DropTable
-				onlyTypes={filter === "all" ? undefined : [filter]}
-				rows={feed}
-			/>
+			<DropTable rows={shown} />
 			{shown.length === 0 && (
 				<p className="text-muted-foreground py-16 text-center text-[15px]">
 					No drops yet. The crawlers are out there checking.

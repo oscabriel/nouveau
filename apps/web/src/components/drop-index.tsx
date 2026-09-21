@@ -169,34 +169,40 @@ const DropTableRow = ({
 	);
 };
 
+/** N°, lot, origin, event, released, price, arrow; Roaster and City join them. */
+const BASE_COLUMN_COUNT = 7;
+const ROASTER_COLUMN_COUNT = 2;
+
+/** How many `td`s a row spans, so an under row can cover the full width. */
+export const dropTableColumnCount = (showRoaster: boolean): number =>
+	BASE_COLUMN_COUNT + (showRoaster ? ROASTER_COLUMN_COUNT : 0);
+
 /**
  * The hairline drop table on its own: N°, lot, roaster and city (unless the
  * page is that roaster's), origin, event, released (MM.DD, ADR-0014), price.
  * The lot name and the arrow at the row's end both open the Nouveau lot page
  * (ADR-0015); hovering a row floats the lot's photo above the table,
- * following the pointer.
+ * following the pointer. Generic over the row so a caller with a wider row
+ * type (the personalized feed) gets it back unchanged in `underRow`.
  */
-export const DropTable = ({
+export const DropTable = <Row extends DropRow>({
 	className = "",
-	onlyTypes,
 	rows,
 	showRoaster = true,
 	underRow,
 }: {
 	className?: string;
-	/** A filter for the event types shown; absent shows every event. */
-	onlyTypes?: readonly DropType[];
-	rows: DropRow[];
+	rows: Row[];
 	/** Off on a roaster's own page, where the name is the title. */
 	showRoaster?: boolean;
-	/** An extra full-width row under each event row (the delivery lines). */
-	underRow?: (row: DropRow) => ReactNode;
+	/**
+	 * An extra full-width row under each event row (the delivery lines);
+	 * `columnCount` is the table's own count, for the cell's `colSpan`.
+	 */
+	underRow?: (row: Row, columnCount: number) => ReactNode;
 }) => {
 	const tableRef = useRef<HTMLTableElement>(null);
-	const shown =
-		onlyTypes === undefined
-			? rows
-			: rows.filter((row) => onlyTypes.includes(row.type));
+	const columnCount = dropTableColumnCount(showRoaster);
 	return (
 		<>
 			<table className={`w-full border-collapse ${className}`} ref={tableRef}>
@@ -239,7 +245,7 @@ export const DropTable = ({
 					</tr>
 				</thead>
 				<tbody>
-					{shown.map((row, index) => (
+					{rows.map((row, index) => (
 						<Fragment key={row.eventId}>
 							<DropTableRow
 								index={index}
@@ -247,7 +253,7 @@ export const DropTable = ({
 								showRoaster={showRoaster}
 								withUnderRow={underRow !== undefined}
 							/>
-							{underRow?.(row)}
+							{underRow?.(row, columnCount)}
 						</Fragment>
 					))}
 				</tbody>
