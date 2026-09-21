@@ -11,7 +11,7 @@ import { SearchField } from "@/components/search-field";
 import { ArrowCell } from "@/components/table";
 import { WatchButton } from "@/components/watch-button";
 import { matchesRoaster } from "@/lib/roaster-search";
-import { bodyCell, headCell, navLinkClass } from "@/lib/ui";
+import { bodyCell, headCell, headCellRight, navLinkClass } from "@/lib/ui";
 
 type Roaster = FunctionReturnType<typeof api.roasters.listActive>[number];
 
@@ -110,22 +110,13 @@ const Directory = ({
 					<th className={`${headCell} hidden sm:table-cell`} scope="col">
 						City
 					</th>
-					<th
-						className={`${headCell} hidden text-right sm:table-cell`}
-						scope="col"
-					>
+					<th className={`${headCellRight} hidden sm:table-cell`} scope="col">
 						Lots
 					</th>
-					<th
-						className={`${headCell} hidden text-right md:table-cell`}
-						scope="col"
-					>
+					<th className={`${headCellRight} hidden md:table-cell`} scope="col">
 						New
 					</th>
-					<th
-						className={`${headCell} hidden text-right md:table-cell`}
-						scope="col"
-					>
+					<th className={`${headCellRight} hidden md:table-cell`} scope="col">
 						Watchers
 					</th>
 					{canWatch && (

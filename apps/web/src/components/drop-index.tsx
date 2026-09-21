@@ -6,7 +6,7 @@ import { ArrowCell, TableHoverImage } from "@/components/table";
 import { DROP_TYPE_LABEL, formatDropDate } from "@/lib/drops";
 import type { DropRow, DropType } from "@/lib/drops";
 import { displayPriceCents, formatPrice } from "@/lib/format";
-import { bodyCell, headCell } from "@/lib/ui";
+import { bodyCell, headCell, headCellRight } from "@/lib/ui";
 
 type Filter = "all" | DropType;
 
@@ -233,10 +233,7 @@ export const DropTable = <Row extends DropRow>({
 						<th className={headCell} scope="col">
 							Released
 						</th>
-						<th
-							className={`${headCell} hidden text-right sm:table-cell`}
-							scope="col"
-						>
+						<th className={`${headCellRight} hidden sm:table-cell`} scope="col">
 							Price
 						</th>
 						<th className={headCell} scope="col">

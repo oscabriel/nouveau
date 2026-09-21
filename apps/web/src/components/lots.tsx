@@ -9,7 +9,7 @@ import Loader from "@/components/loader";
 import { SearchField } from "@/components/search-field";
 import { ArrowCell, TableHoverImage } from "@/components/table";
 import { displayPriceCents, formatGrams, formatPrice } from "@/lib/format";
-import { bodyCell, headCell } from "@/lib/ui";
+import { bodyCell, headCell, headCellRight } from "@/lib/ui";
 
 type LotRow = FunctionReturnType<typeof api.roasters.listLots>["page"][number];
 
@@ -81,7 +81,7 @@ const LotTableRow = ({
 				{lot.origin ?? ""}
 			</td>
 			<td
-				className={`${bodyCell} text-muted-foreground tnum hidden pr-4 whitespace-nowrap sm:table-cell`}
+				className={`${bodyCell} text-muted-foreground tnum hidden pr-4 text-right whitespace-nowrap sm:table-cell`}
 			>
 				{fromPrice(lot.minPriceCents)}
 			</td>
@@ -143,10 +143,7 @@ const LotsBody = ({
 						<th className={`${headCell} hidden lg:table-cell`} scope="col">
 							Origin
 						</th>
-						<th
-							className={`${headCell} hidden text-right sm:table-cell`}
-							scope="col"
-						>
+						<th className={`${headCellRight} hidden sm:table-cell`} scope="col">
 							Price
 						</th>
 						<th className={headCell} scope="col">
