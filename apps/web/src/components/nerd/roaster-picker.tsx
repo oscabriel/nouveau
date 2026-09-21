@@ -4,7 +4,6 @@ import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 
-import { DotToggle } from "@/components/dot-toggle";
 import { SignInCta } from "@/components/sign-in-cta";
 import { describeMutationError } from "@/lib/errors";
 import { navLinkClass } from "@/lib/ui";
@@ -15,9 +14,8 @@ const selectClass =
 	"text-foreground focus-visible:border-foreground h-8 min-w-0 flex-1 border-b bg-transparent text-[13px] outline-none";
 
 /**
- * The run controls: a hairline select over the active roasters, the COMMIT
- * dot toggle (off by default; a run is a viewer, ADR-0018), START as a caps
- * action, and STOP beside it while the viewer's own run is going. START
+ * The run controls: a hairline select over the active roasters, START as
+ * a caps action, and STOP beside it while the viewer's own run is going. START
  * during a run supersedes it (the backend stops the old one), so a roaster
  * never has to finish before the next. Signed out, the sign-in block stands
  * in for the whole row; anyone may still watch.
@@ -38,7 +36,6 @@ export const RoasterPicker = ({
 	const start = useMutation(api.nerdStuff.start);
 	const stop = useMutation(api.nerdStuff.stop);
 	const [roasterId, setRoasterId] = useState("");
-	const [commit, setCommit] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [failure, setFailure] = useState<string | null>(null);
 
@@ -72,7 +69,7 @@ export const RoasterPicker = ({
 		setBusy(true);
 		setFailure(null);
 		try {
-			const id = await start({ commit, roasterId: picked.id });
+			const id = await start({ roasterId: picked.id });
 			onStarted(id);
 		} catch (error) {
 			setFailure(describeMutationError(error, "Could not start the run."));
@@ -110,15 +107,6 @@ export const RoasterPicker = ({
 					</option>
 				))}
 			</select>
-			<DotToggle
-				onClick={() => {
-					setCommit((value) => !value);
-				}}
-				pressed={commit}
-				title="Write the read's facts to the lots. Off, the run only records traces."
-			>
-				Commit
-			</DotToggle>
 			<button
 				className={`${navLinkClass} disabled:text-muted-foreground disabled:no-underline`}
 				disabled={busy}

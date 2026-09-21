@@ -28,7 +28,7 @@ export const STAGES = [
 	{
 		key: "store",
 		label: "Store",
-		what: "facts written only when COMMIT is on",
+		what: "the kept facts merged onto the lot, as after a sweep read",
 	},
 ] as const;
 

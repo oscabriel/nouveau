@@ -1,7 +1,7 @@
 // The /nerd-stuff workbench (ADR-0018): a viewer over the traces every
 // page read writes, plus a bounded run loop that reads up to MAX_RUN_LOTS
 // of one roaster's lots through the same Firecrawl budget as the sweep and
-// records a trace per lot. A run writes no facts unless asked (`commit`).
+// records a trace per lot and stores its facts like the sweep would.
 // Anyone can view. Starting needs sign-in (or, once appConfig names a
 // workbench user, that user) and passes one hourly limiter; a new run
 // supersedes the one going, so the owner never waits on a full roaster.
@@ -192,7 +192,7 @@ const settle = async (
  * have to wait on a full roaster to look at another.
  */
 export const start = mutation({
-	args: { commit: v.optional(v.boolean()), roasterId: v.id("roasters") },
+	args: { roasterId: v.id("roasters") },
 	handler: async (ctx, args) => {
 		const userId = await requireWorkbenchUser(ctx);
 		const roaster = await ctx.db.get("roasters", args.roasterId);
@@ -217,7 +217,6 @@ export const start = mutation({
 		}
 		const now = Date.now();
 		const runId = await ctx.db.insert("pipelineRuns", {
-			commit: args.commit ?? false,
 			createdAt: now,
 			deferred: 0,
 			failed: 0,
@@ -500,7 +499,7 @@ const gateTrace = (
 
 /**
  * Read one lot of the run: replay the feed pass, look up the gate's
- * answer, read the page through the budget, store when asked, record the
+ * answer, read the page through the budget, store its facts, record the
  * trace, advance. A deferred read runs again at the budget's word with the
  * same index, up to MAX_READ_DEFERRALS; a stopped run exits here.
  */
@@ -576,13 +575,11 @@ export const runLot = internalAction({
 				{ reserve: mayDefer, reserved: args.reserved },
 				stage
 			);
-			if (run.commit) {
-				await stage("store");
-				await ctx.runMutation(internal.pageFacts.store, {
-					...storeArgs(read),
-					productId: product._id,
-				});
-			}
+			await stage("store");
+			await ctx.runMutation(internal.pageFacts.store, {
+				...storeArgs(read),
+				productId: product._id,
+			});
 			await ctx.runMutation(internal.nerdStuff.recordTrace, {
 				...read.trace,
 				...withProduct,

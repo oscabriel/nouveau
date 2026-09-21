@@ -329,7 +329,6 @@ describe("nerdStuff.start", () => {
 		});
 		const run = await getRun(fx, runId);
 		expect(run).toMatchObject({
-			commit: false,
 			index: 0,
 			status: "running",
 			total: 2,
@@ -420,23 +419,22 @@ describe("nerdStuff.runLot", () => {
 		// The minute's one Firecrawl token went to the first lot; the second
 		// came from the shop itself, no deferral.
 		expect(second?.source).toBe("plain");
-		// A run is a viewer: nothing stored without commit.
+		// Every run stores what it read, like the sweep.
 		for (const lotId of fx.lotIds) {
 			// oxlint-disable-next-line no-await-in-loop -- two lookups
 			const row = await fx.t.run((ctx) => ctx.db.get(lotId));
-			expect(row?.pageFacts).toBeUndefined();
-			expect(row?.pageReads).toBeUndefined();
+			expect(row?.pageFacts).toMatchObject({ process: "Natural" });
+			expect(row?.pageReads).toBe(1);
 		}
 		const recent = await fx.t.query(api.nerdStuff.recentTraces, {});
 		expect(recent).toHaveLength(2);
 		expect(recent[0]).toMatchObject({ handle: "lot-0", roasterSlug: "sey" });
 	});
 
-	test("commit: true stores the read's facts on the product", async () => {
+	test("a run stores the read's facts and canonical Choices on the product", async () => {
 		const fx = await setup(1);
 		stubProviders();
 		await asUser(fx.t, fx.userId).mutation(api.nerdStuff.start, {
-			commit: true,
 			roasterId: fx.roasterId,
 		});
 		await drive(fx);
@@ -645,7 +643,6 @@ describe("nerdStuff.prune", () => {
 			url: "https://x",
 		});
 		const run = (createdAt: number) => ({
-			commit: false,
 			createdAt,
 			deferred: 0,
 			failed: 0,

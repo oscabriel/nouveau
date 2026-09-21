@@ -27,8 +27,8 @@ import type { Trace } from "@/components/nerd/trace-row";
  * THESIS: a viewer over the traces every production page read writes,
  *   plus one bounded run loop (at most ten lots of one roaster through
  *   the sweep's own Firecrawl budget). The page shows what Jev was asked
- *   and what it answered; it invents nothing and, unless COMMIT is on,
- *   writes no facts.
+ *   and what it answered, and stores what the read found, as the sweep
+ *   would.
  * OWN-WORLD: the index's tokens, at workbench density. This route alone
  *   departs from the table-scale spacing of the rest of the app (owner,
  *   2026-09-21): 13px rows, 12px padding, everything on screen at once.
@@ -151,12 +151,7 @@ const RunPanel = ({ run }: { run: Run | null | undefined }) => {
 		<div className="flex flex-col gap-3">
 			<StatStrip run={run} />
 			<div>
-				<div className="flex items-baseline justify-between gap-3 text-xs">
-					<span>{statusWord(run)}</span>
-					<span className="label-caps text-muted-foreground text-[10px]">
-						{run.commit ? "Commit on" : "Commit off"}
-					</span>
-				</div>
+				<div className="text-xs">{statusWord(run)}</div>
 				<div className="mt-1">
 					<StageTrack run={run} />
 				</div>

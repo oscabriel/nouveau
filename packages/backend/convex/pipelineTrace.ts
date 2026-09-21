@@ -178,8 +178,12 @@ export const MAX_RUN_LOTS = 10;
  * sweep. The lot list is fixed at start, so `index` names the lot in flight.
  */
 export const runFields = {
-	/** Write the read's facts to the product? Off by default: a run is a viewer. */
-	commit: v.boolean(),
+	/**
+	 * Gone (owner, 2026-09-21): every run stores its facts now. Optional so
+	 * the rows from before validate until the weekly prune removes them;
+	 * drop the field after that.
+	 */
+	commit: v.optional(v.boolean()),
 	createdAt: v.number(),
 	currentProductId: v.optional(v.id("products")),
 	currentStage: v.optional(runStageValidator),

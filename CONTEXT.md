@@ -68,6 +68,6 @@ A drop-alert service with a social layer for home coffee brewers: watches US spe
 
 **Trace**: The record of one page read: what the page said, what Jev was asked, what it answered for every candidate line, note and sentence, what the cut made of it, and whether the verifier kept it. Every page read leaves one, and it is kept for a few days, not forever. _Avoid_: Log (that's a taster's record), audit row, debug output
 
-**Pipeline run**: A short sequence of traced page reads over one roaster's lots that a signed-in person started from the workbench, to watch the pipeline work. A run writes no page facts unless the person asked it to. _Avoid_: Job, batch, sweep (that's the crawl-end read the crawler schedules on its own)
+**Pipeline run**: A short sequence of traced page reads over one roaster's lots that a signed-in person started from the workbench, to watch the pipeline work. A run stores what it reads, as the sweep would. _Avoid_: Job, batch, sweep (that's the crawl-end read the crawler schedules on its own)
 
 **Workbench**: The unlisted page (`/nerd-stuff`) that shows traces and drives pipeline runs. A viewer over what the pipeline already does; it is not a second pipeline. _Avoid_: Admin, dashboard, debug page
