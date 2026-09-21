@@ -103,6 +103,11 @@ Logged from the owner's brief; order and scope are the next session's call. The 
 
 - [x] **Landing wordmark experiment.** Replace the NOUVEAU wordmark with a thick serif, huge, spanning the whole viewport, with the branch image sitting in front of the right diagonal of the V as a decorative replacement for it. Owner's explicit override of the direction contract (grotesk caps wordmark, serif reserved for the one prose line), so it rides as a trial; if it lands, the contract comment in `index.tsx`, DESIGN.md's typography entry and the landing-order line get the amendment in the same commit. Needs a suitable thick serif (self-hosted per the font rule; Source Serif's black weight may do), and the branch cut as a transparent PNG/WebP overlay positioned at the V. (Done 2026-09-21; kept, not a trial anymore. Font is EB Garamond, self-hosted; see the progress log.)
 
+## Next: owner's list (2026-09-21, after batch 8)
+
+- [ ] **Stack the header and footer nav links on small screens.** Below `md` the header's left and right link groups should stack as two vertical rows instead of the `flex-wrap` that drops links onto a second line in whichever order the widths allow. Same for the footer's link row. This pushes the landing content down below `md`; re-check the landing's above-the-fold spacing at 390 after.
+- [ ] **Footer order: stamen below the wordmark.** In the footer's lower block, switch the two so the stamen flower is the bottom-most thing on the page, under NOUVEAU.COFFEE. The flower currently sits beside the wordmark at the same height (ADR-0012, amended 2026-09-21 twice); this changes that arrangement again, so amend the ADR and DESIGN.md's footer entry in the same commit.
+
 ## Progress log
 
 | Date | Batch | What landed |
