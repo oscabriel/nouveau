@@ -85,6 +85,7 @@ export const readLot = internalAction({
 				candidate.name
 			);
 			await ctx.runMutation(internal.pageFacts.store, {
+				confidence: page.confidence,
 				facts: page.facts,
 				productId: candidate.productId,
 			});

@@ -64,7 +64,12 @@ interface ProviderOptions {
 	timeout?: boolean;
 	/** Firecrawl's HTTP status; 429 is its rate limit. */
 	firecrawlStatus?: number;
+	/** The line Jev's stub picks per field; STUB_PICKS by default. */
+	picks?: Record<string, RegExp>;
 }
+
+/** The probability the stub gives its pick; the rest goes to the hatch. */
+const STUB_PICK_PROBABILITY = 0.9;
 
 /** The line Jev's stub picks per field: the fixture's spec lines, as the reader offers them. */
 const STUB_PICKS: Record<string, RegExp> = {
@@ -86,6 +91,7 @@ const stubProviders = ({
 	firecrawlStatus = 200,
 	html = PAGE_HTML,
 	jev = true,
+	picks = STUB_PICKS,
 	rendered = PAGE_HTML,
 	statusCode = 200,
 	timeout = false,
@@ -137,14 +143,21 @@ const stubProviders = ({
 			const answers: Record<string, unknown> = {};
 			for (const [key, question] of Object.entries(body.questions)) {
 				if (question.type === "choice") {
-					const wanted = STUB_PICKS[key];
+					const wanted = picks[key];
 					const line = Object.keys(question.criteria ?? {}).find((option) =>
 						wanted === undefined ? false : wanted.test(option)
 					);
+					const choice = line ?? "none";
 					answers[key] = {
-						choice: line ?? "none",
-						confidence: 0.9,
-						probabilities: {},
+						choice,
+						confidence: STUB_PICK_PROBABILITY,
+						probabilities:
+							choice === "none"
+								? { none: 1 }
+								: {
+										[choice]: STUB_PICK_PROBABILITY,
+										none: 1 - STUB_PICK_PROBABILITY,
+									},
 						type: "choice",
 					};
 				} else {
@@ -587,6 +600,33 @@ describe("pageFacts.store and the lot page", () => {
 		expect(stored?.pageReads).toBe(2);
 	});
 
+	test("the confidence follows the facts: merged per field, and a field re-stored without one loses the old one", async () => {
+		const fx = await setup({
+			pageFactConfidence: { process: 0.7, variety: 0.6 },
+			pageFacts: { process: "Natural", variety: "Heirloom" },
+			pageReads: 1,
+		});
+		await fx.t.mutation(internal.pageFacts.store, {
+			confidence: { producer: 0.95 },
+			facts: { producer: "Mullugeta Muntasha", variety: "74158" },
+			productId: fx.lotId,
+		});
+		const stored = await product(fx);
+		expect(stored?.pageFactConfidence).toEqual({
+			process: 0.7,
+			producer: 0.95,
+		});
+		// An empty read touches neither.
+		await fx.t.mutation(internal.pageFacts.store, {
+			confidence: {},
+			facts: {},
+			productId: fx.lotId,
+		});
+		const again = await product(fx);
+		expect(again?.pageFactConfidence).toEqual({ process: 0.7, producer: 0.95 });
+		expect(again?.pageReads).toBe(3);
+	});
+
 	test("an empty read keeps the attempt stamp, counts the read and stores no pageFacts", async () => {
 		const fx = await setup();
 		await fx.t.mutation(internal.pageFacts.store, {
@@ -692,6 +732,31 @@ describe("pageFacts.scrape", () => {
 			process: "Natural",
 			tastingNotes: ["peach", "melon", "red tea"],
 			variety: "Heirloom",
+		});
+	});
+
+	test("the stored confidence is Jev's probability for the picked line, per kept field, and none for a field the verifier dropped", async () => {
+		const fx = await setup();
+		// The producer pick is the process line: the cut strips the label and
+		// the process term fails the producer guard, so no fact and no
+		// confidence land for it.
+		stubProviders({ picks: { ...STUB_PICKS, producer: /Process: Natural/u } });
+		await fx.t.action(internal.pageFacts.scrape, {
+			name: "Ethiopia Mullugeta Muntasha",
+			productId: fx.lotId,
+			url: PAGE_URL,
+		});
+		const read = await product(fx);
+		expect(read?.pageFacts).toEqual({
+			elevation: "1,900 - 2,100 masl",
+			process: "Natural",
+			tastingNotes: ["peach", "melon", "red tea"],
+			variety: "Heirloom",
+		});
+		expect(read?.pageFactConfidence).toEqual({
+			elevation: STUB_PICK_PROBABILITY,
+			process: STUB_PICK_PROBABILITY,
+			variety: STUB_PICK_PROBABILITY,
 		});
 	});
 

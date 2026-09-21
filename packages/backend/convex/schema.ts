@@ -2,7 +2,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 import { healthValidator } from "./health";
-import { pageFactsValidator } from "./lotFacts";
+import { pageFactConfidenceValidator, pageFactsValidator } from "./lotFacts";
 import {
 	candidateValidator,
 	pickValidator,
@@ -204,6 +204,12 @@ export default defineSchema({
 		missedCrawls: v.optional(v.number()),
 		name: v.string(),
 		origin: v.optional(v.string()),
+		// Jev's probability for the line it picked, per stored page fact: its
+		// certainty that the line is the right line, before the cut and the
+		// verifier, not that the value is right. Written with pageFacts by the
+		// page scrape and merged the same way; a field without a stored fact
+		// has no confidence.
+		pageFactConfidence: v.optional(pageFactConfidenceValidator),
 		// Facts read off the rendered product page (ADR-0005). Owned by the
 		// page scrape (pageFacts.ts); lotCopyFields never writes it. Reads merge
 		// with the feed winning (lotFacts.mergedFacts).

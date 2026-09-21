@@ -23,6 +23,25 @@ export const pageFactsValidator = v.object({
 });
 export type PageFacts = Infer<typeof pageFactsValidator>;
 
+/**
+ * Jev's probability for the line it picked per page fact, kept only beside
+ * a stored fact (a field the cut and the verifier dropped keeps none). It is
+ * Jev's certainty that the line is the right line, before the cut and the
+ * verifier; not that the cut value is right. Sibling of `pageFacts`, so
+ * every reader of the facts stays untouched. Tasting notes get an
+ * index-aligned array, one probability per stored note.
+ */
+export const pageFactConfidenceValidator = v.object({
+	elevation: v.optional(v.number()),
+	process: v.optional(v.number()),
+	producer: v.optional(v.number()),
+	region: v.optional(v.number()),
+	roastLevel: v.optional(v.number()),
+	tastingNotes: v.optional(v.array(v.number())),
+	variety: v.optional(v.number()),
+});
+export type PageFactConfidence = Infer<typeof pageFactConfidenceValidator>;
+
 /** A lot has at most this many descriptors; the rest is prose. */
 export const MAX_NOTES = 8;
 /** "bittersweet chocolate" is a note; "this classic Dark Roast tastes" is not. */

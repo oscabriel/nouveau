@@ -28,10 +28,14 @@ import {
 	pageTextFromHtml,
 } from "./extraction";
 import type { PageElements } from "./extraction";
-import { askJev, JEV_MODEL, jevChoice, jevNoul } from "./jev";
+import { askJev, JEV_MODEL, jevChoice, jevNoul, pickProbability } from "./jev";
 import type { JevQuestion } from "./jev";
-import { needsPageFacts, pageFactsValidator } from "./lotFacts";
-import type { PageFacts } from "./lotFacts";
+import {
+	needsPageFacts,
+	pageFactConfidenceValidator,
+	pageFactsValidator,
+} from "./lotFacts";
+import type { PageFactConfidence, PageFacts } from "./lotFacts";
 import { lotShopUrl } from "./lotUrl";
 import { sentenceCandidates } from "./recommendationRules";
 
@@ -264,17 +268,28 @@ export const pageJevQuestions = (
 	return questions;
 };
 
+/** What one answer map yields: the verified facts, Jev's probability per kept fact, the approved sentences. */
+interface Picks {
+	confidence: PageFactConfidence;
+	facts: PageFacts;
+	sentences: string[];
+}
+
 /**
  * The lines out of one answer map, then the facts cut from them. A choice
  * outside the sent lines or the none hatch is a protocol error and leaves
- * the field unset, never defaulted.
+ * the field unset, never defaulted. The confidence per field is the
+ * probability Jev gave the picked line, kept only for a field the cut and
+ * the verifier kept, so a stored confidence always has a stored fact
+ * beside it.
  */
 const picksFromAnswers = (
 	answers: Record<string, unknown>,
 	elements: PageElements,
 	sentences: readonly string[]
-): { facts: PageFacts; sentences: string[] } => {
+): Picks => {
 	const picks: PageFacts = {};
+	const picked: Partial<Record<ChoiceField, number>> = {};
 	const options = choiceOptions(elements);
 	for (const [field] of CHOICE_FIELDS) {
 		const chosen =
@@ -283,6 +298,10 @@ const picksFromAnswers = (
 			continue;
 		}
 		picks[field] = chosen.choice;
+		const probability = pickProbability(chosen);
+		if (probability !== undefined) {
+			picked[field] = probability;
+		}
 	}
 	const noteLines: string[] = [];
 	for (const [index, line] of elements.noteLines.entries()) {
@@ -301,8 +320,17 @@ const picksFromAnswers = (
 			approved.push(sentence);
 		}
 	}
+	const facts = pageFactsFromPicks(picks);
+	const confidence: PageFactConfidence = {};
+	for (const [field] of CHOICE_FIELDS) {
+		const probability = picked[field];
+		if (facts[field] !== undefined && probability !== undefined) {
+			confidence[field] = probability;
+		}
+	}
 	return {
-		facts: pageFactsFromPicks(picks),
+		confidence,
+		facts,
 		sentences: approved.slice(0, MAX_PAGE_SENTENCES),
 	};
 };
@@ -468,6 +496,8 @@ export const resetReads = internalMutation({
 
 /** What one page read yields: facts for the product, sentences for evidence. */
 export interface PageRead {
+	/** Jev's probability for the picked line, per stored fact. */
+	confidence: PageFactConfidence;
 	facts: PageFacts;
 	/** The page as block text: the rendered or the served HTML, reduced. */
 	pageText: string;
@@ -655,7 +685,12 @@ export const readPageFacts = async (
 	budget: BudgetOptions = {}
 ): Promise<PageRead> => {
 	const pageText = await readPageWithinBudget(ctx, url, budget);
-	const empty: PageRead = { facts: {}, pageText, sentences: [] };
+	const empty: PageRead = {
+		confidence: {},
+		facts: {},
+		pageText,
+		sentences: [],
+	};
 	const apiKey = env.TYPESAFE_API_KEY;
 	// Without the key the read still succeeds: the lot keeps its attempt
 	// stamp, the passages fall back to the regex path, and the next read
@@ -699,14 +734,18 @@ export const scrape = internalAction({
 	},
 	handler: async (ctx, args) => {
 		let facts: PageFacts = {};
+		let confidence: PageFactConfidence = {};
 		const deferrals = args.deferrals ?? 0;
 		// A read at the cap must not hold a slot it will never run in.
 		const mayDefer = deferrals < MAX_READ_DEFERRALS;
 		try {
-			({ facts } = await readPageFacts(ctx, args.url, "", args.name ?? "", {
-				reserve: mayDefer,
-				reserved: args.reserved,
-			}));
+			({ confidence, facts } = await readPageFacts(
+				ctx,
+				args.url,
+				"",
+				args.name ?? "",
+				{ reserve: mayDefer, reserved: args.reserved }
+			));
 		} catch (error) {
 			// A deferred read never reached the page: the stamp from the
 			// schedule stands and the try does not spend one of the lot's
@@ -731,6 +770,7 @@ export const scrape = internalAction({
 			return null;
 		}
 		await ctx.runMutation(internal.pageFacts.store, {
+			confidence,
 			facts,
 			productId: args.productId,
 		});
@@ -755,22 +795,36 @@ const attemptPatch = (
  * up to MAX_PAGE_READS times. Never touches a feed column.
  */
 export const store = internalMutation({
-	args: { facts: pageFactsValidator, productId: v.id("products") },
+	args: {
+		// Optional so reads scheduled before it existed still store.
+		confidence: v.optional(pageFactConfidenceValidator),
+		facts: pageFactsValidator,
+		productId: v.id("products"),
+	},
 	handler: async (ctx, args) => {
 		const product = await ctx.db.get("products", args.productId);
 		if (product === null) {
 			return null;
 		}
-		await ctx.db.patch(
-			"products",
-			args.productId,
-			Object.keys(args.facts).length === 0
-				? attemptPatch(product)
-				: {
-						...attemptPatch(product),
-						pageFacts: { ...product.pageFacts, ...args.facts },
-					}
+		if (Object.keys(args.facts).length === 0) {
+			await ctx.db.patch("products", args.productId, attemptPatch(product));
+			return null;
+		}
+		// The confidence follows the facts: a field this read stored takes
+		// this read's probability (or none, so an earlier read's never sits
+		// beside a value it did not pick); a field an earlier read stored
+		// keeps its own. Only patched when the facts patch is.
+		const kept = Object.entries(product.pageFactConfidence ?? {}).filter(
+			([field]) => !(field in args.facts)
 		);
+		await ctx.db.patch("products", args.productId, {
+			...attemptPatch(product),
+			pageFactConfidence: {
+				...Object.fromEntries(kept),
+				...args.confidence,
+			},
+			pageFacts: { ...product.pageFacts, ...args.facts },
+		});
 		return null;
 	},
 	returns: v.null(),
