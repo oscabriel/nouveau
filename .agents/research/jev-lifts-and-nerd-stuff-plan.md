@@ -360,7 +360,7 @@ Three subscriptions: `api.nerdStuff.run` (or `latestRun`), `api.nerdStuff.traces
 Follow DESIGN.md as it reads today. In particular:
 
 - No accent hue. The demo's "jev" tone becomes the inverted strip only.
-- Probability bars are ink on a hairline track, square corners, 2px tall. Pending is a dashed hairline that drifts (port `bar-pending` but grey, respecting `prefers-reduced-motion`). Rejected candidates are grey with a strikethrough.
+- Probability bars are ink on a hairline track, square corners, 2px tall. Rejected candidates are grey with a strikethrough. (A drifting pending bar was planned here and dropped at review, 2026-09-21: a trace has no pending state, it is written whole at the read's end.)
 - Labels are `.label-caps`. Numbers are `.tnum`. The page title is `PageTitle` in Garamond like every inner page, "Nerd stuff", with the run's roaster as the count slot.
 - Rows enter without animation. The demo's `row-enter` is a fade and slide; DESIGN.md has no motion vocabulary beyond the reading dot. Leave it out.
 - Both themes, 1440 and 390. At 390 the detail stacks below the list.
