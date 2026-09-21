@@ -7,10 +7,12 @@ import { PageTitle } from "@/components/page-title";
 
 /**
  * The global activity feed (build spec §14.3): recent logs, newest first,
- * under the Activity title with the count. Public.
+ * under the Activity title with the count. Public. The viewer's own rows
+ * get EDIT and DELETE instead of the Save toggle, as on the lot page.
  */
 export const ActivityFeed = () => {
 	const feed = useQuery(api.logs.recentLogs, {});
+	const me = useQuery(api.users.getCurrentUser);
 	return (
 		<>
 			<PageTitle
@@ -32,7 +34,11 @@ export const ActivityFeed = () => {
 				{feed !== undefined && feed.length > 0 && (
 					<div>
 						{feed.map((log) => (
-							<LogCard key={log.logId} log={log} />
+							<LogCard
+								isMine={log.user.id === me?.id}
+								key={log.logId}
+								log={log}
+							/>
 						))}
 					</div>
 				)}

@@ -20,10 +20,10 @@ export type LogCardData = FunctionReturnType<
  * One log row under a hairline: who tried what from whom and when on one
  * line, the stars, the review, then the taster's picks beside the roaster's
  * descriptors. The activity feed shows the taster (showUser); the profile
- * already belongs to them, so it passes showUser={false} and may pass isMine;
- * the lot page already names the lot, so it passes showLot={false}. Both
- * false is never mounted (the line would be empty), and isMine
- * gets EDIT and DELETE as caps actions. Someone else's log offers the Save
+ * already belongs to them, so it passes showUser={false}; the lot page
+ * already names the lot, so it passes showLot={false}. Both false is never
+ * mounted (the line would be empty). Every mount passes isMine for the
+ * viewer's own rows, which get EDIT and DELETE as caps actions. Someone else's log offers the Save
  * toggle on its lot instead: a log you read is the main way a lot gets onto
  * the try list.
  */
