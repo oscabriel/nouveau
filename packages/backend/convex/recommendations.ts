@@ -24,6 +24,7 @@ import {
 	OPENAI_MODEL,
 	recommendationInput,
 	RUN_TIMEOUT_MS,
+	SHORTLIST_TTL_MS,
 	pickValidator,
 	validateInput,
 	WHY_MAX_CHARS,
@@ -603,6 +604,11 @@ export const latest = query({
 			.order("desc")
 			.first();
 		if (!run) {
+			return null;
+		}
+		// A settled run ages out of the pane; an active one always shows.
+		const settled = run.status === "ready" || run.status === "failed";
+		if (settled && now - run.updatedAt > SHORTLIST_TTL_MS) {
 			return null;
 		}
 		const results = await Promise.all(

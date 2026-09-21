@@ -30,6 +30,7 @@ import {
 	OPENAI_MODEL,
 	PRODUCTS_PER_ROASTER,
 	pagePassages,
+	SHORTLIST_TTL_MS,
 	preferenceTokens,
 	sentenceCandidates,
 } from "./recommendationRules";
@@ -990,6 +991,29 @@ test("latest hydrates the ranked picks with availability and image", async () =>
 		now: NOW + FRESHNESS_MS + 1,
 	});
 	expect(stale?.picks[0]?.canBuy).toBe(false);
+	// A settled shortlist ages out of the pane; a running one never does.
+	await f.t.mutation(internal.recommendations.finish, {
+		attempt: 1,
+		runId: run._id,
+		summary: "One floral lot.",
+	});
+	expect(
+		await f.user.query(api.recommendations.latest, {
+			now: NOW + SHORTLIST_TTL_MS - 1,
+		})
+	).toMatchObject({ status: "ready" });
+	expect(
+		await f.user.query(api.recommendations.latest, {
+			now: NOW + SHORTLIST_TTL_MS + 1,
+		})
+	).toBeNull();
+	await f.t.run((ctx) => ctx.db.patch(run._id, { status: "running" }));
+	expect(
+		await f.user.query(api.recommendations.latest, {
+			now: NOW + SHORTLIST_TTL_MS + 1,
+		})
+	).toMatchObject({ status: "running" });
+	await f.t.run((ctx) => ctx.db.patch(run._id, { status: "ready" }));
 	await f.t.run((ctx) => ctx.db.patch(f.variantId, { available: false }));
 	const unavailable = await f.user.query(api.recommendations.latest, {
 		now: NOW,

@@ -17,6 +17,10 @@ export const MAX_ATTEMPTS = 2;
 // Page reads one run may reserve, shared with the crawler's budget (ADR-0010).
 export const MAX_ENRICHMENTS = 2;
 export const RUN_TIMEOUT_MS = 5 * 60 * 1000;
+// How long a settled shortlist stays in the pane after it finished. The pane
+// is ephemeral (ADR-0017, amendment of 2026-09-20): past this the pane opens
+// blank. Same window as the catalog freshness the prices were checked under.
+export const SHORTLIST_TTL_MS = FRESHNESS_MS;
 // Model steps (tool rounds) per run, so a confused loop ends before the
 // watchdog. Up to five of them are pickLot calls when the model picks one at
 // a time in separate steps.
