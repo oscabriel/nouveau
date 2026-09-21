@@ -61,6 +61,19 @@ describe("user handles", () => {
 		expect(user?.handle).toBe("ada-lovelace-2");
 	});
 
+	test("a new sign-in may take a retired handle, and the dead redirect goes", async () => {
+		const { t } = await setup();
+		const ada = await createUser(t, "Ada Lovelace", "google-ada");
+		await asUser(t, ada).mutation(api.users.updateMe, { handle: "ada-2" });
+		const newcomer = await createUser(t, "Ada Lovelace", "google-ada-too");
+		const user = await t.run((ctx) => ctx.db.get("users", newcomer));
+		expect(user?.handle).toBe("ada-lovelace");
+		const rows = await t.run(
+			async (ctx) => await ctx.db.query("handleRedirects").collect()
+		);
+		expect(rows).toHaveLength(0);
+	});
+
 	test("a reserved display name falls back to taster", async () => {
 		const { t } = await setup();
 		const userId = await createUser(t, "Settings", "google-settings");
@@ -172,6 +185,23 @@ describe("updateMe (ADR-0011, ADR-0016)", () => {
 		);
 		expect(rows).toHaveLength(1);
 		expect(rows[0]?.handle).toBe("ada-2");
+	});
+
+	test("a retired handle is not reserved: another user may take it and its redirect goes", async () => {
+		const { t } = await setup();
+		const ada = await createUser(t, "Ada Lovelace", "google-ada");
+		await asUser(t, ada).mutation(api.users.updateMe, { handle: "ada-2" });
+		const stranger = await createUser(t, "Bob", "google-bob");
+		await asUser(t, stranger).mutation(api.users.updateMe, {
+			handle: "ada-lovelace",
+		});
+		const user = await t.run((ctx) => ctx.db.get("users", stranger));
+		expect(user?.handle).toBe("ada-lovelace");
+		const rows = await t.run(
+			async (ctx) => await ctx.db.query("handleRedirects").collect()
+		);
+		// Bob's old handle is the only redirect left; Ada's dead one is gone.
+		expect(rows.map((row) => row.handle)).toEqual(["bob"]);
 	});
 
 	test("a taken handle is rejected", async () => {

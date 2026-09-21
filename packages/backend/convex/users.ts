@@ -5,6 +5,7 @@ import { internalMutation, mutation, query } from "./_generated/server";
 import {
 	claimHandle,
 	deriveBaseHandle,
+	dropRedirect,
 	isReserved,
 	isValidHandle,
 } from "./handles";
@@ -55,10 +56,12 @@ export const createUser = internalMutation({
  * Save the account's own fields: the handle and the name (ADR-0011,
  * ADR-0016). The handle's rules are the derivation's, checked here rather
  * than trusted; a change keeps the old handle as a `handleRedirects` row so
- * no shared `/$user` link rots, and a row for the new handle is removed —
- * the handle is live again, so the redirect can never fire past the
- * current-handle lookup. Absent fields stay alone; `null` is not an option:
- * a row always keeps a name or a handle once it has one.
+ * no shared `/$user` link rots, and a row for the new handle is removed.
+ * The handle is live again, so the redirect can never fire past the
+ * current-handle lookup. A retired handle is not reserved for its old
+ * owner (ADR-0011), so the removed row may be anyone's. Absent fields stay
+ * alone; `null` is not an option: a row always keeps a name or a handle
+ * once it has one.
  */
 export const updateMe = mutation({
 	args: {
@@ -114,15 +117,9 @@ export const updateMe = mutation({
 					});
 				}
 			}
-			// Reclaiming a retired handle removes its redirect row: by_handle
+			// Taking a retired handle removes its redirect row: by_handle
 			// answers first, so the row could never fire again anyway.
-			const reclaimed = await ctx.db
-				.query("handleRedirects")
-				.withIndex("by_handle", (q) => q.eq("handle", handle))
-				.unique();
-			if (reclaimed !== null) {
-				await ctx.db.delete("handleRedirects", reclaimed._id);
-			}
+			await dropRedirect(ctx, handle);
 			patch.handle = handle;
 		}
 		if (Object.keys(patch).length > 0) {
