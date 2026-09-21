@@ -86,7 +86,7 @@
 @theme inline {
 	--font-sans:
 		"Schibsted Grotesk Variable", "Helvetica Neue", Helvetica, Arial, sans-serif;
-	--font-serif: "Source Serif 4 Variable", Georgia, "Times New Roman", serif;
+	--font-serif: "EB Garamond Variable", Georgia, "Times New Roman", serif;
 	--font-caveat: "Caveat Variable", "Segoe Script", cursive;
 	--color-sidebar-ring: var(--sidebar-ring);
 	--color-sidebar-border: var(--sidebar-border);

@@ -20,16 +20,17 @@ typography:
     lineHeight: 1
     letterSpacing: "0.06em"
   wordmark:
-    fontFamily: "Schibsted Grotesk Variable, Helvetica Neue, Helvetica, Arial, sans-serif"
-    fontSize: "clamp(1.75rem, 2.5vw, 2.25rem)"
-    fontWeight: 600
-    lineHeight: 1
-    letterSpacing: "0.01em"
-  lede:
-    fontFamily: "Source Serif 4 Variable, Georgia, Times New Roman, serif"
-    fontSize: "clamp(1.375rem, 2vw, 1.75rem)"
+    fontFamily: "EB Garamond Variable, Georgia, Times New Roman, serif"
+    fontSize: "17.5vw"
     fontWeight: 400
-    lineHeight: 1.3
+    fontStyle: italic
+    lineHeight: 1
+    letterSpacing: "-0.01em"
+  lede:
+    fontFamily: "EB Garamond Variable, Georgia, Times New Roman, serif"
+    fontSize: "clamp(1.5rem, 2vw, 1.875rem)"
+    fontWeight: 400
+    lineHeight: 1.25
     letterSpacing: "normal"
   tab:
     fontFamily: "Schibsted Grotesk Variable, Helvetica Neue, Helvetica, Arial, sans-serif"
@@ -44,9 +45,9 @@ typography:
     lineHeight: 1.375
     letterSpacing: "normal"
   title:
-    fontFamily: "Schibsted Grotesk Variable, Helvetica Neue, Helvetica, Arial, sans-serif"
-    fontSize: "clamp(1.75rem, 2.5vw, 2.25rem)"
-    fontWeight: 600
+    fontFamily: "EB Garamond Variable, Georgia, Times New Roman, serif"
+    fontSize: "clamp(2rem, 3vw, 2.75rem)"
+    fontWeight: 400
     lineHeight: 1
     letterSpacing: "normal"
   section:
@@ -122,7 +123,7 @@ components:
 
 # Nouveau
 
-_Recorded from the built world, 2026-09-16, after the landing redesign; extended 2026-09-18 with the header, `/roasters` and `/roasters/$slug`; amended 2026-09-20 after the design pass (ADRs 0011 to 0017: addresses, chrome, theme, landing, tables, the record, the next-bag pane). Replaces the earlier "watch tower" system (deep blue, Inter, cool neutrals) in full. References pinned by the owner: theindex.website for structure and type, vanschneider.com/blog for the table row hover. Updated as each further screen ships._
+_Recorded from the built world, 2026-09-16, after the landing redesign; extended 2026-09-18 with the header, `/roasters` and `/roasters/$slug`; amended 2026-09-20 after the design pass (ADRs 0011 to 0017: addresses, chrome, theme, landing, tables, the record, the next-bag pane); amended 2026-09-21 with the serif wordmark and titles. Replaces the earlier "watch tower" system (deep blue, Inter, cool neutrals) in full. References pinned by the owner: theindex.website for structure and type, vanschneider.com/blog for the table row hover. Updated as each further screen ships._
 
 ## Overview
 
@@ -144,21 +145,21 @@ Strategy: restrained to the point of monochrome. Ink on ground, one grey for sec
 
 ## Typography
 
-- **Schibsted Grotesk Variable** (self-hosted via `@fontsource-variable/schibsted-grotesk`) for everything but the lede. Stand-in for LL Unica77; the owner will refine.
-- **Source Serif 4 Variable** (`@fontsource-variable/source-serif-4`) for the lede only. Stand-in for LL Catalogue.
+- **Schibsted Grotesk Variable** (self-hosted via `@fontsource-variable/schibsted-grotesk`) for labels, tabs, section heads, cells and every control. Stand-in for LL Unica77; the owner will refine.
+- **EB Garamond Variable** (`@fontsource-variable/eb-garamond`, self-hosted, upright and italic files) for the wordmark, the inner-page titles and the lede. Regular weight everywhere; italic for the wordmark only. Replaced Source Serif 4 on 2026-09-21.
 - **Caveat Variable** (`@fontsource-variable/caveat`, self-hosted) for the footer plate's captions only: a handwritten face for the botanist's labels under the engraved details (ADR-0012). It appears nowhere else.
 - The ramp, as used:
   - Label: 11px, weight 500, uppercase, tracking 0.06em, line-height 1. Nav, table headers, footer links, toggles, the sign-in block. The `.label-caps` utility in `globals.css`.
-  - Wordmark: 28px to 36px, weight 600, uppercase, tracking 0.01em.
-  - Lede: 22px to 28px serif, line-height 1.3, `text-balance`, measure capped at 44rem.
-  - Title: the wordmark size (28px to 36px) at weight 600, mixed case. Inner-page h1: "Roasters", the roaster's name. Counts follow in 14px grey tabular figures in parentheses. `page-title.tsx`.
+  - Wordmark: Garamond italic, weight 400, uppercase, 17.5vw (about 252px at 1440, 68px at 390), tracking -0.01em, line-height 1. Landing only; the header's NOUVEAU stays a label.
+  - Lede: 24px to 30px Garamond, line-height 1.25, `text-balance`, measure capped at 44rem.
+  - Title: 32px to 44px Garamond, weight 400, mixed case. Inner-page h1: "Roasters", the roaster's name, "About". Counts follow in 14px grey grotesk tabular figures in parentheses. `page-title.tsx`.
   - Section: 20px to 24px, weight 400. Inner-page h2 ("Drop history", "Lots"), counts in 12px tabular.
   - Tabs: 18px to 24px, weight 400; counts in 12px tabular figures in parentheses.
   - Cells: 14px on mobile, 15px from `md`, line-height snug. Row numbers 12px tabular.
   - Caption: 24px to 30px Caveat, weight 400, line-height 1, ink. The `.font-caveat` utility. Footer plate captions only.
   - The marquee (22vw wordmark) is gone with the footer that carried it (ADR-0012).
 - Tabular figures (`.tnum`) on dates, prices, counts, and row numbers. Drop dates render `09.16` (month and day; the table is a live index, the year is noise, ADR-0014). Full dates elsewhere render `2026.09.16`.
-- No display face beyond the grotesk at weight 600. No italics in UI.
+- The grotesk never goes above weight 600, and it carries no display sizes; the Garamond does that work. The one italic in the app is the wordmark.
 
 ## Layout
 

@@ -16,10 +16,10 @@ export const PageTitle = ({
 	title: string;
 }) => (
 	<div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-		<h1 className="text-[1.75rem] leading-none font-semibold md:text-[2.25rem]">
+		<h1 className="font-serif text-[2rem] leading-none font-normal md:text-[2.75rem]">
 			{title}
 			{count !== undefined && (
-				<span className="text-muted-foreground tnum ml-2 text-sm font-normal">
+				<span className="text-muted-foreground tnum ml-2 font-sans text-sm font-normal">
 					({count})
 				</span>
 			)}

@@ -15,7 +15,9 @@ import { StatusChip } from "@/components/status-chip";
 
 const SignedOut = () => (
 	<div className="container mx-auto max-w-3xl px-4 py-8">
-		<h1 className="mb-2 text-2xl font-semibold">Add a roaster</h1>
+		<h1 className="mb-2 font-serif text-[2rem] leading-none font-normal">
+			Add a roaster
+		</h1>
 		<p className="text-muted-foreground mb-4 max-w-prose text-sm">
 			Sign in to add a roaster we don&apos;t watch yet. Paste the page that
 			lists their coffees; we read the shop and start watching it for you.
@@ -278,7 +280,9 @@ const SubmitComponent = () => {
 	return (
 		<div className="container mx-auto max-w-3xl px-4 py-8">
 			<header className="mb-6 flex items-baseline justify-between gap-4">
-				<h1 className="text-2xl font-semibold">Add a roaster</h1>
+				<h1 className="font-serif text-[2rem] leading-none font-normal">
+					Add a roaster
+				</h1>
 				<Link className="text-sm hover:underline" to="/roasters">
 					All roasters
 				</Link>

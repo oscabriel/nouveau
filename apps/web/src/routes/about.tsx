@@ -9,7 +9,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 const sections = [
 	{
 		how: [
-			"Open Find my next bag from the home page or your profile and write what you're after, in plain words: \"a floral Ethiopian under $30\". The agent searches the catalog, checks each lot's stock and price, and hands you up to five picks as cards. Turn on Include my logs and each pick explains itself against what you've tried.",
+			"Open Find my next bag from the home page or your profile and write what you're after, in plain words: \"a floral Ethiopian under $30\". Our agent searches the catalog, checks each lot's stock and price, and hands you up to five picks as cards. Turn on Include my logs and each pick explains itself against what you've tried.",
 		],
 		title: "Find my next bag",
 	},
@@ -48,7 +48,7 @@ const sections = [
 const AboutComponent = () => (
 	<main>
 		<div className="px-5 pt-10 md:px-10 md:pt-14">
-			<h1 className="text-[1.75rem] leading-none font-semibold md:text-[2.25rem]">
+			<h1 className="font-serif text-[2rem] leading-none font-normal md:text-[2.75rem]">
 				About
 			</h1>
 			<p className="text-muted-foreground mt-6 max-w-prose text-sm md:text-[15px]">

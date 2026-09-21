@@ -9,7 +9,9 @@ import { SignInCta } from "@/components/sign-in-cta";
 
 const SignedOutAlertSettings = () => (
 	<div className="container mx-auto max-w-3xl px-4 py-8">
-		<h1 className="mb-2 text-2xl font-semibold">Alert settings</h1>
+		<h1 className="mb-2 font-serif text-[2rem] leading-none font-normal">
+			Alert settings
+		</h1>
 		<p className="text-muted-foreground mb-4 max-w-prose text-sm">
 			Sign in to see where your alerts are delivered and which roasters are
 			muted.
@@ -48,7 +50,9 @@ const AlertSettingsComponent = () => {
 	return (
 		<div className="container mx-auto max-w-3xl px-4 py-8">
 			<header className="mb-6 flex items-baseline justify-between gap-4">
-				<h1 className="text-2xl font-semibold">Alert settings</h1>
+				<h1 className="font-serif text-[2rem] leading-none font-normal">
+					Alert settings
+				</h1>
 				{me !== null && (
 					<Link
 						className="text-sm hover:underline"
