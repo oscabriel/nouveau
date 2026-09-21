@@ -8,7 +8,6 @@ import { useState } from "react";
 import Loader from "@/components/loader";
 import { PageTitle } from "@/components/page-title";
 import { SearchField } from "@/components/search-field";
-import { StatusChip } from "@/components/status-chip";
 import { ArrowCell } from "@/components/table";
 import { WatchButton } from "@/components/watch-button";
 import { matchesRoaster } from "@/lib/roaster-search";
@@ -44,9 +43,6 @@ const RoasterRow = ({
 			className={`${bodyCell} text-muted-foreground hidden pr-4 whitespace-nowrap sm:table-cell`}
 		>
 			{roaster.city}, {roaster.state}
-		</td>
-		<td className={`${bodyCell} pr-4 whitespace-nowrap`}>
-			<StatusChip compact status={roaster.status} />
 		</td>
 		<td
 			className={`${bodyCell} text-muted-foreground tnum hidden pr-4 text-right md:table-cell`}
@@ -104,9 +100,6 @@ const Directory = ({
 					<th className={`${headCell} hidden sm:table-cell`} scope="col">
 						City
 					</th>
-					<th className={headCell} scope="col">
-						Status
-					</th>
 					<th
 						className={`${headCell} hidden text-right md:table-cell`}
 						scope="col"
@@ -115,7 +108,7 @@ const Directory = ({
 					</th>
 					{canWatch && (
 						<th className={`${headCell} text-right`} scope="col">
-							<span className="sr-only">Watch</span>
+							Status
 						</th>
 					)}
 					<th className={headCell} scope="col">
@@ -138,9 +131,10 @@ const Directory = ({
 };
 
 /**
- * The directory: every active roaster in one hairline table, N° to Watch.
- * Search filters the loaded list client-side; 20 curated roasters today,
- * and a search index can wait until submissions grow it.
+ * The directory: every active roaster in one hairline table. Your status is
+ * the Status column: the WATCH / WATCHING toggle signed in, no column at all
+ * signed out (ADR-0015). Crawl health lives on the roaster page's status
+ * line, not here. Search filters the loaded list client-side.
  */
 const RoastersComponent = () => {
 	const roasters = useQuery(api.roasters.listActive, {});
