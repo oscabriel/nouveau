@@ -8,6 +8,7 @@
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { RESERVED_ROUTES } from "./constants";
+import { nextFreeSuffix } from "./suffix";
 
 /** Handles are lowercase letters, digits and dashes, no dashes at the ends. */
 export const isValidHandle = (handle: string): boolean =>
@@ -49,11 +50,7 @@ export const dropRedirect = async (
 	}
 };
 
-/**
- * The base when free, otherwise the first free `base-2`, `base-3`, ... The
- * by_handle index answers with one range scan over everything starting at
- * `base`, so no probe loop.
- */
+/** The by_handle index answers what is taken with one range scan. */
 const nextFreeHandle = async (
 	ctx: MutationCtx,
 	base: string
@@ -64,24 +61,11 @@ const nextFreeHandle = async (
 			q.gte("handle", base).lt("handle", `${base}\uFFFF`)
 		)
 		.collect();
-	const taken = new Set(
-		nearby.flatMap((user) => (user.handle === undefined ? [] : [user.handle]))
+	return nextFreeSuffix(
+		base,
+		nearby.flatMap((user) => (user.handle === undefined ? [] : [user.handle])),
+		isReserved(base)
 	);
-	if (!taken.has(base) && !isReserved(base)) {
-		return base;
-	}
-	const suffix = new RegExp(`^${base}-(\\d+)$`, "u");
-	const used = new Set(
-		[...taken].flatMap((handle) => {
-			const hit = suffix.exec(handle);
-			return hit === null ? [] : [Math.trunc(Number(hit[1]))];
-		})
-	);
-	let n = 2;
-	while (used.has(n)) {
-		n += 1;
-	}
-	return `${base}-${n}`;
 };
 
 /**

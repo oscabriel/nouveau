@@ -6,6 +6,7 @@
 
 import type { MutationCtx } from "./_generated/server";
 import { RESERVED_ROUTES } from "./constants";
+import { nextFreeSuffix } from "./suffix";
 
 /** Turn a registrable domain into a slug; the seed's and submission's one. */
 export const slugifyDomain = (domain: string): string =>
@@ -34,20 +35,9 @@ export const claimRoasterSlug = async (
 			q.gte("slug", base).lt("slug", `${base}\uFFFF`)
 		)
 		.collect();
-	const taken = new Set(nearby.map((roaster) => roaster.slug));
-	if (!taken.has(base) && !isReservedSlug(base)) {
-		return base;
-	}
-	const suffix = /-(?<num>\d+)$/u;
-	const used = new Set(
-		[...taken].flatMap((slug) => {
-			const hit = suffix.exec(slug);
-			return hit === null ? [] : [Math.trunc(Number(hit.groups?.num))];
-		})
+	return nextFreeSuffix(
+		base,
+		nearby.map((roaster) => roaster.slug),
+		isReservedSlug(base)
 	);
-	let n = 2;
-	while (used.has(n)) {
-		n += 1;
-	}
-	return `${base}-${n}`;
 };

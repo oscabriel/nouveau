@@ -24,6 +24,7 @@ import { notifyWatchersOfEvent } from "./notifications";
 import schema from "./schema";
 import { shopMarketValidator } from "./shopMarket";
 import { sourceModeValidator } from "./sourceMode";
+import { nextFreeSuffix } from "./suffix";
 import { ensureWatch } from "./watches";
 
 /**
@@ -512,8 +513,7 @@ const yieldHandle = async (
 		return;
 	}
 	const year = new Date(archived.lastSeenAt).getUTCFullYear();
-	let candidate = `${handle}-${year}`;
-	const stem = candidate;
+	const stem = `${handle}-${year}`;
 	const taken = await ctx.db
 		.query("products")
 		.withIndex("by_roaster_and_handle", (q) =>
@@ -523,22 +523,12 @@ const yieldHandle = async (
 				.lt("handle", `${stem}\uFFFF`)
 		)
 		.collect();
-	if (taken.length > 0) {
-		// The same coffee archived twice in one year (or a lot already named
-		// with the year). The first free number after the taken stems.
-		const suffix = /-(?<num>\d+)$/u;
-		const used = new Set(
-			taken.flatMap((doc) => {
-				const hit = suffix.exec(doc.handle);
-				return hit === null ? [] : [Math.trunc(Number(hit.groups?.num))];
-			})
-		);
-		let n = 2;
-		while (used.has(n)) {
-			n += 1;
-		}
-		candidate = `${stem}-${n}`;
-	}
+	// The same coffee archived twice in one year (or a lot already named
+	// with the year) takes the first free number after the stem.
+	const candidate = nextFreeSuffix(
+		stem,
+		taken.map((doc) => doc.handle)
+	);
 	await ctx.db.patch(archived._id, { handle: candidate });
 };
 
