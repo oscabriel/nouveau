@@ -37,6 +37,13 @@ import {
 
 const AGENT_NAME = "next-bag";
 
+// Ceilings on the search tool's numeric filters. The first OpenAI-only run
+// on dev sent Number.MAX_SAFE_INTEGER for the budget and bag size instead of
+// omitting them; a value past these fails validation and the model retries.
+const MAX_FILTER_PRICE_CENTS = 50_000;
+const MIN_FILTER_GRAMS = 50;
+const MAX_FILTER_GRAMS = 5000;
+
 /** The context the tool handlers run with: the action ctx plus the run. */
 type LoopContext = GenericActionCtx<DataModel> & {
 	attempt: number;
@@ -225,9 +232,33 @@ export const searchCatalog: Tool = createTool({
 			.describe(
 				"A flavour direction; lots match on any word roasters use for it (chocolatey: chocolate, cocoa, caramel, nutty ...)"
 			),
-		maxGrams: z.number().int().positive().optional(),
-		maxPriceCents: z.number().int().positive().optional(),
-		minGrams: z.number().int().positive().optional(),
+		maxGrams: z
+			.number()
+			.int()
+			.min(MIN_FILTER_GRAMS)
+			.max(MAX_FILTER_GRAMS)
+			.optional()
+			.describe(
+				"The largest bag wanted, in grams. Only when the request names a size; never a placeholder."
+			),
+		maxPriceCents: z
+			.number()
+			.int()
+			.positive()
+			.max(MAX_FILTER_PRICE_CENTS)
+			.optional()
+			.describe(
+				"The budget per bag, in US cents. Only when the request names a price; never a placeholder."
+			),
+		minGrams: z
+			.number()
+			.int()
+			.min(MIN_FILTER_GRAMS)
+			.max(MAX_FILTER_GRAMS)
+			.optional()
+			.describe(
+				"The smallest bag wanted, in grams. Only when the request names a size; never a placeholder."
+			),
 		origin: z
 			.string()
 			.min(3)

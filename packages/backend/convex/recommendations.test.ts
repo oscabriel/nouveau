@@ -5,6 +5,7 @@ import { register as registerWorkpool } from "@convex-dev/workpool/test";
 import { register as registerFirecrawl } from "@firecrawl/firecrawl-convex/test";
 import { convexTest } from "convex-test";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { z } from "zod";
 
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -583,6 +584,27 @@ test("preference words rank a roaster's lots but never exclude them", async () =
 		selectCandidates(ctx, { ...input, preferences: "Surprise me" }, NOW)
 	);
 	expect(unrelated).toHaveLength(6);
+});
+
+test("the search tool rejects placeholder budgets and bag sizes", () => {
+	const searchInput = searchCatalog.inputSchema as z.ZodType;
+	expect(searchInput.safeParse({ query: "floral" }).success).toBe(true);
+	expect(
+		searchInput.safeParse({
+			maxPriceCents: 2500,
+			minGrams: 250,
+			query: "floral",
+		}).success
+	).toBe(true);
+	// What the first OpenAI-only run sent for "no budget" and "any size".
+	expect(
+		searchInput.safeParse({
+			maxGrams: Number.MAX_SAFE_INTEGER - 1,
+			maxPriceCents: Number.MAX_SAFE_INTEGER,
+			minGrams: 1,
+			query: "light roast Guatemalan coffee",
+		}).success
+	).toBe(false);
 });
 
 test("the search tool ranks lots, records them on the run, and applies the typed filters", async () => {
