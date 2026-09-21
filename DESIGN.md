@@ -140,7 +140,7 @@ Strategy: restrained to the point of monochrome. Ink on ground, one grey for sec
 - Rule `oklch(0.88 0 0)` for every hairline. Dark: `oklch(1 0 0 / 14%)`.
 - `--primary` is ink; `--ring` is ink. Focus is a 1px ink outline offset 2px.
 - Status color lives in the dot only. The crawl-status dot is emerald (watching), amber (stale) or red (failed), 8px, and the line beside it is always grey. Nothing else in UI chrome carries hue.
-- The tile chip is always white on near-black, both themes, because it sits on a photograph. The rating stars on the chip are black (ADR-0014); every other star mount is still amber, a scaffold-era leftover awaiting batch 7.
+- The tile chip is always white on near-black, both themes, because it sits on a photograph. The rating stars on the chip are black (ADR-0014); everywhere else they are ink. No star is amber.
 
 ## Typography
 
@@ -186,6 +186,7 @@ None. No shadows anywhere. Depth is photograph over ground, and the chip over th
 - **Caps link** (`link-caps`): label type, 44px hit area, underline on hover. Header, footer, toggles, sign-in and sign-out.
 - **Primary button** (`button-primary`): ink block, ground-colored label type, 44px tall, 20px side padding, opacity 0.8 on hover. The one filled control, and it marks the one primary action on a screen: SIGN IN WITH GOOGLE (`sign-in-cta.tsx`), FIND MY NEXT BAG on the landing and the profile (`next-bag-sheet.tsx`), and Save on `/settings/account` (ADR-0014).
 - **Toggle pair** (LATEST / SHUFFLE): two caps buttons, `aria-pressed`, the active one in ink and underlined like an active nav link, the inactive one in grey. The dot is gone (ADR-0014). The WATCH / WATCHING control below still carries the dot.
+- **Stars** (`stars.tsx`): five 16px stars with half-step fills, filled ones in the current text color (ink on the page, black on the tile chip), empty ones at 40% grey. `sr-only` reads "Rated n out of 5". The log row, the log form and the tile chip.
 - **Tile** (`latest-tiles.tsx`): 3:2 link, `object-cover` photo, tint ground while loading, white chip bottom-left with the lot name (13px, 6px/10px padding, truncated to the tile width) and the log's rating as black stars top-right. The pool is the most recent rated logs with a photo, one per taster, padded and shuffled server-side (ADR-0014). Links to `/roaster/$roaster/$lot`.
 - **Tabs**: centered `role="tablist"`, hairline under the group, active tab in ink with an ink hairline that overlaps the group rule (`-mb-px`), inactive in grey. Counts in tabular figures. On the landing and `/drops` they filter the drop table by event type; signed in, `/drops` adds a Your roasters tab.
 - **Search field** (`search-field.tsx`): one line of cell type over a hairline, 44px tall, no box; the hairline goes ink on focus. The placeholder is the label. The browser's search clear button is hidden.
@@ -213,4 +214,4 @@ None. No shadows anywhere. Depth is photograph over ground, and the chip over th
 - Don't use Inter, the deep blue, or the two-column pitch-plus-feed landing; that system is gone.
 - Don't render a lot without a photo in the tiles; it belongs in the table only.
 
-Not canonized: the hero PNG still carries a cream fringe from the flood-fill matte, visible against the dark ground; the fixed export is the owner's. `SaveButton` (a rounded chip with a bookmark icon), the rounded tasting-note chips in `tasting-picker.tsx` and the amber stars outside the tiles predate the pass and are a batch 7 item. `/activity` has not had its design pass. `/roasters/submit` and `/settings/alerts` inherit the tokens and shared controls only. The old routes (`/lots/$lotId`, `/feed`, `/next-bag`, `/watches`, `/saved`, `/profile/$userId`, `/roasters/$slug`) are redirects to the ADR-0011 map (`/roaster/$roaster/$lot`, `/drops`, `/?bag=true`, `/$user`) and have no layout of their own.
+Not canonized: the hero PNG still carries a cream fringe from the flood-fill matte, visible against the dark ground; the fixed export is the owner's. `SaveButton` (a rounded chip with a bookmark icon) and the rounded tasting-note chips in `tasting-picker.tsx` predate the pass and are a batch 7 item. `/activity` has not had its design pass. `/roasters/submit` and `/settings/alerts` inherit the tokens and shared controls only. The old routes (`/lots/$lotId`, `/feed`, `/next-bag`, `/watches`, `/saved`, `/profile/$userId`, `/roasters/$slug`) are redirects to the ADR-0011 map (`/roaster/$roaster/$lot`, `/drops`, `/?bag=true`, `/$user`) and have no layout of their own.

@@ -2,16 +2,11 @@ import { Star } from "lucide-react";
 
 /**
  * Five stars with half-step fills (spec §14.1: 1–5, half steps allowed).
- * The landing's tiles render the rating in ink over the white chip
- * (ADR-0014); every other mount keeps the amber fill.
+ * Filled stars take the current text color: ink on the page in either
+ * theme, black on the tile's white chip (ADR-0014). Empty stars are the
+ * faded grey. No hue; the rating is a value, not a decoration.
  */
-export const Stars = ({
-	rating,
-	tone = "amber",
-}: {
-	rating: number;
-	tone?: "amber" | "ink";
-}) => (
+export const Stars = ({ rating }: { rating: number }) => (
 	<span className="inline-flex items-center gap-0.5">
 		<span className="sr-only">{`Rated ${rating} out of 5`}</span>
 		{[1, 2, 3, 4, 5].map((position) => {
@@ -24,13 +19,7 @@ export const Stars = ({
 						className="absolute inset-0 overflow-hidden"
 						style={{ width: `${fill * 100}%` }}
 					>
-						<Star
-							className={`size-4 ${
-								tone === "ink"
-									? "fill-neutral-950 text-neutral-950"
-									: "fill-amber-400 text-amber-400"
-							}`}
-						/>
+						<Star className="size-4 fill-current text-current" />
 					</span>
 				</span>
 			);

@@ -106,7 +106,7 @@ export const LatestTiles = () => {
 							</span>
 							{tile.rating !== null && (
 								<span className="absolute top-3 right-3 bg-white px-2 py-1.5 leading-none text-neutral-950">
-									<Stars rating={tile.rating} tone="ink" />
+									<Stars rating={tile.rating} />
 								</span>
 							)}
 						</Link>
