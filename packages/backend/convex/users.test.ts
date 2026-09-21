@@ -278,8 +278,8 @@ describe("profile lookup (logs.profile)", () => {
 
 	test("resolves a retired handle through handleRedirects", async () => {
 		const { t, userId } = await setupUser();
-		// The handle change itself lands with /settings/account (batch 5);
-		// here the redirect row and the new handle stand in for it.
+		// updateMe writes the redirect row on a handle change (its own tests
+		// above); here the row and the new handle are written directly.
 		await t.run(async (ctx) => {
 			await ctx.db.patch("users", userId, { handle: "ada-2" });
 			await ctx.db.insert("handleRedirects", {

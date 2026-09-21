@@ -1,5 +1,7 @@
 # Find my next bag
 
+Amended by ADR-0017 (`adr/0017-find-my-next-bag-is-an-agent-you-watch-work.md`, 2026-09-20): the single-call design below (strict JSON schema, the byte-for-byte quote check, `filterReason`) is replaced by an agent loop with typed tools, a Jev reading of the request before the loop and a Jev claim check on every why after `submitPicks`. The request path, quota and retry rules still hold; read the ADR for what the model does now.
+
 Gate 2 implementation for the [revised product spec](../research/nouveau-reimagined-product-spec.md). Live in prod (`a08463d`) with a genuine OpenAI result on dev that quotes Firecrawl-fetched page facts (see Verification recorded). Prod sources gain eligibility as their first post-deploy crawls confirm the US/USD market.
 
 ## Request path

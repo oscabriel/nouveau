@@ -46,5 +46,6 @@ The split is that the left names what the site is about (roasters, drops) and th
 - A script typeface enters the type scale. `DESIGN.md` has nine ramps, all grotesk and one serif lede; Caveat is the first entry in the new slot and must be self-hosted.
 - The plate assets must be exported at serving size before anything references them. A 33.8 MB PNG in `public/` ships verbatim through Vite. The details are small already (113 to 486 pixels on their long side) and may need a cleaner cutout; the branch needs a downscaled export for the footer and a rotated export for the hero. The owner is re-exporting the hero asset themselves.
 - The hero's cream fringe (the "Not canonized" note in `DESIGN.md`) gets fixed in the same export, since the image is being re-cut anyway.
+- Implementation note (2026-09-20): the serving-size exports live at `apps/web/src/assets/coffea-arabica/*.webp` (seven files, imported by `site-footer.tsx` so Vite hashes them), not in `public/`. The hero stays at `apps/web/public/coffea-arabica.png`.
 - `navLinkClass` in `header.tsx`, `footerLink` in `site-footer.tsx` and `capsLink` in `roasters.index.tsx` are the same string three times; the footer mirroring the header is the moment to keep one.
 - `/about` needs copy. The hackathon log's "What it does" line and `PRODUCT.md`'s tone section are the sources.

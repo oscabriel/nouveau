@@ -1,5 +1,7 @@
 # The social layer: logs join drops as the product's second core object
 
+Extended by ADR-0016 (2026-09-20): the profile at `/$user` became the personal record (public logs, the owner's watches and try list), the activity feed moved to `/activity`, and logs gained the four-pick tasting vocabulary. Addresses amended by ADR-0011: profiles live at `/$user` by handle, not `/profile/$userId`.
+
 Nouveau shipped as a pure alert layer: follow roasters, get told when they drop. That loop is live in prod, but it only touches a user at the moment a roaster acts — between drops there is nothing to do and nothing that belongs to the user. We're reframing the pitch to "Letterboxd but for coffee": a user can log a lot they tried, rate it 1–5 (half steps, Letterboxd muscle memory), attach their own notes, and get a public profile of their coffee history, plus one global activity feed of recent logs. User-follows, comments, and likes stay out of the hackathon window (deadline Sept 22).
 
 Considered alternatives: keeping the alert-only scope (safest, but the demo shows an inbox, not a product people belong to); or the full social graph — follows, per-user activity feeds, interactions — which is the true Letterboxd shape but too much surface to build and demo well in the remaining window. Log + rate + profile + one feed is the smallest cut that makes the product about the person's coffee life, not only about the roasters'.
