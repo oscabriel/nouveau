@@ -18,9 +18,9 @@ const RootComponent = () => (
 		<HeadContent />
 		<ThemeProvider
 			attribute="class"
-			defaultTheme="light"
+			defaultTheme="system"
 			disableTransitionOnChange
-			storageKey="vite-ui-theme"
+			storageKey="nouveau-theme"
 		>
 			<div className="grid min-h-svh grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr]">
 				<Header />
