@@ -447,3 +447,14 @@ Piece 4 is on `main` as one backend commit plus ADR-0018 and three CONTEXT.md te
 - Test traps: `finishAllScheduledFunctions(vi.runAllTimers)` fires the fifteen-minute watchdog before the first `runLot` action has returned, so `nerdStuff.test.ts` drives the loop with a `drive()` helper that advances the clock to the next scheduled step. The Firecrawl budget's one token means the second lot of a run in a test comes from the shop's own page (`source: "plain"`); a "failed" case needs a fresh fixture with both providers down.
 
 Next: piece 5, the route. `api.nerdStuff.latestRun`, `run`, `traces`, `recentTraces`, `start`, `stop` are the whole client API. Then DESIGN.md's workbench entry and the hackathon log row.
+
+## Progress, session of 2026-09-21 (route landed, reviewed, direction changed)
+
+Piece 5 is on `main` (`8d30e8c`, `361e967`, `7183271`) and was reviewed at `ddd5e39` along the standards and spec axes. The fixes are `62d70da`: one button per row, the per-row percentage gone (it mixed the gate's coffee probability with a mean of Choice probabilities), `formatMs` once in `lib/format.ts`, position keys for notes and sentences, type guards for the two casts, the tail waiting for the run's rows, `deferred` counting lots that gave up rather than waits, and totals frozen once a run stops. The "pending bar drifts" line under Piece 5 Style was never built and is dropped from the spec.
+
+The owner then changed the workbench's terms, recorded as two ADR-0018 amendments:
+
+- `f49d283`: one limiter of twenty runs an hour; the per-person limiter is gone. `appConfig.workbenchUserId` names who may start (`internal.nerdStuff.allowWorkbenchUser` by email; unset means any signed-in user, the dev and test default). A new run supersedes the one going instead of being refused. The loop stays a scheduler chain beside the sweep; the workpool bounds next-bag runs and the shared page-read budget is the rate limiter inside `readPageFacts`, which the loop already uses.
+- `aab6f30`: `commit` is gone; every run stores its facts through `internal.pageFacts.store`. The field stays optional on `pipelineRuns` until the two dev rows from before are pruned.
+
+Deployed: dev (`cool-giraffe-632`) has everything. Prod (`artful-chameleon-402`) stopped at piece 3 and has no `nerdStuff` functions or trace tables; the next `bun run deploy` takes it there. After that, run `allowWorkbenchUser` on prod with the owner's email. Piece 6 (the labeled set and the eval) remains optional and untouched.
