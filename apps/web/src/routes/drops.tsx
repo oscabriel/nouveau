@@ -50,7 +50,8 @@ const deliveryUnderRow = (row: DropRow) => (
 	<DeliveryRow row={row as PersonalizedRow} />
 );
 
-const GlobalDrops = ({
+/** The filter strip above both bodies; counts come from the global feed. */
+const FilterTabs = ({
 	feed,
 	filter,
 	onChange,
@@ -79,53 +80,62 @@ const GlobalDrops = ({
 	if (showYour) {
 		tabs.push({ label: "Your roasters", value: "your" });
 	}
+	return (
+		<div className="flex justify-center">
+			<div
+				className="flex max-w-full gap-5 overflow-x-auto border-b md:gap-8"
+				role="tablist"
+			>
+				{tabs.map((tab) => {
+					const active = tab.value === filter;
+					return (
+						<button
+							aria-selected={active}
+							className={`-mb-px inline-flex min-h-11 shrink-0 items-baseline gap-1 border-b pb-3 text-lg transition-colors md:text-2xl ${
+								active
+									? "border-foreground text-foreground"
+									: "text-muted-foreground hover:text-foreground border-transparent"
+							}`}
+							key={tab.value}
+							onClick={() => {
+								onChange(tab.value);
+							}}
+							role="tab"
+							type="button"
+						>
+							{tab.label}
+							{tab.value !== "your" && (
+								<span className="tnum text-xs">({counts[tab.value]})</span>
+							)}
+						</button>
+					);
+				})}
+			</div>
+		</div>
+	);
+};
+
+const GlobalDrops = ({
+	feed,
+	filter,
+}: {
+	feed: GlobalRow[];
+	filter: Exclude<Filter, "your">;
+}) => {
 	const shown =
 		filter === "all" ? feed : feed.filter((row) => row.type === filter);
 	return (
-		<>
-			<div className="flex justify-center">
-				<div
-					className="flex max-w-full gap-5 overflow-x-auto border-b md:gap-8"
-					role="tablist"
-				>
-					{tabs.map((tab) => {
-						const active = tab.value === filter;
-						return (
-							<button
-								aria-selected={active}
-								className={`-mb-px inline-flex min-h-11 shrink-0 items-baseline gap-1 border-b pb-3 text-lg transition-colors md:text-2xl ${
-									active
-										? "border-foreground text-foreground"
-										: "text-muted-foreground hover:text-foreground border-transparent"
-								}`}
-								key={tab.value}
-								onClick={() => {
-									onChange(tab.value);
-								}}
-								role="tab"
-								type="button"
-							>
-								{tab.label}
-								{tab.value !== "your" && (
-									<span className="tnum text-xs">({counts[tab.value]})</span>
-								)}
-							</button>
-						);
-					})}
-				</div>
-			</div>
-			<div className="mt-16 px-5 md:px-10">
-				<DropTable
-					onlyTypes={filter === "all" ? undefined : [filter as DropType]}
-					rows={feed}
-				/>
-				{shown.length === 0 && (
-					<p className="text-muted-foreground py-16 text-center text-[15px]">
-						No drops yet. The crawlers are out there checking.
-					</p>
-				)}
-			</div>
-		</>
+		<div className="px-5 md:px-10">
+			<DropTable
+				onlyTypes={filter === "all" ? undefined : [filter]}
+				rows={feed}
+			/>
+			{shown.length === 0 && (
+				<p className="text-muted-foreground py-16 text-center text-[15px]">
+					No drops yet. The crawlers are out there checking.
+				</p>
+			)}
+		</div>
 	);
 };
 
@@ -149,11 +159,13 @@ const YourDrops = ({ mine }: { mine: PersonalizedRow[] }) => (
  * filter tabs above, the event price with its strike on price drops and
  * the lot's minimum "from"-prefixed otherwise. Signed in, a Your roasters
  * tab carries the watched roasters' events with the delivery line under
- * each row (ADR-0016).
+ * each row (ADR-0016). The tab strip sits above both bodies, so the Your
+ * roasters tab has a way back; signing out while on it falls back to All.
  */
 const FeedComponent = () => {
 	const { isAuthenticated } = useConvexAuth();
-	const [filter, setFilter] = useState<Filter>("all");
+	const [chosen, setChosen] = useState<Filter>("all");
+	const filter: Filter = chosen === "your" && !isAuthenticated ? "all" : chosen;
 	const feed = useQuery(api.feed.globalFeed, { limit: FEED_PAGE_LIMIT });
 	const mine = useQuery(
 		api.feed.personalizedFeed,
@@ -166,14 +178,7 @@ const FeedComponent = () => {
 	} else if (filter === "your") {
 		body = mine === undefined ? <Loader /> : <YourDrops mine={mine} />;
 	} else {
-		body = (
-			<GlobalDrops
-				feed={feed}
-				filter={filter}
-				onChange={setFilter}
-				showYour={isAuthenticated}
-			/>
-		);
+		body = <GlobalDrops feed={feed} filter={filter} />;
 	}
 
 	return (
@@ -185,7 +190,17 @@ const FeedComponent = () => {
 					happens.
 				</p>
 			</div>
-			<div className="mt-12 md:mt-16">{body}</div>
+			<div className="mt-12 md:mt-16">
+				{feed !== undefined && (
+					<FilterTabs
+						feed={feed}
+						filter={filter}
+						onChange={setChosen}
+						showYour={isAuthenticated}
+					/>
+				)}
+				<div className={feed === undefined ? "" : "mt-16"}>{body}</div>
+			</div>
 		</main>
 	);
 };
