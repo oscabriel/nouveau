@@ -7,6 +7,7 @@
 
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import type { ReservedRoute } from "./constants";
 import { RESERVED_ROUTES } from "./constants";
 import {
 	assertSuffixScanBounded,
@@ -20,8 +21,8 @@ export const isValidHandle = (handle: string): boolean =>
 	/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(handle) && handle.length <= 40;
 
 /** The list of reserved names applies to handles and to roaster slugs. */
-export const isReserved = (handle: string): boolean =>
-	RESERVED_ROUTES.includes(handle);
+export const isReserved = (handle: string): handle is ReservedRoute =>
+	RESERVED_ROUTES.some((route) => route === handle);
 
 /** Turn any display name into a handle-shaped string; "" when nothing maps. */
 export const slugifyName = (name: string): string =>

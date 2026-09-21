@@ -169,4 +169,5 @@ export const RESERVED_ROUTES = [
 	"profile",
 	"watches",
 	"saved",
-];
+] as const;
+export type ReservedRoute = (typeof RESERVED_ROUTES)[number];

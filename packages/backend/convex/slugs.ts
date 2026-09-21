@@ -5,6 +5,7 @@
 // getBySlug's .unique() never throws again.
 
 import type { MutationCtx } from "./_generated/server";
+import type { ReservedRoute } from "./constants";
 import { RESERVED_ROUTES } from "./constants";
 import {
 	assertSuffixScanBounded,
@@ -22,8 +23,8 @@ export const slugifyDomain = (domain: string): string =>
 		.replaceAll(/^-+|-+$/gu, "");
 
 /** The reserved route names hold here too, for cleanliness (ADR-0011). */
-export const isReservedSlug = (slug: string): boolean =>
-	RESERVED_ROUTES.includes(slug);
+export const isReservedSlug = (slug: string): slug is ReservedRoute =>
+	RESERVED_ROUTES.some((route) => route === slug);
 
 /**
  * Claim a unique slug for a new roaster: the base when free, otherwise the
