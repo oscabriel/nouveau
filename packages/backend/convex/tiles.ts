@@ -26,6 +26,13 @@ export const tileValidator = v.object({
 	// Null on a drop tile: only rated-log tiles carry stars.
 	rating: v.union(v.number(), v.null()),
 	roaster: v.object({ name: v.string(), slug: v.string() }),
+	// The rater, on log tiles: the display name and the /$user address
+	// (handle, or the id for rows predating handles, ADR-0011). Null on a
+	// drop tile.
+	taster: v.union(
+		v.object({ address: v.string(), name: v.union(v.string(), v.null()) }),
+		v.null()
+	),
 });
 
 type Tile = Infer<typeof tileValidator>;
@@ -33,7 +40,8 @@ type Tile = Infer<typeof tileValidator>;
 const logTile = (
 	log: Doc<"logs">,
 	product: Doc<"products">,
-	roaster: { name: string; slug: string }
+	roaster: { name: string; slug: string },
+	user: Doc<"users">
 ): Tile => ({
 	handle: product.handle,
 	id: product._id,
@@ -42,6 +50,7 @@ const logTile = (
 	name: product.name,
 	rating: log.rating ?? null,
 	roaster,
+	taster: { address: user.handle ?? user._id, name: user.name ?? null },
 });
 
 const dropTile = (card: FeedCard): Tile => ({
@@ -52,6 +61,7 @@ const dropTile = (card: FeedCard): Tile => ({
 	name: card.productName,
 	rating: null,
 	roaster: { name: card.roasterName, slug: card.roasterSlug },
+	taster: null,
 });
 
 /**
@@ -130,8 +140,9 @@ const draw = <T>(items: T[], count: number, seed: number): T[] => {
 /**
  * The landing's tiles, public. Without a seed: the newest ratings, one per
  * taster, padded with recent drops. With a seed (the client's Date.now()
- * on the Shuffle click): a seeded draw from the deduped pool. The taster is
- * not named on a tile, so the rows carry no user.
+ * on the Shuffle click): a seeded draw from the deduped pool. Log tiles
+ * name their taster (batch 8, 2026-09-21), so each picked log reads its
+ * user.
  */
 export const ratedTiles = query({
 	args: { shuffleSeed: v.optional(v.number()) },
@@ -157,14 +168,19 @@ export const ratedTiles = query({
 				: draw(deduped, TILE_COUNT, args.shuffleSeed);
 		const hydrated = await Promise.all(
 			picked.map(async ({ log, product }) => {
-				const roaster = await ctx.db.get(product.roasterId);
-				if (roaster === null) {
+				const [roaster, user] = await Promise.all([
+					ctx.db.get(product.roasterId),
+					ctx.db.get(log.userId),
+				]);
+				if (roaster === null || user === null) {
 					return null;
 				}
-				return logTile(log, product, {
-					name: roaster.name,
-					slug: roaster.slug,
-				});
+				return logTile(
+					log,
+					product,
+					{ name: roaster.name, slug: roaster.slug },
+					user
+				);
 			})
 		);
 		const tiles = hydrated.filter(

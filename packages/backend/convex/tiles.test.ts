@@ -117,7 +117,24 @@ describe("rated tiles", () => {
 			name: "Lot mullugeta",
 			rating: 4.5,
 			roaster: { name: "Sey", slug: "sey" },
+			taster: { address: userA, name: "Taster One" },
 		});
+	});
+
+	test("a tile names its taster by handle when the user has one; drop tiles carry none", async () => {
+		const { photoLotBId, photoLotId, t, userA } = await setup();
+		await t.run(async (ctx) => {
+			await ctx.db.patch(userA, { handle: "taster-one" });
+		});
+		await log(t, userA, photoLotId, 1000, 4);
+		await drop(t, photoLotBId, 900);
+
+		const tiles = await t.query(api.tiles.ratedTiles, {});
+		expect(tiles[0]?.taster).toEqual({
+			address: "taster-one",
+			name: "Taster One",
+		});
+		expect(tiles[1]).toMatchObject({ kind: "drop", taster: null });
 	});
 
 	test("unrated logs and photoless lots never tile; drops pad the slots", async () => {
