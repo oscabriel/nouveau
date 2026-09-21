@@ -1,7 +1,13 @@
 import type { ReactNode } from "react";
 
-import { fieldLabel, formatMs, headlineFacts } from "./trace-row";
+import { formatMs } from "@/lib/format";
+
+import { fieldLabel, headlineFacts } from "./trace-row";
 import type { Trace } from "./trace-row";
+
+/** A stage's time, or nothing when the stage did not run. */
+const stageMs = (value: number | undefined): string | null =>
+	value === undefined ? null : formatMs(value);
 
 const pct = (p: number | undefined): string =>
 	p === undefined ? "–" : `${Math.round(p * 100)}%`;
@@ -200,7 +206,7 @@ export const TraceDetail = ({ trace }: { trace: Trace }) => {
 				)}
 			</Section>
 
-			<Section detail={formatMs(trace.stages.jev)} title="Line picks">
+			<Section detail={stageMs(trace.stages.jev)} title="Line picks">
 				{trace.picks.length === 0 ? (
 					<Empty>Jev was not asked to pick lines.</Empty>
 				) : (
@@ -245,9 +251,11 @@ export const TraceDetail = ({ trace }: { trace: Trace }) => {
 				{trace.notes.length === 0 ? (
 					<Empty>No note candidates on the page.</Empty>
 				) : (
-					trace.notes.map((note) => (
+					// A trace is immutable once written, so the position is a stable key;
+					// the text is not, since two sentences on a page can read the same.
+					trace.notes.map((note, i) => (
 						<Judgment
-							key={note.note}
+							key={i}
 							kept={note.kept}
 							label="Note"
 							probability={note.probability}
@@ -268,9 +276,9 @@ export const TraceDetail = ({ trace }: { trace: Trace }) => {
 				{trace.sentences.length === 0 ? (
 					<Empty>No description sentences were judged.</Empty>
 				) : (
-					trace.sentences.map((sentence) => (
+					trace.sentences.map((sentence, i) => (
 						<Judgment
-							key={sentence.sentence}
+							key={i}
 							kept={sentence.kept}
 							label="Sentence"
 							probability={sentence.probability}
@@ -280,7 +288,7 @@ export const TraceDetail = ({ trace }: { trace: Trace }) => {
 				)}
 			</Section>
 
-			<Section detail={formatMs(trace.stages.page)} title="Result">
+			<Section detail={stageMs(trace.stages.page)} title="Result">
 				{merged.length === 0 ? (
 					<Empty>Nothing stored from this read.</Empty>
 				) : (

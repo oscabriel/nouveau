@@ -45,6 +45,14 @@ export const formatGrams = (grams: number | null): string | null => {
 	return `${grams} g`;
 };
 
+const MS_PER_SECOND = 1000;
+
+/** A duration in the unit the number suggests: 812 ms, 4.1 s. */
+export const formatMs = (value: number): string =>
+	value >= MS_PER_SECOND
+		? `${(value / MS_PER_SECOND).toFixed(1)} s`
+		: `${Math.round(value)} ms`;
+
 export const relativeTime = (timestamp: number): string => {
 	const seconds = Math.round((Date.now() - timestamp) / 1000);
 	if (seconds < 60) {

@@ -178,13 +178,21 @@ const useRun = (runParam: Id<"pipelineRuns"> | undefined) => {
 	return runParam === undefined ? latest : picked;
 };
 
-/** The run's traces and the tail less those same rows, so a lot appears once. */
+/**
+ * The run's traces and the tail less those same rows, so a lot appears
+ * once. The tail waits for the run and its rows, so a run's rows never
+ * show up in the tail and then jump out of it.
+ */
 const useTraces = (run: Run | null | undefined) => {
+	const hasRun = run !== undefined && run !== null;
 	const runTraces = useQuery(
 		api.nerdStuff.traces,
-		run === undefined || run === null ? "skip" : { runId: run._id }
+		hasRun ? { runId: run._id } : "skip"
 	);
 	const recent = useQuery(api.nerdStuff.recentTraces, { limit: TAIL_LIMIT });
+	if (run === undefined || (hasRun && runTraces === undefined)) {
+		return { runTraces, tail: undefined };
+	}
 	const runIds = new Set(runTraces?.map((trace) => trace._id));
 	const tail = recent?.filter((trace) => !runIds.has(trace._id));
 	return { runTraces, tail };

@@ -58,18 +58,19 @@ export const RoasterPicker = ({
 		run !== null && (run.status === "running" || run.status === "queued");
 	const mine = going && me !== undefined && me !== null && run.userId === me.id;
 
+	// The option values are the ids listActive returned, so the pick is
+	// looked up there rather than cast.
+	const picked = roasters?.find((roaster) => roaster.id === roasterId);
+
 	const onStart = async () => {
-		if (roasterId === "") {
+		if (picked === undefined) {
 			setFailure("Pick a roaster.");
 			return;
 		}
 		setBusy(true);
 		setFailure(null);
 		try {
-			const id = await start({
-				commit,
-				roasterId: roasterId as Id<"roasters">,
-			});
+			const id = await start({ commit, roasterId: picked.id });
 			onStarted(id);
 		} catch (error) {
 			setFailure(describeMutationError(error, "Could not start the run."));

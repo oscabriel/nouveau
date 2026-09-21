@@ -92,6 +92,13 @@ const cancelWatchdog = async (
 	}
 };
 
+/** The run is still going and its lot in flight is the one at `index`. */
+const activeAt = (
+	run: Doc<"pipelineRuns"> | null,
+	index: number
+): run is Doc<"pipelineRuns"> =>
+	run !== null && run.status === "running" && run.index === index;
+
 const newestFirst = (a: Doc<"products">, b: Doc<"products">): number =>
 	b.firstSeenAt - a.firstSeenAt;
 
@@ -233,7 +240,7 @@ export const lotContext = internalQuery({
 	args: { index: v.number(), runId: v.id("pipelineRuns") },
 	handler: async (ctx, args) => {
 		const run = await ctx.db.get("pipelineRuns", args.runId);
-		if (run === null || run.status !== "running" || run.index !== args.index) {
+		if (!activeAt(run, args.index)) {
 			return null;
 		}
 		const productId = run.productIds[args.index];
@@ -274,7 +281,7 @@ export const setStage = internalMutation({
 	},
 	handler: async (ctx, args) => {
 		const run = await ctx.db.get("pipelineRuns", args.runId);
-		if (run === null || run.status !== "running" || run.index !== args.index) {
+		if (!activeAt(run, args.index)) {
 			return null;
 		}
 		const now = Date.now();
@@ -290,17 +297,20 @@ export const setStage = internalMutation({
 	returns: v.null(),
 });
 
-/** One deferral more on the run's count. */
+/**
+ * The lot is waiting on the budget. The run's `deferred` counts lots that
+ * gave up, not waits, so nothing is counted here; the lot's own trace
+ * carries how many times it waited.
+ */
 export const noteDeferral = internalMutation({
 	args: { index: v.number(), runId: v.id("pipelineRuns") },
 	handler: async (ctx, args) => {
 		const run = await ctx.db.get("pipelineRuns", args.runId);
-		if (run === null || run.status !== "running" || run.index !== args.index) {
+		if (!activeAt(run, args.index)) {
 			return null;
 		}
 		await ctx.db.patch("pipelineRuns", args.runId, {
 			currentStage: "page",
-			deferred: run.deferred + 1,
 			message: "waiting for the Firecrawl budget",
 			updatedAt: Date.now(),
 		});
@@ -312,7 +322,9 @@ export const noteDeferral = internalMutation({
 /**
  * Record one read's trace. Every scheduled read calls this at its end
  * (pageFacts.scrape), so the roaster id is derived from the product when
- * the caller did not have it. With a run id, the run's totals move too.
+ * the caller did not have it. With a run id, the run's totals move too,
+ * while the run is still running: a read that ends after STOP keeps its
+ * trace but does not count, so the totals match the status word.
  */
 export const recordTrace = internalMutation({
 	args: { ...traceFields, roasterId: v.optional(v.id("roasters")) },
@@ -331,7 +343,7 @@ export const recordTrace = internalMutation({
 		});
 		if (args.runId !== undefined) {
 			const run = await ctx.db.get("pipelineRuns", args.runId);
-			if (run !== null) {
+			if (run !== null && run.status === "running") {
 				await ctx.db.patch("pipelineRuns", args.runId, {
 					deferred: run.deferred + (args.outcome === "deferred" ? 1 : 0),
 					failed: run.failed + (args.outcome === "failed" ? 1 : 0),
@@ -360,7 +372,7 @@ export const advance = internalMutation({
 	args: { index: v.number(), runId: v.id("pipelineRuns") },
 	handler: async (ctx, args) => {
 		const run = await ctx.db.get("pipelineRuns", args.runId);
-		if (run === null || run.status !== "running" || run.index !== args.index) {
+		if (!activeAt(run, args.index)) {
 			return null;
 		}
 		const next = args.index + 1;
@@ -614,9 +626,7 @@ export const traces = query({
 			ctx,
 			await ctx.db
 				.query("pipelineTraces")
-				.withIndex("by_run_id_and_started_at", (q) =>
-					q.eq("runId", args.runId)
-				)
+				.withIndex("by_run_id_and_started_at", (q) => q.eq("runId", args.runId))
 				.take(MAX_RUN_LOTS)
 		),
 	returns: v.array(addressedTrace),
@@ -633,10 +643,7 @@ export const recentTraces = query({
 				.withIndex("by_started_at")
 				.order("desc")
 				.take(
-					Math.min(
-						Math.max(1, Math.floor(args.limit ?? 20)),
-						RECENT_TRACES_CAP
-					)
+					Math.min(Math.max(1, Math.floor(args.limit ?? 20)), RECENT_TRACES_CAP)
 				)
 		),
 	returns: v.array(addressedTrace),

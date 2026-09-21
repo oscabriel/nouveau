@@ -183,7 +183,7 @@ export const runFields = {
 	createdAt: v.number(),
 	currentProductId: v.optional(v.id("products")),
 	currentStage: v.optional(runStageValidator),
-	/** Reads the budget put off, across the run. */
+	/** Lots given up after MAX_READ_DEFERRALS waits; with `read` and `failed`, every lot counts once. */
 	deferred: v.number(),
 	/** The watchdog that fails a run still going at RUN_TIMEOUT_MS. */
 	expireId: v.optional(v.id("_scheduled_functions")),

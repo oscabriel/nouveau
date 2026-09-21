@@ -415,7 +415,7 @@ describe("nerdStuff.runLot", () => {
 		expect(row?.pageReads).toBe(1);
 	});
 
-	test("a deferred read runs again at the same index and counts on the run; the trace waits for the end", async () => {
+	test("a deferred read runs again at the same index; the run counts the lot only when it gives up", async () => {
 		const fx = await setup(1);
 		stubProviders({ firecrawlStatus: 429, html: null });
 		const runId = await asUser(fx.t, fx.userId).mutation(api.nerdStuff.start, {
@@ -426,7 +426,7 @@ describe("nerdStuff.runLot", () => {
 		const run = await getRun(fx, runId);
 		expect(run).toMatchObject({
 			currentStage: "page",
-			deferred: 1,
+			deferred: 0,
 			index: 0,
 			message: "waiting for the Firecrawl budget",
 			status: "running",
@@ -452,7 +452,7 @@ describe("nerdStuff.runLot", () => {
 			outcome: "deferred",
 		});
 		expect(await getRun(fx, runId)).toMatchObject({
-			deferred: 2,
+			deferred: 1,
 			status: "done",
 		});
 	});
