@@ -59,8 +59,14 @@ const dropTile = (card: FeedCard): Tile => ({
  * capped at MAX_TILE_POOL. The scan stops after TILE_SCAN_LIMIT logs so a
  * young app (mostly unrated, photoless logs) cannot read the whole table.
  */
-const ratedPool = async (ctx: QueryCtx): Promise<Doc<"logs">[]> => {
-	const pool: Doc<"logs">[] = [];
+interface RatedLog {
+	log: Doc<"logs">;
+	/** The lot, read once for the photo check and reused to hydrate. */
+	product: Doc<"products">;
+}
+
+const ratedPool = async (ctx: QueryCtx): Promise<RatedLog[]> => {
+	const pool: RatedLog[] = [];
 	const photoless = new Set<Id<"products">>();
 	const logs = await ctx.db
 		.query("logs")
@@ -80,11 +86,11 @@ const ratedPool = async (ctx: QueryCtx): Promise<Doc<"logs">[]> => {
 		}
 		// oxlint-disable-next-line no-await-in-loop -- bounded by TILE_SCAN_LIMIT; stops as soon as the pool is full
 		const product = await ctx.db.get(log.productId);
-		if (product?.imageUrl === undefined) {
+		if (product === null || product.imageUrl === undefined) {
 			photoless.add(log.productId);
 			continue;
 		}
-		pool.push(log);
+		pool.push({ log, product });
 	}
 	return pool;
 };
@@ -137,7 +143,7 @@ export const ratedTiles = query({
 		const seenUsers = new Set<Id<"users">>();
 		const deduped =
 			pool.length > TILE_COUNT
-				? pool.filter((log) => {
+				? pool.filter(({ log }) => {
 						if (seenUsers.has(log.userId)) {
 							return false;
 						}
@@ -150,11 +156,7 @@ export const ratedTiles = query({
 				? deduped.slice(0, TILE_COUNT)
 				: draw(deduped, TILE_COUNT, args.shuffleSeed);
 		const hydrated = await Promise.all(
-			picked.map(async (log) => {
-				const product = await ctx.db.get(log.productId);
-				if (product === null || product.imageUrl === undefined) {
-					return null;
-				}
+			picked.map(async ({ log, product }) => {
 				const roaster = await ctx.db.get(product.roasterId);
 				if (roaster === null) {
 					return null;
