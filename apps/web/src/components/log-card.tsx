@@ -90,6 +90,16 @@ export const LogCard = ({
 			</div>
 			{log.rating !== null && <Stars rating={log.rating} />}
 			{log.notes !== null && <p className="text-sm">{log.notes}</p>}
+			{log.tastingNotes !== null && !editing && (
+				<p className="text-muted-foreground flex flex-wrap items-center gap-1.5 text-xs">
+					<span className="text-foreground font-medium">Tasting notes:</span>
+					{log.tastingNotes.map((note) => (
+						<span className="rounded-full border px-2 py-0.5" key={note}>
+							{note}
+						</span>
+					))}
+				</p>
+			)}
 			{log.lot.roasterNotes !== null && !editing && (
 				<p className="text-muted-foreground text-xs italic">
 					<span className="font-medium not-italic">Roaster notes:</span>{" "}
@@ -132,6 +142,7 @@ export const LogCard = ({
 						logId: log.logId,
 						notes: log.notes,
 						rating: log.rating,
+						tastingNotes: log.tastingNotes,
 					}}
 					lotId={log.lot.id}
 					onDone={() => {

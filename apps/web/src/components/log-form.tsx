@@ -1,5 +1,6 @@
 import { api } from "@nouveau/backend/convex/_generated/api";
 import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
+import type { TastingNote } from "@nouveau/backend/convex/tasting";
 import { Button } from "@nouveau/ui/components/button";
 import { Checkbox } from "@nouveau/ui/components/checkbox";
 import { Label } from "@nouveau/ui/components/label";
@@ -9,17 +10,19 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { Stars } from "@/components/stars";
+import { TastingNotesPicker } from "@/components/tasting-picker";
 
 const NOTES_MAX_LENGTH = 1000;
 const DEFAULT_RATING = 3;
 
 /**
- * Create or edit a Log (build spec §14.1). Inline rather than a modal — the
- * ui kit has no dialog primitive and the form is two fields. Unchecking the
- * rating stores a rating-less log; clearing it on edit sends `null`.
- * `roasterNotes` (§14.4) is shown as read-only reference: descriptors the
- * roaster published, verbatim, to crib from — never prefilled into the
- * taster's own notes.
+ * Create or edit a Log (build spec §14.1, ADR-0016). Inline rather than a
+ * modal — the ui kit has no dialog primitive and the form is three fields.
+ * Unchecking the rating stores a rating-less log; clearing it on edit sends
+ * `null`. The freeform field is the review; the structured picks are the
+ * tasting notes. `roasterNotes` (§14.4) sits beside the picker as read-only
+ * reference: descriptors the roaster published, verbatim, to crib from —
+ * never prefilled into the taster's own picks.
  */
 export const LogForm = ({
 	existing,
@@ -31,6 +34,7 @@ export const LogForm = ({
 		logId: Id<"logs">;
 		notes: string | null;
 		rating: number | null;
+		tastingNotes: TastingNote[] | null;
 	};
 	lotId: Id<"products">;
 	onDone: () => void;
@@ -41,6 +45,9 @@ export const LogForm = ({
 	);
 	const [rating, setRating] = useState(existing?.rating ?? DEFAULT_RATING);
 	const [notes, setNotes] = useState(existing?.notes ?? "");
+	const [picks, setPicks] = useState<TastingNote[]>(
+		existing?.tastingNotes ?? []
+	);
 	const [saving, setSaving] = useState(false);
 
 	const create = useMutation(api.logs.createLog);
@@ -56,6 +63,7 @@ export const LogForm = ({
 				const { removedSaveFromRunId } = await create({
 					...(rateIt ? { rating } : {}),
 					...(trimmed === "" ? {} : { notes: trimmed }),
+					...(picks.length > 0 ? { tastingNotes: picks } : {}),
 					productId: lotId,
 				});
 				// Logging a lot on the try list removes the save (ADR-0016); the
@@ -80,6 +88,7 @@ export const LogForm = ({
 					logId: existing.logId,
 					notes: trimmed === "" ? null : trimmed,
 					rating: rateIt ? rating : null,
+					tastingNotes: picks.length === 0 ? null : picks,
 				});
 				toast.success("Log updated.");
 			}
@@ -94,12 +103,18 @@ export const LogForm = ({
 
 	return (
 		<div className="my-2 flex flex-col gap-3 rounded-md border p-3">
-			{roasterNotes !== null && (
-				<p className="text-muted-foreground text-xs italic">
-					<span className="font-medium not-italic">Roaster notes:</span>{" "}
-					{roasterNotes}
-				</p>
-			)}
+			<div className="flex flex-col gap-4 md:flex-row md:gap-8">
+				<div className="md:w-1/2">
+					<p className="label-caps text-foreground mb-2">Tasting notes</p>
+					<TastingNotesPicker onChange={setPicks} value={picks} />
+				</div>
+				{roasterNotes !== null && (
+					<p className="text-muted-foreground text-xs italic md:w-1/2">
+						<span className="font-medium not-italic">Roaster notes:</span>{" "}
+						{roasterNotes}
+					</p>
+				)}
+			</div>
 			<div className="flex items-center gap-3">
 				<Checkbox
 					checked={rateIt}
@@ -130,12 +145,12 @@ export const LogForm = ({
 				)}
 			</div>
 			<Textarea
-				aria-label="Notes"
+				aria-label="Review"
 				maxLength={NOTES_MAX_LENGTH}
 				onChange={(event) => {
 					setNotes(event.target.value);
 				}}
-				placeholder="Your notes — jasmine? lemon? too thin?"
+				placeholder="Your review — jasmine? lemon? too thin?"
 				rows={2}
 				value={notes}
 			/>
