@@ -1,21 +1,17 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 
 import { ActivityFeed } from "@/components/activity-feed";
 
+/**
+ * The community feed (ADR-0016): the one place other people's logs appear
+ * together. The same inner-page shell as /drops; the rows are the page.
+ */
 const ActivityComponent = () => (
-	<div className="container mx-auto max-w-3xl px-4 py-8">
-		<header className="mb-6 flex items-baseline justify-between gap-4">
-			<h1 className="text-2xl font-semibold">Recent logs</h1>
-			<Link className="text-sm hover:underline" to="/drops">
-				Drop feed
-			</Link>
-		</header>
-		<p className="text-muted-foreground mb-4 text-sm">
-			What people are tasting right now — every lot logged across Nouveau,
-			newest first.
-		</p>
-		<ActivityFeed />
-	</div>
+	<main>
+		<div className="px-5 pt-10 md:px-10 md:pt-14">
+			<ActivityFeed />
+		</div>
+	</main>
 );
 
 export const Route = createFileRoute("/activity")({
