@@ -37,6 +37,8 @@ The split is that the left names what the site is about (roasters, drops) and th
 
 **2026-09-21 (owner's batch 8 brief). The footer keeps one flower and gains the domain.** Five of the six details and their Caveat captions leave the footer; the five-stamen flower stays, above BACK TO THE TOP, which moves out of the link row so the row is the three left links and ABOUT, GITHUB right. Beside the flower, NOUVEAU.COFFEE set huge in the Garamond italic the landing wordmark uses since 2026-09-21. With no captions left, Caveat leaves the app (`@fontsource-variable/caveat` uninstalled, the `--font-caveat` token gone); the type scale is back to two families. The flower keeps its alt text and its Coffea arabica link.
 
+**2026-09-21 (owner's post-batch-8 list). The flower is the last thing on the page.** The lower block stacks at every width: NOUVEAU.COFFEE first, then the five-stamen flower under it, bottom-most. The same day's earlier arrangement (flower and wordmark side by side on one baseline) goes. The flower keeps the wordmark's font-size from `md`, its alt text and its Coffea arabica link.
+
 ## Considered alternatives
 
 - **Keep the marquee and add the plate elsewhere.** The marquee is the loudest thing on every page and says the domain name, which the wordmark already does. The plate says what the product is about.
