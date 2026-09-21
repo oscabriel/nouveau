@@ -1,0 +1,147 @@
+import { useConvexAuth } from "@convex-dev/auth/react";
+import { api } from "@nouveau/backend/convex/_generated/api";
+import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
+import { useMutation, useQuery } from "convex/react";
+import { useState } from "react";
+
+import { DotToggle } from "@/components/dot-toggle";
+import { SignInCta } from "@/components/sign-in-cta";
+import { describeMutationError } from "@/lib/errors";
+import { navLinkClass } from "@/lib/ui";
+
+import type { Run } from "./stat-strip";
+
+const selectClass =
+	"text-foreground focus-visible:border-foreground h-11 max-w-64 border-b bg-transparent text-sm outline-none";
+
+/**
+ * The run controls: a hairline select over the active roasters, the COMMIT
+ * dot toggle (off by default; a run is a viewer, ADR-0018), START as a caps
+ * action, and STOP while the viewer's own run is going. Signed out, the
+ * sign-in block stands in for the whole row; anyone may still watch.
+ */
+export const RoasterPicker = ({
+	onStarted,
+	run,
+}: {
+	onStarted: (runId: Id<"pipelineRuns">) => void;
+	run: Run | null;
+}) => {
+	const { isAuthenticated, isLoading } = useConvexAuth();
+	const roasters = useQuery(
+		api.roasters.listActive,
+		isAuthenticated ? {} : "skip"
+	);
+	const me = useQuery(api.users.getCurrentUser, isAuthenticated ? {} : "skip");
+	const start = useMutation(api.nerdStuff.start);
+	const stop = useMutation(api.nerdStuff.stop);
+	const [roasterId, setRoasterId] = useState("");
+	const [commit, setCommit] = useState(false);
+	const [busy, setBusy] = useState(false);
+	const [failure, setFailure] = useState<string | null>(null);
+
+	if (isLoading) {
+		return null;
+	}
+	if (!isAuthenticated) {
+		return (
+			<div className="flex flex-wrap items-center gap-4">
+				<SignInCta />
+				<span className="text-muted-foreground text-sm">
+					to start a run. Watching needs no account.
+				</span>
+			</div>
+		);
+	}
+
+	const going =
+		run !== null && (run.status === "running" || run.status === "queued");
+	const mine = going && me !== undefined && me !== null && run.userId === me.id;
+
+	const onStart = async () => {
+		if (roasterId === "") {
+			setFailure("Pick a roaster.");
+			return;
+		}
+		setBusy(true);
+		setFailure(null);
+		try {
+			const id = await start({
+				commit,
+				roasterId: roasterId as Id<"roasters">,
+			});
+			onStarted(id);
+		} catch (error) {
+			setFailure(describeMutationError(error, "Could not start the run."));
+		}
+		setBusy(false);
+	};
+
+	const onStop = async () => {
+		if (run === null) {
+			return;
+		}
+		setBusy(true);
+		try {
+			await stop({ runId: run._id });
+		} catch (error) {
+			setFailure(describeMutationError(error, "Could not stop the run."));
+		}
+		setBusy(false);
+	};
+
+	return (
+		<div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+			<select
+				aria-label="Roaster"
+				className={selectClass}
+				disabled={going}
+				onChange={(event) => {
+					setRoasterId(event.target.value);
+				}}
+				value={roasterId}
+			>
+				<option value="">Pick a roaster</option>
+				{roasters?.map((roaster) => (
+					<option key={roaster.id} value={roaster.id}>
+						{roaster.name}
+					</option>
+				))}
+			</select>
+			<DotToggle
+				onClick={() => {
+					setCommit((value) => !value);
+				}}
+				pressed={commit}
+				title="Write the read's facts to the lots. Off, the run only records traces."
+			>
+				Commit
+			</DotToggle>
+			{mine ? (
+				<button
+					className={`${navLinkClass} disabled:text-muted-foreground disabled:no-underline`}
+					disabled={busy}
+					onClick={onStop}
+					type="button"
+				>
+					Stop
+				</button>
+			) : (
+				<button
+					className={`${navLinkClass} disabled:text-muted-foreground disabled:no-underline`}
+					disabled={busy || going}
+					onClick={onStart}
+					title={going ? "A run is already going." : undefined}
+					type="button"
+				>
+					Start
+				</button>
+			)}
+			{failure !== null && (
+				<span className="text-muted-foreground text-sm" role="alert">
+					{failure}
+				</span>
+			)}
+		</div>
+	);
+};
