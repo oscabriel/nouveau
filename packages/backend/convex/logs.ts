@@ -255,13 +255,16 @@ export const createLog = mutation({
 			throw new Error("Unknown lot");
 		}
 		// Logging a lot on the try list removes the save (ADR-0016): "want to
-		// try" is over once it is tried. The removed save's run id goes back so
-		// the undo toast can restore the save exactly as it was.
+		// try" is over once it is tried. The removed save goes back as an
+		// object, run citation or not, so the undo toast fires for every
+		// removal and can restore the save exactly as it was.
 		const existingSave = await findSave(ctx, userId, args.productId);
-		let removedSaveFromRunId: Id<"recommendationRuns"> | null = null;
+		let removedSave: {
+			fromRunId: Id<"recommendationRuns"> | null;
+		} | null = null;
 		if (existingSave !== null) {
 			await ctx.db.delete("savedCoffees", existingSave._id);
-			removedSaveFromRunId = existingSave.fromRunId ?? null;
+			removedSave = { fromRunId: existingSave.fromRunId ?? null };
 		}
 		const logId = await ctx.db.insert("logs", {
 			loggedAt: Date.now(),
@@ -274,11 +277,14 @@ export const createLog = mutation({
 					: undefined,
 			userId,
 		});
-		return { logId, removedSaveFromRunId };
+		return { logId, removedSave };
 	},
 	returns: v.object({
 		logId: v.id("logs"),
-		removedSaveFromRunId: v.union(v.id("recommendationRuns"), v.null()),
+		removedSave: v.union(
+			v.object({ fromRunId: v.union(v.id("recommendationRuns"), v.null()) }),
+			v.null()
+		),
 	}),
 });
 

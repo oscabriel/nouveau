@@ -60,7 +60,7 @@ export const LogForm = ({
 		setSaving(true);
 		try {
 			if (existing === undefined) {
-				const { removedSaveFromRunId } = await create({
+				const { removedSave } = await create({
 					...(rateIt ? { rating } : {}),
 					...(trimmed === "" ? {} : { notes: trimmed }),
 					...(picks.length > 0 ? { tastingNotes: picks } : {}),
@@ -68,7 +68,7 @@ export const LogForm = ({
 				});
 				// Logging a lot on the try list removes the save (ADR-0016); the
 				// undo puts it back exactly as it was, run citation included.
-				if (removedSaveFromRunId === null) {
+				if (removedSave === null) {
 					toast.success("Logged.");
 				} else {
 					toast.success("Logged. Removed from Want to try.", {
@@ -76,7 +76,9 @@ export const LogForm = ({
 							label: "Undo",
 							onClick: () => {
 								void restore({
-									fromRunId: removedSaveFromRunId,
+									...(removedSave.fromRunId === null
+										? {}
+										: { fromRunId: removedSave.fromRunId }),
 									productId: lotId,
 								});
 							},

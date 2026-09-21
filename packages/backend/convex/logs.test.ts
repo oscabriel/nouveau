@@ -179,11 +179,13 @@ describe("log removes save", () => {
 			await asUser(t, userId).query(api.savedCoffees.mySavedProductIds, {})
 		).toEqual([lotId]);
 
-		const { removedSaveFromRunId } = await asUser(t, userId).mutation(
+		const { removedSave } = await asUser(t, userId).mutation(
 			api.logs.createLog,
 			{ productId: lotId, rating: 4 }
 		);
-		expect(removedSaveFromRunId).toBeNull();
+		// A manual save comes back as an object with no run, so the toast and
+		// its undo fire for it too (ADR-0016).
+		expect(removedSave).toEqual({ fromRunId: null });
 		expect(
 			await asUser(t, userId).query(api.savedCoffees.mySavedProductIds, {})
 		).toEqual([]);
@@ -214,18 +216,18 @@ describe("log removes save", () => {
 			productId: lotId,
 		});
 
-		const { removedSaveFromRunId } = await asUser(t, userId).mutation(
+		const { removedSave } = await asUser(t, userId).mutation(
 			api.logs.createLog,
 			{ productId: lotId, rating: 4 }
 		);
-		expect(removedSaveFromRunId).toBe(runId);
+		expect(removedSave).toEqual({ fromRunId: runId });
 		expect(
 			await asUser(t, userId).query(api.savedCoffees.mySavedProductIds, {})
 		).toEqual([]);
 
 		// The undo toast restores the save, citation intact.
 		await asUser(t, userId).mutation(api.savedCoffees.save, {
-			fromRunId: removedSaveFromRunId ?? undefined,
+			fromRunId: removedSave?.fromRunId ?? undefined,
 			productId: lotId,
 		});
 		const page = await asUser(t, userId).query(api.savedCoffees.listMine, {
@@ -240,11 +242,11 @@ describe("log removes save", () => {
 		await asUser(t, userId).mutation(api.savedCoffees.save, {
 			productId: archivedLotId,
 		});
-		const { removedSaveFromRunId } = await asUser(t, userId).mutation(
+		const { removedSave } = await asUser(t, userId).mutation(
 			api.logs.createLog,
 			{ productId: lotId, rating: 4 }
 		);
-		expect(removedSaveFromRunId).toBeNull();
+		expect(removedSave).toBeNull();
 		expect(
 			await asUser(t, userId).query(api.savedCoffees.mySavedProductIds, {})
 		).toEqual([archivedLotId]);
