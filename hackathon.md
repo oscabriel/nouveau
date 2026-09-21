@@ -13,7 +13,7 @@
 - **Auth:** Convex Auth
 - **AI models:** OpenAI `gpt-5.6-luna` (Responses API, tool loop on @convex-dev/agent) for Find my next bag; TypeSafe System One `jev-1.13.0` picks and verifies spans in the page reader
 - **Started:** 2026-08-29T18:06:09Z
-- **Last updated:** 2026-09-21T19:26:04Z
+- **Last updated:** 2026-09-21T19:52:51Z
 
 ## Log
 
@@ -160,3 +160,7 @@ The last scaffold-era pages and controls got the design pass. Stars are ink ever
 ### 2026-09-21 - afaeffe
 
 The landing got its wordmark. NOUVEAU is set in EB Garamond italic across the viewport and the branch drawing, trimmed to a transparent WebP, sits over the V so the leaves thread through the word; the standalone hero image is gone and the lot tiles start just above the fold at 1440x900. The font change went wider than the wordmark: EB Garamond replaces Source Serif 4 as the serif, so every page title and the landing lede are Garamond now, while the grotesk keeps labels, tabs, section heads, cells and controls. Before that, a copy pass: LEARN MORE joined the header, `/about` was rewritten as one caps-labeled section per feature, and each inner page got its one-line pitch, then the owner shortened the landing lede to "Never forget your favorite cup or miss the next one." Checked headless on dev at 1440 in both themes and at 390. Prod has not been redeployed since batch 7.
+
+### 2026-09-21 - 78c2571
+
+Batch 8, seven items in ten commits. The repo has a README with the custom domain and the `*.convex.site` URL the hackathon asks for, and a favicon cut from the plate's seed. The footer is one flower over BACK TO THE TOP with NOUVEAU.COFFEE set huge beside it; the botanist's captions and their handwriting face are gone. Tasting notes stopped being a picker: a taster types their own words, and the SCA flavor wheel, held in `tasting.ts` at all three levels, sorts each word into one of nine families on read, so every note renders as a pill in its family's color and links to `/drops` filtered to that family. `/drops` grew a filter row (roaster, city, origin, family, price cap) with MY ROASTERS as a toggle in place of the old tab. The log form moved into the same right-edge pane as Find my next bag, and the rating is five stars you drag across. Landing tiles name their rater under the stars.
