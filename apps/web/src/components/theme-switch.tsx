@@ -1,3 +1,4 @@
+import { DotToggle } from "@/components/dot-toggle";
 import { useTheme } from "@/components/theme-provider";
 import { systemTheme, writeThemePreference } from "@/lib/theme";
 
@@ -31,9 +32,9 @@ export const useThemeControls = () => {
 };
 
 /**
- * The single switch, flipping between the words LIGHT and DARK in the
- * LATEST / SHUFFLE vocabulary: the active side is ink with a filled dot, the
- * other grey with the dot faded. Default side is the system's theme.
+ * The single switch, flipping between the words LIGHT and DARK, each side
+ * a dot toggle: the active side is ink with a filled dot, the other grey
+ * with the dot faded. Default side is the system's theme.
  */
 export const ThemeSwitch = () => {
 	const { resolved, choose } = useThemeControls();
@@ -46,27 +47,15 @@ export const ThemeSwitch = () => {
 			{THEME_SIDES.map(({ label, target }) => {
 				const active = resolved === target;
 				return (
-					<button
-						aria-pressed={active}
-						className={`label-caps inline-flex min-h-11 items-center gap-2 transition-colors ${
-							active
-								? "text-foreground"
-								: "text-muted-foreground hover:text-foreground"
-						}`}
+					<DotToggle
 						key={target}
 						onClick={() => {
 							choose(target);
 						}}
-						type="button"
+						pressed={active}
 					>
-						<span
-							aria-hidden
-							className={`inline-block size-2 rounded-full bg-current transition-opacity ${
-								active ? "opacity-100" : "opacity-30"
-							}`}
-						/>
 						{label}
-					</button>
+					</DotToggle>
 				);
 			})}
 		</div>

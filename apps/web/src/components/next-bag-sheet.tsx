@@ -10,6 +10,7 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 
+import { DotToggle } from "@/components/dot-toggle";
 import Loader from "@/components/loader";
 import { NextBagRun } from "@/components/next-bag-run";
 import { SignInCta } from "@/components/sign-in-cta";
@@ -105,26 +106,14 @@ const RequestBox = ({ busy }: { busy: boolean }) => {
 					value={preferences}
 				/>
 				<div className="mt-1 flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
-					<button
-						aria-pressed={includeNotes}
-						className={`label-caps inline-flex min-h-11 items-center gap-2 whitespace-nowrap transition-colors ${
-							includeNotes
-								? "text-foreground"
-								: "text-muted-foreground hover:text-foreground"
-						}`}
+					<DotToggle
 						onClick={() => {
 							setIncludeNotes((current) => !current);
 						}}
-						type="button"
+						pressed={includeNotes}
 					>
-						<span
-							aria-hidden
-							className={`inline-block size-2 rounded-full bg-current transition-opacity ${
-								includeNotes ? "opacity-100" : "opacity-30"
-							}`}
-						/>
 						{includeNotes ? "Including my logs" : "Include my logs"}
-					</button>
+					</DotToggle>
 					<div className="flex items-center gap-x-5">
 						{preferences.length >= COUNTER_FROM_CHARS && (
 							<span className="text-muted-foreground tnum text-xs">

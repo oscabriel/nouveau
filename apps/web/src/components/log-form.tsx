@@ -5,6 +5,7 @@ import { useMutation } from "convex/react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { DotToggle } from "@/components/dot-toggle";
 import { Stars } from "@/components/stars";
 import { TastingNotesPicker } from "@/components/tasting-picker";
 import { navLinkClass } from "@/lib/ui";
@@ -119,26 +120,14 @@ export const LogForm = ({
 				)}
 			</div>
 			<div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-				<button
-					aria-pressed={rateIt}
-					className={`label-caps inline-flex min-h-11 items-center gap-2 whitespace-nowrap transition-colors ${
-						rateIt
-							? "text-foreground"
-							: "text-muted-foreground hover:text-foreground"
-					}`}
+				<DotToggle
 					onClick={() => {
 						setRateIt((value) => !value);
 					}}
-					type="button"
+					pressed={rateIt}
 				>
-					<span
-						aria-hidden
-						className={`inline-block size-2 rounded-full bg-current transition-opacity ${
-							rateIt ? "opacity-100" : "opacity-30"
-						}`}
-					/>
 					Rate it
-				</button>
+				</DotToggle>
 				{rateIt && (
 					<div className="flex items-center gap-3">
 						<input
