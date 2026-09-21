@@ -207,7 +207,14 @@ export const NextBagSheet = () => {
 					<SheetClose className={navLinkClass}>Close</SheetClose>
 				</div>
 				<div className="mt-6">
-					<PaneContent />
+					<p className="text-muted-foreground text-sm">
+						Describe the coffee you&apos;re after. The agent searches the
+						catalog, checks stock and hands you up to five in-stock picks, one
+						card at a time.
+					</p>
+					<div className="mt-4">
+						<PaneContent />
+					</div>
 				</div>
 			</SheetContent>
 		</Sheet>

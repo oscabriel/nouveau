@@ -63,9 +63,9 @@ const LandingComponent = () => {
 					Nouveau
 				</h1>
 				<p className="mt-4 max-w-[44rem] font-serif text-[1.375rem] leading-[1.3] text-balance md:text-[1.75rem]">
-					A live index of American specialty coffee. Every new lot, restock and
-					price drop from the roasters we watch, and a place to remember what
-					you tried.
+					Track every coffee you try. Get an email when a roaster you watch
+					drops a new lot. Tell the agent what you&apos;re after and it finds
+					your next bag.
 				</p>
 				<div className="mt-9 min-h-11">
 					<PrimarySlot />

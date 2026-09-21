@@ -203,6 +203,9 @@ const Header = () => {
 					>
 						Activity
 					</Link>
+					<Link activeProps={activeProps} className={navLinkClass} to="/about">
+						Learn More
+					</Link>
 					{authControl}
 				</div>
 			</nav>

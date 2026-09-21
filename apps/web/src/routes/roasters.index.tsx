@@ -159,6 +159,10 @@ const RoastersComponent = () => {
 						Add a roaster
 					</Link>
 				</PageTitle>
+				<p className="text-muted-foreground mt-4 max-w-prose text-sm md:text-[15px]">
+					The American specialty roasters Nouveau watches around the clock, with
+					their live catalogs.
+				</p>
 				<div className="mt-10 md:mt-12">
 					<SearchField
 						label="Search by name, city or state"
