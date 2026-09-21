@@ -7,8 +7,10 @@ import {
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 
 import Header from "@/components/header";
+import { NextBagSheet } from "@/components/next-bag-sheet";
 import { SiteFooter } from "@/components/site-footer";
 import { ThemeProvider } from "@/components/theme-provider";
+import { validateNextBagSearch } from "@/lib/next-bag-search";
 
 import "../index.css";
 
@@ -28,6 +30,7 @@ const RootComponent = () => (
 				<Outlet />
 				<SiteFooter />
 			</div>
+			<NextBagSheet />
 			<Toaster richColors />
 		</ThemeProvider>
 		<TanStackRouterDevtools position="bottom-left" />
@@ -36,6 +39,7 @@ const RootComponent = () => (
 
 export const Route = createRootRouteWithContext<RouterAppContext>()({
 	component: RootComponent,
+	validateSearch: validateNextBagSearch,
 	head: () => ({
 		meta: [
 			{

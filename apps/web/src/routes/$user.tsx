@@ -12,6 +12,7 @@ import { toast } from "sonner";
 
 import Loader from "@/components/loader";
 import { LogCard } from "@/components/log-card";
+import { NextBagLink } from "@/components/next-bag-sheet";
 import { PageTitle } from "@/components/page-title";
 import { SavedCoffeeCard } from "@/components/saved-coffee-card";
 import { StatusChip } from "@/components/status-chip";
@@ -251,14 +252,7 @@ const ProfileComponent = () => {
 					count={logsTruncated ? undefined : logs.length}
 					title={user.name ?? "A taster"}
 				>
-					{isMine && (
-						<Link
-							className="label-caps bg-foreground text-background inline-flex min-h-11 items-center px-5 transition-opacity hover:opacity-80"
-							to="/next-bag"
-						>
-							Find my next bag
-						</Link>
-					)}
+					{isMine && <NextBagLink />}
 				</PageTitle>
 				<p className="text-muted-foreground mt-4 text-sm md:text-[15px]">
 					{user.handle !== undefined && `@${user.handle} · `}

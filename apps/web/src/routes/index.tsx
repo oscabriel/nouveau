@@ -1,11 +1,12 @@
 import { useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 
 import { DropIndex } from "@/components/drop-index";
 import { LatestTiles } from "@/components/latest-tiles";
 import Loader from "@/components/loader";
+import { NextBagLink } from "@/components/next-bag-sheet";
 import { SignInCta } from "@/components/sign-in-cta";
 
 /*
@@ -39,14 +40,7 @@ const PrimarySlot = () => {
 		return null;
 	}
 	if (isAuthenticated) {
-		return (
-			<Link
-				className="label-caps bg-foreground text-background inline-flex min-h-11 items-center px-5 transition-opacity hover:opacity-80"
-				to="/next-bag"
-			>
-				Find my next bag
-			</Link>
-		);
+		return <NextBagLink />;
 	}
 	return <SignInCta />;
 };

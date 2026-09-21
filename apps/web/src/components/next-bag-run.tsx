@@ -1,6 +1,5 @@
 import { useUIMessages } from "@convex-dev/agent/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
-import { Button } from "@nouveau/ui/components/button";
 import { Link } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
@@ -10,6 +9,7 @@ import { SaveButton } from "@/components/save-button";
 import { thumbUrl } from "@/lib/drops";
 import { describeMutationError } from "@/lib/errors";
 import { formatPrice } from "@/lib/format";
+import { navLinkClass } from "@/lib/ui";
 
 type Run = NonNullable<FunctionReturnType<typeof api.recommendations.latest>>;
 type PickRow = Run["picks"][number];
@@ -25,11 +25,10 @@ interface Step {
 	label: string;
 }
 
-/**
- * One step line (ADR-0017): a tool call rendered as a fact the app
- * produced, in tabular figures. The user's prompt and the model's prose are
- * not steps.
- */
+// ---------------------------------------------------------------------------
+// Steps: one line per tool call (ADR-0017), a fact the app produced, in
+// tabular figures. The user's prompt and the model's prose are not steps.
+// ---------------------------------------------------------------------------
 
 /** Tool-call parts carry `type: "tool-${name}"` (AI SDK wire shape). */
 const isToolPart = (part: unknown): part is Record<string, unknown> =>
@@ -52,14 +51,13 @@ const readRecord = (value: unknown): Record<string, unknown> =>
 const readArray = (value: unknown): unknown[] =>
 	Array.isArray(value) ? value : [];
 
-/** The typed filters as a short list: "floral, washed, under $20, 250 g up to 350 g". */
-const filtersDetail = (input: Record<string, unknown>): string[] => {
+/** "“floral washed”, under $20, 250 g up to 350 g, 12 lots". */
+const searchDetail = (part: Record<string, unknown>): string => {
+	const input = readRecord(part.input);
 	const parts: string[] = [];
-	for (const field of ["flavour", "origin", "process"] as const) {
-		const value = readString(input[field]);
-		if (value !== undefined) {
-			parts.push(value);
-		}
+	const query = readString(input.query);
+	if (query !== undefined && query.length > 0) {
+		parts.push(`“${query}”`);
 	}
 	const cents = readNumber(input.maxPriceCents);
 	if (cents !== undefined) {
@@ -72,20 +70,8 @@ const filtersDetail = (input: Record<string, unknown>): string[] => {
 		const ceiling = max === undefined ? "" : ` up to ${max} g`;
 		parts.push(`${floor}${ceiling}`);
 	}
-	return parts;
-};
-
-const searchDetail = (part: Record<string, unknown>): string => {
-	const input = readRecord(part.input);
-	const parts = filtersDetail(input);
-	const query = readString(input.query);
-	if (typeof query === "string" && query.length > 0) {
-		parts.push(`“${query}”`);
-	}
 	const lots = readArray(readRecord(part.output).lots);
-	if (lots.length > 0) {
-		parts.push(`${lots.length} lots`);
-	}
+	parts.push(`${lots.length} lots`);
 	return parts.join(", ");
 };
 
@@ -101,15 +87,12 @@ const availabilityDetail = (part: Record<string, unknown>): string => {
 const readLotDetail = (part: Record<string, unknown>): string =>
 	readString(readRecord(part.output).note) ?? "";
 
-const readLogsDetail = (part: Record<string, unknown>): string => {
-	const logs = readArray(readRecord(part.output).logs);
-	return `${logs.length} logs`;
-};
+const readLogsDetail = (part: Record<string, unknown>): string =>
+	`${readArray(readRecord(part.output).logs).length} logs`;
 
-const handoffDetail = (part: Record<string, unknown>): string => {
-	const picks = readArray(readRecord(part.input).picks);
-	return `${picks.length} picks`;
-};
+/** The tool's own sentence: "Pick 2 of 5 is on the list." or the refusal. */
+const pickDetail = (part: Record<string, unknown>): string =>
+	readString(part.output) ?? "";
 
 const stepFromPart = (
 	part: Record<string, unknown>,
@@ -138,11 +121,11 @@ const stepFromPart = (
 		label = "Checked";
 		detail = availabilityDetail(part);
 	} else if (name === "readMyLogs") {
-		label = "Read your logs";
+		label = "Your logs";
 		detail = readLogsDetail(part);
-	} else if (name === "submitPicks") {
-		label = "Handoff";
-		detail = handoffDetail(part);
+	} else if (name === "pickLot") {
+		label = "Pick";
+		detail = pickDetail(part);
 	}
 	return { detail, key, label };
 };
@@ -156,16 +139,25 @@ const stepsFromMessages = (messages: ThreadPage): Step[] =>
 			.map(({ index, part }) => stepFromPart(part, index, message))
 	);
 
-const StepList = ({ messages }: { messages: ThreadPage }) => (
-	<ul aria-live="polite" className="mt-3 space-y-1">
-		{stepsFromMessages(messages).map((step) => (
-			<li className="text-muted-foreground flex gap-3 text-sm" key={step.key}>
-				<span className="label-caps shrink-0 pt-0.5">{step.label}</span>
+const StepList = ({ steps }: { steps: Step[] }) => (
+	<ul aria-live="polite" className="space-y-1">
+		{steps.map((step) => (
+			<li
+				className="text-muted-foreground flex gap-3 text-xs leading-snug"
+				key={step.key}
+			>
+				<span className="label-caps w-16 shrink-0 pt-px">{step.label}</span>
 				<span className="tnum [overflow-wrap:anywhere]">{step.detail}</span>
 			</li>
 		))}
 	</ul>
 );
+
+// ---------------------------------------------------------------------------
+// Cards: the one surface where cards are allowed (ADR-0017). Each is a fixed
+// component over validated fields from the run document; it appears when
+// its pickLot call lands.
+// ---------------------------------------------------------------------------
 
 /**
  * The candidate's page on Nouveau, addressed by the (roaster, lot) pair
@@ -191,7 +183,7 @@ const CandidateLink = ({
 				rel="noopener noreferrer"
 				target="_blank"
 			>
-				{owner === "name" ? candidate.name : "Read the source page"}
+				{owner === "name" ? candidate.name : "Source page"}
 			</a>
 		);
 	}
@@ -201,122 +193,125 @@ const CandidateLink = ({
 			params={{ lot: candidate.handle, roaster: candidate.roasterSlug }}
 			to="/roaster/$roaster/$lot"
 		>
-			{owner === "name" ? candidate.name : "Coffee page and logs"}
+			{owner === "name" ? candidate.name : "Coffee page"}
 		</Link>
 	);
 };
 
-const PickCard = ({ row, runId }: { row: PickRow; runId: Run["id"] }) => {
+const PickCard = ({
+	rank,
+	row,
+	runId,
+}: {
+	rank: number;
+	row: PickRow;
+	runId: Run["id"];
+}) => {
 	const { candidate, canBuy, imageUrl, pick } = row;
 	return (
-		<article className="grid gap-x-6 gap-y-4 py-6 sm:grid-cols-[160px_1fr]">
+		<li className="motion-safe:animate-in motion-safe:fade-in grid grid-cols-[88px_1fr] gap-x-4 py-5 motion-safe:duration-300">
 			<div className="bg-muted aspect-[3/2]">
 				{imageUrl !== null && (
 					<img
 						alt={candidate.name}
 						className="h-full w-full object-cover"
 						loading="lazy"
-						src={thumbUrl(imageUrl, 600)}
+						src={thumbUrl(imageUrl, 300)}
 					/>
 				)}
 			</div>
 			<div className="min-w-0">
-				<div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-					<h3 className="min-w-0 text-lg font-semibold [overflow-wrap:anywhere]">
-						<CandidateLink className="hover:underline" owner="name" row={row} />
-					</h3>
-					<p className="tnum shrink-0 text-sm">
-						{`${formatPrice(candidate.priceCents)} USD · ${candidate.variantName} (${candidate.grams} g)`}
-					</p>
-				</div>
-				<p className="text-muted-foreground mt-1 text-sm">
+				<p className="text-muted-foreground tnum text-xs">{rank}</p>
+				<h3 className="mt-1 min-w-0 text-[15px] leading-snug font-semibold [overflow-wrap:anywhere]">
+					<CandidateLink className="hover:underline" owner="name" row={row} />
+				</h3>
+				<p className="text-muted-foreground mt-0.5 text-sm">
 					{candidate.roasterName}
+					<span className="tnum">
+						{` · ${formatPrice(candidate.priceCents)} · ${candidate.grams} g`}
+					</span>
 				</p>
-				<p className="mt-3 text-sm [overflow-wrap:anywhere]">
-					<span className="label-caps text-muted-foreground mr-2">OpenAI</span>
+				<p className="mt-2 text-sm leading-snug [overflow-wrap:anywhere]">
 					{pick.why}
 				</p>
 				{!canBuy && (
-					<p className="text-muted-foreground mt-2 text-sm">
-						This size, price or availability can no longer be confirmed. Check
-						the source before deciding.
+					<p className="text-muted-foreground mt-1 text-sm">
+						Price or stock changed since. Check the roaster.
 					</p>
 				)}
-				<div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-					<SaveButton fromRunId={runId} lotId={candidate.productId} />
-					<CandidateLink
-						className="label-caps inline-flex min-h-11 items-center"
-						owner="page"
-						row={row}
-					/>
+				<div className="mt-1 flex flex-wrap items-center gap-x-4 text-sm">
+					<SaveButton fromRunId={runId} lotId={candidate.productId} size="sm" />
+					<CandidateLink className={navLinkClass} owner="page" row={row} />
 					<a
-						className="label-caps inline-flex min-h-11 items-center underline-offset-4 hover:underline"
+						className={navLinkClass}
 						href={candidate.url}
 						rel="noopener noreferrer"
 						target="_blank"
 					>
-						{canBuy ? "See this coffee at the roaster" : "Read the source page"}
+						Roaster
 					</a>
 				</div>
 			</div>
-		</article>
+		</li>
 	);
 };
 
-/** The finished run's step record, folded away; nothing when there is none. */
-const HowItLooked = ({ messages }: { messages: ThreadPage }) => {
-	if (stepsFromMessages(messages).length === 0) {
-		return null;
-	}
-	return (
-		<details className="text-sm">
-			<summary className="label-caps min-h-11 cursor-pointer py-3">
-				How it looked
-			</summary>
-			<StepList messages={messages} />
-		</details>
-	);
-};
-
-export const RecommendationResults = ({ run }: { run: Run | null }) => {
+const RetryAction = ({ run }: { run: Run }) => {
 	const retry = useMutation(api.recommendations.retry);
 	const [retrying, setRetrying] = useState(false);
 	const [failure, setFailure] = useState<string | null>(null);
-	// The thread is the run's HOW IT LOOKED record (ADR-0017); steps stream
-	// in while the loop works.
-	const thread = useUIMessages(
-		api.recommendationThreads.list,
-		run?.threadId !== undefined && run?.threadId !== null
-			? { threadId: run.threadId }
-			: "skip",
-		{ initialNumItems: 24, stream: true }
-	);
-	if (!run) {
-		return null;
-	}
-	const working = run.status === "queued" || run.status === "running";
-	const messages: ThreadPage = thread.results ?? [];
 	const retryRun = async () => {
 		setRetrying(true);
 		setFailure(null);
 		try {
 			await retry({ runId: run.id });
 		} catch (error) {
-			setFailure(
-				`${describeMutationError(error, "Could not retry.")} Your request is saved.`
-			);
+			setFailure(describeMutationError(error, "Could not retry."));
 		}
 		setRetrying(false);
 	};
 	return (
-		<section
-			aria-labelledby="shortlist-heading"
-			className="mt-10 border-t pt-6"
-		>
-			<h2 className="text-xl font-semibold" id="shortlist-heading">
-				Your latest shortlist
-			</h2>
-			<p className="text-muted-foreground mt-2 flex items-start gap-2 text-sm">
+		<div className="flex flex-wrap items-center gap-x-4">
+			<button
+				className={navLinkClass}
+				disabled={retrying}
+				onClick={() => {
+					void retryRun();
+				}}
+				type="button"
+			>
+				{retrying ? "Retrying..." : "Retry"}
+			</button>
+			{failure && (
+				<p className="text-destructive text-sm" role="alert">
+					{failure}
+				</p>
+			)}
+		</div>
+	);
+};
+
+/**
+ * The run under the box: the request as the user typed it, the status line,
+ * the steps while the loop works, and the cards as they land. Finished, the
+ * steps fold under HOW IT LOOKED.
+ */
+export const NextBagRun = ({ run }: { run: Run }) => {
+	// The thread is the run's HOW IT LOOKED record (ADR-0017); steps stream
+	// in while the loop works.
+	const thread = useUIMessages(
+		api.recommendationThreads.list,
+		run.threadId === null ? "skip" : { threadId: run.threadId },
+		{ initialNumItems: 24, stream: true }
+	);
+	const working = run.status === "queued" || run.status === "running";
+	const steps = stepsFromMessages(thread.results ?? []);
+	return (
+		<section aria-label="Your shortlist" className="mt-8">
+			<p className="text-[15px] leading-snug [overflow-wrap:anywhere]">
+				{run.input.preferences}
+			</p>
+			<p className="text-muted-foreground mt-2 flex items-start gap-2 text-sm leading-snug">
 				{working && (
 					<span
 						aria-hidden
@@ -325,11 +320,14 @@ export const RecommendationResults = ({ run }: { run: Run | null }) => {
 				)}
 				{run.message}
 			</p>
-			{working && <StepList messages={messages} />}
+			{working && steps.length > 0 && (
+				<div className="mt-3">
+					<StepList steps={steps} />
+				</div>
+			)}
 			{run.status === "ready" && run.picks.length === 0 && (
-				<p className="mt-4">
-					Nothing in the catalog fits the request yet. Describe it differently,
-					or{" "}
+				<p className="mt-4 text-sm">
+					Nothing in stock fits yet. Try other words, or{" "}
 					<Link className="underline underline-offset-4" to="/roasters">
 						browse the roasters
 					</Link>
@@ -337,44 +335,31 @@ export const RecommendationResults = ({ run }: { run: Run | null }) => {
 				</p>
 			)}
 			{run.picks.length > 0 && (
-				<div className="divide-y">
-					{run.picks.map((row) => (
-						<PickCard key={row.candidate.productId} row={row} runId={run.id} />
+				<ol className="mt-2 divide-y border-b">
+					{run.picks.map((row, index) => (
+						<PickCard
+							key={row.candidate.productId}
+							rank={index + 1}
+							row={row}
+							runId={run.id}
+						/>
 					))}
-				</div>
+				</ol>
 			)}
-			{!working && <HowItLooked messages={messages} />}
 			{run.canRetry && (
-				<div className="mt-4">
-					<p className="text-sm">
-						A retry uses this saved request, not the box above.{" "}
-						{run.input.includeNotes
-							? "It includes your logs."
-							: "It does not include your logs."}
-					</p>
-					<Button
-						className="mt-4 min-h-11"
-						disabled={retrying}
-						onClick={() => {
-							void retryRun();
-						}}
-						type="button"
-						variant="outline"
-					>
-						{retrying ? "Retrying..." : "Retry this request once"}
-					</Button>
+				<div className="mt-3">
+					<RetryAction run={run} />
 				</div>
 			)}
-			{failure && (
-				<p className="text-destructive mt-3 text-sm" role="alert">
-					{failure}
-				</p>
-			)}
-			{run.model && (
-				<p className="text-muted-foreground mt-3 text-xs">
-					Runtime model: {run.model}. Prices and availability come from the
-					catalog, not the model.
-				</p>
+			{!working && steps.length > 0 && (
+				<details className="mt-4">
+					<summary className={`${navLinkClass} cursor-pointer list-none`}>
+						How it looked
+					</summary>
+					<div className="mt-2">
+						<StepList steps={steps} />
+					</div>
+				</details>
 			)}
 		</section>
 	);
