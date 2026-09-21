@@ -205,7 +205,7 @@ const ProfileComponent = () => {
 	const { user: address } = useParams({ from: "/$user" });
 	// The address is whatever the URL holds; the query resolves handles,
 	// retired handles and legacy user ids alike (ADR-0011).
-	const profile = useQuery(api.logs.profile, { userId: address });
+	const profile = useQuery(api.logs.profile, { address });
 	const navigate = useNavigate();
 
 	// Adopt the canonical address: a legacy id or a retired handle resolves

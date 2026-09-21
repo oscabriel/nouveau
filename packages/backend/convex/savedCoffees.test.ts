@@ -168,7 +168,7 @@ describe("savedCoffees", () => {
 		]);
 
 		// The public profile stays free of saves (spec §6).
-		const profile = await f.t.query(api.logs.profile, { userId: f.userId });
+		const profile = await f.t.query(api.logs.profile, { address: f.userId });
 		expect(profile).not.toBeNull();
 		expect(JSON.stringify(profile)).not.toContain("saved");
 	});

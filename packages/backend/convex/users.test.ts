@@ -279,7 +279,7 @@ describe("profile lookup (logs.profile)", () => {
 	test("resolves by current handle", async () => {
 		const { t, userId } = await setupUser();
 		const profile = await t.query(api.logs.profile, {
-			userId: "ada-lovelace",
+			address: "ada-lovelace",
 		});
 		expect(profile?.user.id).toBe(userId);
 		expect(profile?.user.handle).toBe("ada-lovelace");
@@ -297,7 +297,7 @@ describe("profile lookup (logs.profile)", () => {
 			});
 		});
 		const profile = await t.query(api.logs.profile, {
-			userId: "ada-lovelace",
+			address: "ada-lovelace",
 		});
 		expect(profile?.user.id).toBe(userId);
 		expect(profile?.user.handle).toBe("ada-2");
@@ -305,14 +305,14 @@ describe("profile lookup (logs.profile)", () => {
 
 	test("resolves a legacy users-document id", async () => {
 		const { t, userId } = await setupUser();
-		const profile = await t.query(api.logs.profile, { userId });
+		const profile = await t.query(api.logs.profile, { address: userId });
 		expect(profile?.user.id).toBe(userId);
 	});
 
 	test("an unknown address resolves to null", async () => {
 		const { t } = await setupUser();
 		const profile = await t.query(api.logs.profile, {
-			userId: "nobody-here",
+			address: "nobody-here",
 		});
 		expect(profile).toBeNull();
 	});

@@ -449,7 +449,7 @@ describe("logs", () => {
 		});
 
 		// Signed-out viewer.
-		const signedOut = await t.query(api.logs.profile, { userId });
+		const signedOut = await t.query(api.logs.profile, { address: userId });
 		expect(signedOut?.kind).toBe("public");
 		expect(signedOut?.user).toMatchObject({ name: "Taster One" });
 		expect(signedOut?.logs).toHaveLength(2);
@@ -465,7 +465,9 @@ describe("logs", () => {
 				providerAccountId: "google-3",
 			})
 		);
-		const viewer = await asUser(t, other).query(api.logs.profile, { userId });
+		const viewer = await asUser(t, other).query(api.logs.profile, {
+			address: userId,
+		});
 		expect(viewer?.kind).toBe("public");
 		expect(viewer).not.toHaveProperty("watches");
 		expect(viewer).not.toHaveProperty("saved");
@@ -496,7 +498,9 @@ describe("logs", () => {
 			productId: lotId,
 		});
 
-		const profile = await asUser(t, userId).query(api.logs.profile, { userId });
+		const profile = await asUser(t, userId).query(api.logs.profile, {
+			address: userId,
+		});
 		if (profile === null || profile.kind !== "owner") {
 			throw new Error("expected the owner branch");
 		}
@@ -525,7 +529,7 @@ describe("logs", () => {
 			tastingNotes: ["floral", "berry"],
 		});
 
-		const profile = await t.query(api.logs.profile, { userId });
+		const profile = await t.query(api.logs.profile, { address: userId });
 		expect(profile?.logs[0]).toMatchObject({
 			lot: { roasterNotes: "peach, melon" },
 			tastingNotes: ["floral", "berry"],
@@ -534,7 +538,9 @@ describe("logs", () => {
 
 	test("profile resolves a malformed or unknown id to null, not an error", async () => {
 		const { t, userId } = await setup();
-		expect(await t.query(api.logs.profile, { userId: "not-an-id" })).toBeNull();
+		expect(
+			await t.query(api.logs.profile, { address: "not-an-id" })
+		).toBeNull();
 		const deleted = await t.run(async (ctx) => {
 			const ghost = await ctx.db.insert("users", {
 				providerAccountId: "google-ghost",
@@ -542,8 +548,8 @@ describe("logs", () => {
 			await ctx.db.delete("users", ghost);
 			return ghost;
 		});
-		expect(await t.query(api.logs.profile, { userId: deleted })).toBeNull();
-		expect(await t.query(api.logs.profile, { userId })).not.toBeNull();
+		expect(await t.query(api.logs.profile, { address: deleted })).toBeNull();
+		expect(await t.query(api.logs.profile, { address: userId })).not.toBeNull();
 	});
 
 	test("profile caps logs and says when it did", async () => {
@@ -558,7 +564,7 @@ describe("logs", () => {
 				});
 			}
 		});
-		const profile = await t.query(api.logs.profile, { userId });
+		const profile = await t.query(api.logs.profile, { address: userId });
 		expect(profile?.logs).toHaveLength(MAX_PROFILE_LOGS);
 		expect(profile?.logsTruncated).toBe(true);
 	});

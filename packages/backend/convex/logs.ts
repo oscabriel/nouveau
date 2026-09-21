@@ -170,17 +170,19 @@ export const recentLogs = query({
  * to the canonical one.
  */
 export const profile = query({
-	args: { userId: v.string() },
+	// The address the URL holds: a current handle, a retired handle or a
+	// legacy users id (ADR-0011), resolved in that order.
+	args: { address: v.string() },
 	handler: async (ctx, args) => {
 		let user: Doc<"users"> | null = await ctx.db
 			.query("users")
-			.withIndex("by_handle", (q) => q.eq("handle", args.userId))
+			.withIndex("by_handle", (q) => q.eq("handle", args.address))
 			.unique();
 		if (user === null) {
-			user = await redirectTarget(ctx, args.userId);
+			user = await redirectTarget(ctx, args.address);
 		}
 		if (user === null) {
-			const id = ctx.db.normalizeId("users", args.userId);
+			const id = ctx.db.normalizeId("users", args.address);
 			user = id === null ? null : await ctx.db.get("users", id);
 		}
 		if (user === null) {
