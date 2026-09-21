@@ -51,26 +51,33 @@ const readRecord = (value: unknown): Record<string, unknown> =>
 const readArray = (value: unknown): unknown[] =>
 	Array.isArray(value) ? value : [];
 
-/** "“floral washed”, under $20, 250 g up to 350 g, 12 lots". */
+/**
+ * "“floral washed”, under $20, 250 g up to 350 g, 12 lots". The budget and
+ * size come from the tool's output (`applied`), not the model's arguments:
+ * a value the model sent at a field's ceiling is no limit and the tool
+ * drops it.
+ */
 const searchDetail = (part: Record<string, unknown>): string => {
 	const input = readRecord(part.input);
+	const output = readRecord(part.output);
+	const applied = readRecord(output.applied);
 	const parts: string[] = [];
 	const query = readString(input.query);
 	if (query !== undefined && query.length > 0) {
 		parts.push(`“${query}”`);
 	}
-	const cents = readNumber(input.maxPriceCents);
+	const cents = readNumber(applied.maxPriceCents);
 	if (cents !== undefined) {
 		parts.push(`under $${(cents / 100).toFixed(0)}`);
 	}
-	const min = readNumber(input.minGrams);
-	const max = readNumber(input.maxGrams);
+	const min = readNumber(applied.minGrams);
+	const max = readNumber(applied.maxGrams);
 	if (min !== undefined || max !== undefined) {
 		const floor = min === undefined ? "any size" : `${min} g`;
 		const ceiling = max === undefined ? "" : ` up to ${max} g`;
 		parts.push(`${floor}${ceiling}`);
 	}
-	const lots = readArray(readRecord(part.output).lots);
+	const lots = readArray(output.lots);
 	parts.push(`${lots.length} lots`);
 	return parts.join(", ");
 };
