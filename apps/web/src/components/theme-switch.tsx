@@ -11,6 +11,12 @@ import { systemTheme, writeThemePreference } from "@/lib/theme";
  * the other side stores "inverted". When the OS later flips, the stored
  * relation keeps describing the visitor's intent.
  */
+/** The two sides of the switch, in the order every control lists them. */
+export const THEME_SIDES = [
+	{ label: "Light", target: "light" },
+	{ label: "Dark", target: "dark" },
+] as const;
+
 export const useThemeControls = () => {
 	const { resolvedTheme, setTheme } = useTheme();
 	const choose = (target: "light" | "dark") => {
@@ -35,13 +41,9 @@ export const ThemeSwitch = () => {
 		// Hold the pair's height until next-themes has resolved the system.
 		return <div aria-hidden className="min-h-11" />;
 	}
-	const sides = [
-		{ label: "Light", target: "light" },
-		{ label: "Dark", target: "dark" },
-	] as const;
 	return (
 		<div className="flex items-center gap-x-5">
-			{sides.map(({ label, target }) => {
+			{THEME_SIDES.map(({ label, target }) => {
 				const active = resolved === target;
 				return (
 					<button

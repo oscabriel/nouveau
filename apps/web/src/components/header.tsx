@@ -15,7 +15,7 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect } from "react";
 
-import { useThemeControls } from "@/components/theme-switch";
+import { THEME_SIDES, useThemeControls } from "@/components/theme-switch";
 import { navLinkClass } from "@/lib/ui";
 
 /** The current route stays underlined so the nav doubles as a "you are here". */
@@ -80,10 +80,6 @@ const HandleMenu = ({ label, path }: { label: string; path: string }) => {
 		`${menuItemClass} text-muted-foreground hover:text-foreground ${
 			active ? "text-foreground" : ""
 		}`;
-	const sides = [
-		{ name: "Light", target: "light" },
-		{ name: "Dark", target: "dark" },
-	] as const;
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger
@@ -101,15 +97,15 @@ const HandleMenu = ({ label, path }: { label: string; path: string }) => {
 					Profile
 				</DropdownMenuItem>
 				<DropdownMenuSeparator />
-				{sides.map(({ name, target }) => (
+				{THEME_SIDES.map((side) => (
 					<DropdownMenuItem
-						className={themeItemClass(resolved === target)}
-						key={target}
+						className={themeItemClass(resolved === side.target)}
+						key={side.target}
 						onClick={() => {
-							choose(target);
+							choose(side.target);
 						}}
 					>
-						{name}
+						{side.label}
 					</DropdownMenuItem>
 				))}
 				<DropdownMenuSeparator />
