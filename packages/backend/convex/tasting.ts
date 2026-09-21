@@ -1,6 +1,8 @@
 // The tasting-note vocabulary (ADR-0016): the SCA Coffee Taster's Flavor
-// Wheel, cut to its top two levels — the nine published categories and their
-// twenty-eight second-level terms, thirty-seven pickable descriptors. Level
+// Wheel, cut to its top two levels: the nine published categories and their
+// twenty-eight second-level terms. Two of those terms ("floral",
+// "green/vegetative") repeat their category name, so the cut is thirty-five
+// distinct pickable descriptors. Level
 // three (the ~100 leaf attributes) stays out: a picker that asks for four
 // picks cannot browse a hundred leaves, and "fruity" alone is too coarse a
 // descriptor to be worth a pick.
@@ -70,10 +72,16 @@ export const tastingNoteValidator = v.union(
 	...CATEGORY_NOTES.map((note) => v.literal(note))
 );
 
-/** The picker's cut: category first, its second-level terms beside it. */
+/**
+ * The picker's cut: category first, its second-level terms beside it. A term
+ * that repeats its category name is dropped here; the category chip already
+ * toggles that value, and two chips for one value would both read pressed.
+ */
 export const TASTING_PICKER = TASTING_CATEGORIES.map((category) => ({
 	category,
-	notes: WHEEL[category],
+	notes: (WHEEL[category] as readonly TastingCategoryNote[]).filter(
+		(note) => note !== category
+	),
 }));
 
 /** How many tasting notes one log may carry (ADR-0016: "capped at four"). */
