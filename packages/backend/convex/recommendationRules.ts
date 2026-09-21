@@ -41,25 +41,29 @@ export const recommendationInput = v.object({
 });
 export type RecommendationInput = Infer<typeof recommendationInput>;
 
-/** The budget half of a catalog search: what the variant must satisfy. */
+/**
+ * The budget half of a catalog search: what the variant must satisfy. These
+ * are the only constraints a search applies (ADR-0017, amendment of
+ * 2026-09-20); every word about the coffee itself ranks and never excludes.
+ */
 export const budgetFilters = v.object({
+	maxGrams: v.optional(v.number()),
 	maxPriceCents: v.optional(v.number()),
 	minGrams: v.optional(v.number()),
 });
 export type BudgetFilters = Infer<typeof budgetFilters>;
 
-/** What a catalog search is asked for (the structured reading plus query). */
+/** What a catalog search is asked for: the budget constraints plus the ranking words. */
 export const searchFilters = v.object({
-	maxPriceCents: v.optional(v.number()),
-	minGrams: v.optional(v.number()),
+	...budgetFilters.fields,
 	preferences: v.string(),
 });
 export type SearchFilters = Infer<typeof searchFilters>;
 
 /**
- * The typed search filters Jev's parallel batch turns the request into
- * (ADR-0017). The search tool takes them as typed args; the model may still
- * run extra searches beyond them.
+ * The typed search filters Jev used to turn the request into, kept only so
+ * `recommendationRuns.structured` on older runs still validates. Nothing
+ * writes or reads it (ADR-0017 amendments, 2026-09-20).
  */
 export const structuredFilters = v.object({
 	flavour: v.optional(v.string()),
@@ -72,11 +76,10 @@ export const structuredFilters = v.object({
 export type StructuredFilters = Infer<typeof structuredFilters>;
 
 /**
- * The flavour buckets Jev sorts a request into, each with the words a lot's
- * text may use for it. A bucket name is a direction, not a word roasters
- * write ("chocolatey" appears on almost no bag; "chocolate" and "cocoa" do),
- * so the catalog search matches any synonym, on word boundaries, and never
- * the bare bucket name.
+ * Flavour directions, each with the words a lot's text may use for it. A
+ * direction is not a word roasters write ("chocolatey" appears on almost no
+ * bag; "chocolate" and "cocoa" do), so a direction word in a search query
+ * ranks by every synonym too.
  */
 export const FLAVOUR_SYNONYMS = {
 	balanced: ["balanced", "smooth", "easy", "classic", "everyday", "round"],
@@ -132,21 +135,6 @@ export const FLAVOUR_BUCKET_NAMES = Object.keys(
 
 const isFlavourBucket = (term: string): term is FlavourBucket =>
 	(FLAVOUR_BUCKET_NAMES as readonly string[]).includes(term);
-
-/**
- * True when the lot's text carries the flavour term. A known bucket matches
- * any of its synonyms as a whole word; any other string (an origin, a
- * process, a term the model typed) matches as a plain substring.
- */
-export const textMatchesTerm = (text: string, term: string): boolean => {
-	const lower = text.toLowerCase();
-	if (!isFlavourBucket(term)) {
-		return lower.includes(term.toLowerCase());
-	}
-	return FLAVOUR_SYNONYMS[term].some((word) =>
-		new RegExp(`\\b${word}\\b`, "u").test(lower)
-	);
-};
 export const evidenceValidator = v.object({
 	id: v.string(),
 	observedAt: v.number(),
@@ -226,13 +214,20 @@ const STOP_WORDS = new Set([
 	"would",
 ]);
 
-/** Lowercase words of four or more letters, minus filler. */
+/**
+ * Lowercase words of four or more letters, minus filler. A flavour direction
+ * word ("fruity", "chocolatey") brings its synonyms along, so a request in
+ * the direction's own word still ranks the bags roasters describe in theirs.
+ */
 export const preferenceTokens = (text: string): string[] => [
 	...new Set(
 		text
 			.toLowerCase()
 			.split(/[^a-z]+/u)
 			.filter((word) => word.length >= 4 && !STOP_WORDS.has(word))
+			.flatMap((word) =>
+				isFlavourBucket(word) ? [word, ...FLAVOUR_SYNONYMS[word]] : [word]
+			)
 	),
 ];
 

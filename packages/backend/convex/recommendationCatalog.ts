@@ -31,7 +31,8 @@ const meetsConstraints = (
 	variant.priceCents > 0 &&
 	(filters.maxPriceCents === undefined ||
 		variant.priceCents <= filters.maxPriceCents) &&
-	(filters.minGrams === undefined || variant.grams >= filters.minGrams);
+	(filters.minGrams === undefined || variant.grams >= filters.minGrams) &&
+	(filters.maxGrams === undefined || variant.grams <= filters.maxGrams);
 
 /**
  * When the source last read every product. A product_pages crawl whose

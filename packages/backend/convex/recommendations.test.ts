@@ -29,6 +29,7 @@ import {
 	OPENAI_MODEL,
 	PRODUCTS_PER_ROASTER,
 	pagePassages,
+	preferenceTokens,
 	sentenceCandidates,
 } from "./recommendationRules";
 import schema from "./schema";
@@ -607,7 +608,7 @@ test("the search tool rejects placeholder budgets and bag sizes", () => {
 	).toBe(false);
 });
 
-test("the search tool ranks lots, records them on the run, and applies the typed filters", async () => {
+test("the search tool ranks lots, records them on the run, and applies only the budget constraints", async () => {
 	const f = await setup();
 	const run = await claim(f);
 	const result = (await runTool(f, searchCatalog, run._id, {
@@ -615,11 +616,20 @@ test("the search tool ranks lots, records them on the run, and applies the typed
 	})) as { lots: unknown[]; recorded: { added: number; total: number } };
 	expect(result.recorded).toEqual({ added: 1, total: 1 });
 	expect(result.lots).toHaveLength(1);
-	const originOnly = (await runTool(f, searchCatalog, run._id, {
-		origin: "kenya",
-		query: "anything",
+	// Words about the coffee rank and never exclude: an origin the fixture
+	// lot does not mention still returns it.
+	const unrelated = (await runTool(f, searchCatalog, run._id, {
+		query: "kenya natural",
 	})) as { lots: unknown[] };
-	expect(originOnly.lots).toEqual([]);
+	expect(unrelated.lots).toHaveLength(1);
+	// The schema no longer offers text filters to the model.
+	const searchInput = searchCatalog.inputSchema as z.ZodType;
+	expect(
+		searchInput.safeParse({ origin: "kenya", query: "anything" }).success
+	).toBe(true);
+	expect(
+		searchInput.parse({ flavour: "fruity", origin: "kenya", query: "x" })
+	).toEqual({ query: "x" });
 	const tooSmall = (await runTool(f, searchCatalog, run._id, {
 		minGrams: 500,
 		query: "anything",
@@ -632,7 +642,7 @@ test("the search tool ranks lots, records them on the run, and applies the typed
 	expect(repeat.recorded.added).toBe(0);
 });
 
-test("a flavour bucket matches its synonyms, not its own name (S3)", async () => {
+test("a flavour direction word ranks by its synonyms and excludes nothing (S3)", async () => {
 	const f = await setup();
 	await f.t.run(async (ctx) => {
 		const productId = await ctx.db.insert("products", {
@@ -655,17 +665,27 @@ test("a flavour bucket matches its synonyms, not its own name (S3)", async () =>
 			sizeObservedAt: NOW,
 		});
 	});
+	// "chocolatey" appears on neither bag; the blend says chocolate and
+	// caramel, so the direction word ranks it first and keeps the other.
 	const chocolatey = await f.t.query(
 		internal.recommendationAgent.searchCatalogQuery,
-		{ flavour: "chocolatey", now: NOW, query: "dark roast blend" }
+		{ now: NOW, query: "something chocolatey" }
 	);
-	expect(chocolatey.rows.map((row) => row.name)).toEqual(["Dark roast blend"]);
+	expect(chocolatey.rows.map((row) => row.name)).toEqual([
+		"Dark roast blend",
+		"Fixture coffee",
+	]);
 	const floral = await f.t.query(
 		internal.recommendationAgent.searchCatalogQuery,
-		{ flavour: "floral", now: NOW, query: "anything" }
+		{ now: NOW, query: "floral" }
 	);
-	expect(floral.rows.map((row) => row.name)).toEqual(["Fixture coffee"]);
-	// The bag ceiling holds on the same query (S2).
+	expect(floral.rows.map((row) => row.name)).toEqual([
+		"Fixture coffee",
+		"Dark roast blend",
+	]);
+	expect(preferenceTokens("fruity")).toContain("berry");
+	expect(preferenceTokens("berry")).toEqual(["berry"]);
+	// The bag ceiling is a constraint and holds on the same query (S2).
 	const small = await f.t.query(
 		internal.recommendationAgent.searchCatalogQuery,
 		{ maxGrams: 250, now: NOW, query: "anything" }
