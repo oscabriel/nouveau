@@ -30,6 +30,9 @@ export const feedCardValidator = v.object({
 	// The lot's address pair (ADR-0011): links go /roaster/$roasterSlug/$lotHandle.
 	lotHandle: v.string(),
 	lotUrl: v.string(),
+	// The lot's lowest available price (the rollup's price half); the drops
+	// page's non-price-drop rows show it prefixed "from" (ADR-0015).
+	minPriceCents: v.union(v.number(), v.null()),
 	newPriceCents: v.union(v.number(), v.null()),
 	oldPriceCents: v.union(v.number(), v.null()),
 	origin: v.union(v.string(), v.null()),
@@ -59,6 +62,7 @@ export interface FeedCard {
 	imageUrl: string | null;
 	lotHandle: string;
 	lotUrl: string;
+	minPriceCents: number | null;
 	newPriceCents: number | null;
 	oldPriceCents: number | null;
 	origin: string | null;
@@ -111,6 +115,7 @@ const toCard = async (
 		// /roaster/$roasterSlug/$lotHandle instead of the shop URL.
 		lotHandle: product.handle,
 		lotUrl: `${roaster.websiteUrl}/products/${product.handle}`,
+		minPriceCents: product.minPriceCents ?? null,
 		newPriceCents: event.newPriceCents ?? null,
 		oldPriceCents: event.oldPriceCents ?? null,
 		origin: product.origin ?? null,

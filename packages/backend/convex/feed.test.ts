@@ -133,6 +133,7 @@ describe("globalFeed", () => {
 		expect(feed.map((card) => card.type)).toEqual(["price_drop", "new"]);
 		expect(feed[0]).toMatchObject({
 			lotUrl: "https://onyx.example.com/products/ethiopia-mullugeta",
+			minPriceCents: null,
 			newPriceCents: 3500,
 			oldPriceCents: 4000,
 			roasterCity: "Portland",
