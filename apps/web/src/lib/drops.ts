@@ -29,12 +29,15 @@ export const thumbUrl = (url: string, width: number): string => {
 	}
 };
 
-/** `2026.09.16`, tabular; the release date as the crawler saw it. */
+/**
+ * `MM.DD`, tabular; the release date as the crawler saw it. The year is
+ * implied: the tables this feeds list the recent drops (ADR-0014).
+ */
 export const formatDropDate = (timestamp: number): string => {
 	const date = new Date(timestamp);
 	const month = String(date.getMonth() + 1).padStart(2, "0");
 	const day = String(date.getDate()).padStart(2, "0");
-	return `${date.getFullYear()}.${month}.${day}`;
+	return `${month}.${day}`;
 };
 
 /** First `count` rows that carry an image, one per lot, newest first. */

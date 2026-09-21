@@ -118,11 +118,6 @@ const DropTableRow = ({
 				{row.origin ?? ""}
 			</td>
 			<td
-				className={`${bodyCell} text-muted-foreground hidden pr-4 lg:table-cell`}
-			>
-				{row.process ?? ""}
-			</td>
-			<td
 				className={`${bodyCell} text-muted-foreground hidden pr-4 whitespace-nowrap sm:table-cell`}
 			>
 				{DROP_TYPE_LABEL[row.type]}
@@ -153,8 +148,8 @@ const DropTableRow = ({
 
 /**
  * The hairline drop table on its own: N°, lot, roaster and city (unless the
- * page is that roaster's), origin, process, event, date, price. The lot
- * name and the arrow at the row's end both open the Nouveau lot page
+ * page is that roaster's), origin, event, released (MM.DD, ADR-0014), price.
+ * The lot name and the arrow at the row's end both open the Nouveau lot page
  * (ADR-0015); hovering a row floats the lot's photo above the table,
  * following the pointer.
  */
@@ -192,9 +187,6 @@ export const DropTable = ({
 						)}
 						<th className={`${headCell} hidden md:table-cell`} scope="col">
 							Origin
-						</th>
-						<th className={`${headCell} hidden lg:table-cell`} scope="col">
-							Process
 						</th>
 						<th className={`${headCell} hidden sm:table-cell`} scope="col">
 							Event
