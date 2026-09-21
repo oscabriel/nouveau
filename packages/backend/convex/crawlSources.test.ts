@@ -1606,3 +1606,52 @@ describe("duplicate lot handles (ADR-0011)", () => {
 		expect(products).toHaveLength(3);
 	});
 });
+
+describe("commit: directory counters", () => {
+	test("a successful crawl stores the catalog counts on the roaster", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [product("a"), product("b")]);
+
+		const state = await readAll(fx);
+		expect(state.roaster).toMatchObject({ lotCount: 2, newLotCount: 2 });
+	});
+
+	test("the seven-day window decides new: aged lots leave it, fresh sightings enter", async () => {
+		const fx = await setup();
+		const week = 7 * 24 * 60 * 60 * 1000;
+		await crawl(fx, T0, [product("a"), product("b")]);
+		await crawl(fx, T0 + week + CADENCE_MS, [product("a"), product("b")]);
+
+		let state = await readAll(fx);
+		expect(state.roaster).toMatchObject({ lotCount: 2, newLotCount: 0 });
+
+		await crawl(fx, T0 + week + 2 * CADENCE_MS, [
+			product("a"),
+			product("b"),
+			product("c"),
+		]);
+		state = await readAll(fx);
+		expect(state.roaster).toMatchObject({ lotCount: 3, newLotCount: 1 });
+	});
+
+	test("archived lots leave the counts, the survivors keep theirs", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [product("a"), product("b")]);
+		const only = [product("a")];
+		await crawl(fx, T0 + CADENCE_MS, only);
+		await crawl(fx, T0 + 2 * CADENCE_MS, only);
+		await crawl(fx, T0 + 3 * CADENCE_MS, only);
+
+		const state = await readAll(fx);
+		expect(state.roaster).toMatchObject({ lotCount: 1, newLotCount: 1 });
+	});
+
+	test("a failed crawl leaves the counters alone", async () => {
+		const fx = await setup();
+		await crawl(fx, T0, [product("a")]);
+		await fail(fx, T0 + CADENCE_MS, "boom");
+
+		const state = await readAll(fx);
+		expect(state.roaster).toMatchObject({ lotCount: 1, newLotCount: 1 });
+	});
+});

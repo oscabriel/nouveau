@@ -21,6 +21,7 @@ import { extractedProduct } from "./extraction";
 import type { ExtractedProduct, ExtractedVariant } from "./extraction";
 import { isCrawlRunning } from "./health";
 import { notifyWatchersOfEvent } from "./notifications";
+import { patchRoasterCounters } from "./roasterCounts";
 import schema from "./schema";
 import { shopMarketValidator } from "./shopMarket";
 import { sourceModeValidator } from "./sourceMode";
@@ -707,6 +708,24 @@ const purgeNonLot = async (
  * The archive pass reads the roaster's whole catalog (one index range), which
  * is fine up to a few thousand products.
  */
+/**
+ * Re-count one roaster's current lots into its directory counters (see
+ * roasterCounts.ts): one index-bounded scan per crawl, never at read time.
+ */
+const refreshCounters = async (
+	ctx: MutationCtx,
+	roasterId: Id<"roasters">,
+	now: number
+): Promise<void> => {
+	const current = await ctx.db
+		.query("products")
+		.withIndex("by_roaster_and_status_and_last_seen_at", (q) =>
+			q.eq("roasterId", roasterId).eq("status", "current")
+		)
+		.collect();
+	await patchRoasterCounters(ctx, current, roasterId, now);
+};
+
 export const finalizeCrawl = internalMutation({
 	args: {
 		// product_pages: the collection page was unchanged since the last
@@ -764,6 +783,10 @@ export const finalizeCrawl = internalMutation({
 		}
 
 		if (args.catalogUnchanged === true) {
+			// The catalog is untouched, but the seven-day window behind the
+			// directory's new-lot counter keeps sliding, so the counters are
+			// refreshed here too rather than frozen at the last change.
+			await refreshCounters(ctx, source.roasterId, now);
 			await ctx.db.patch(source._id, {
 				consecutiveFailures: 0,
 				health: "watching",
@@ -817,6 +840,11 @@ export const finalizeCrawl = internalMutation({
 					await ctx.db.patch(doc._id, { missedCrawls: missed });
 				})
 		);
+
+		// Directory counters (the /roasters table): current lots and this
+		// week's new lots, read fresh after the archive strikes above landed
+		// so the numbers match what the directory will show.
+		await refreshCounters(ctx, source.roasterId, now);
 
 		// pending -> active is data-driven: a baseline capture is the gate.
 		// A submitted roaster's submitter starts watching it here (§7.1 step

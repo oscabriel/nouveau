@@ -355,7 +355,14 @@ export default defineSchema({
 		claimedByUserId: v.optional(v.id("users")),
 		// Registrable domain of the shop; the dedup key for submissions.
 		domain: v.string(),
+		// Directory counters for the /roasters table, recomputed by
+		// finalizeCrawl from the catalog it just judged: current lots, and
+		// current lots first seen within the last seven days. Absent until
+		// the roaster's first counted crawl; the directory reads 0 for
+		// absent.
+		lotCount: v.optional(v.number()),
 		name: v.string(),
+		newLotCount: v.optional(v.number()),
 		productPageUrl: v.string(),
 		slug: v.string(),
 		source: v.union(v.literal("curated"), v.literal("user-submitted")),

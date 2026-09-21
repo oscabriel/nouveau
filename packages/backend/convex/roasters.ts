@@ -23,10 +23,14 @@ export const roasterCardValidator = v.object({
 	state: v.string(),
 });
 
-/** Roaster card plus watcher count and the status-chip inputs. */
+/** Roaster card plus watcher count, the status-chip inputs and the two
+ * catalog counters the directory shows (0 until the roaster's first
+ * counted crawl). */
 const roasterSummaryValidator = v.object({
 	...roasterCardValidator.fields,
 	followerCount: v.number(),
+	lotCount: v.number(),
+	newLotCount: v.number(),
 	status: crawlStatusValidator,
 });
 
@@ -45,7 +49,9 @@ export const listActive = query({
 					namespace: roaster._id,
 				}),
 				id: roaster._id,
+				lotCount: roaster.lotCount ?? 0,
 				name: roaster.name,
+				newLotCount: roaster.newLotCount ?? 0,
 				slug: roaster.slug,
 				state: roaster.state,
 				status: await getCrawlStatus(ctx, roaster._id),
@@ -72,7 +78,9 @@ export const getBySlug = query({
 				namespace: roaster._id,
 			}),
 			id: roaster._id,
+			lotCount: roaster.lotCount ?? 0,
 			name: roaster.name,
+			newLotCount: roaster.newLotCount ?? 0,
 			slug: roaster.slug,
 			state: roaster.state,
 			status: await getCrawlStatus(ctx, roaster._id),

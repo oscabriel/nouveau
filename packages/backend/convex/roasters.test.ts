@@ -90,6 +90,18 @@ describe("roasters", () => {
 		expect(pending).toBeDefined();
 	});
 
+	test("the directory counters ride the summary; absent counts read 0", async () => {
+		const { active, t } = await setup();
+		let roasters = await t.query(api.roasters.listActive, {});
+		expect(roasters[0]).toMatchObject({ lotCount: 0, newLotCount: 0 });
+
+		await t.run(async (ctx) => {
+			await ctx.db.patch(active, { lotCount: 12, newLotCount: 3 });
+		});
+		roasters = await t.query(api.roasters.listActive, {});
+		expect(roasters[0]).toMatchObject({ lotCount: 12, newLotCount: 3 });
+	});
+
 	test("the lot rows carry the rollup and the stock boundary", async () => {
 		const { active, t } = await setup();
 		await t.run(async (ctx) => {

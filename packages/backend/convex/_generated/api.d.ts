@@ -43,6 +43,7 @@ import type * as recommendationRules from "../recommendationRules.js";
 import type * as recommendationThreads from "../recommendationThreads.js";
 import type * as recommendationWorker from "../recommendationWorker.js";
 import type * as recommendations from "../recommendations.js";
+import type * as roasterCounts from "../roasterCounts.js";
 import type * as roasters from "../roasters.js";
 import type * as savedCoffees from "../savedCoffees.js";
 import type * as seed from "../seed.js";
@@ -99,6 +100,7 @@ declare const fullApi: ApiFromModules<{
   recommendationThreads: typeof recommendationThreads;
   recommendationWorker: typeof recommendationWorker;
   recommendations: typeof recommendations;
+  roasterCounts: typeof roasterCounts;
   roasters: typeof roasters;
   savedCoffees: typeof savedCoffees;
   seed: typeof seed;
