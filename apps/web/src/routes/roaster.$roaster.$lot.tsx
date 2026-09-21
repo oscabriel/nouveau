@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
 
 import Loader from "@/components/loader";
 import { LogCard } from "@/components/log-card";
-import { LogForm } from "@/components/log-form";
+import { LogSheet } from "@/components/log-form";
 import { PageTitle } from "@/components/page-title";
 import { SaveButton } from "@/components/save-button";
 import { SignInCta } from "@/components/sign-in-cta";
@@ -311,14 +311,13 @@ const LotComponent = () => {
 			{isAuthenticated && <SaveButton lotId={lot.id} />}
 			{isAuthenticated && (
 				<button
-					aria-expanded={logging}
 					className={navLinkClass}
 					onClick={() => {
-						setLogging((value) => !value);
+						setLogging(true);
 					}}
 					type="button"
 				>
-					{logging ? "Close" : "Log this lot"}
+					Log this lot
 				</button>
 			)}
 			<a
@@ -335,6 +334,17 @@ const LotComponent = () => {
 
 	return (
 		<main>
+			{isAuthenticated && (
+				<LogSheet
+					lotId={lot.id}
+					lotName={lot.name}
+					onOpenChange={setLogging}
+					open={logging}
+					roasterNotes={
+						lot.facts.notes.length === 0 ? null : lot.facts.notes.join(" · ")
+					}
+				/>
+			)}
 			<div className="px-5 pt-10 md:px-10 md:pt-14">
 				<LotDetail
 					controls={controls}
@@ -351,19 +361,6 @@ const LotComponent = () => {
 							</span>
 						)}
 					</h2>
-					{logging && isAuthenticated && (
-						<LogForm
-							lotId={lot.id}
-							onDone={() => {
-								setLogging(false);
-							}}
-							roasterNotes={
-								lot.facts.notes.length === 0
-									? null
-									: lot.facts.notes.join(" · ")
-							}
-						/>
-					)}
 					{page.logs.length === 0 && (
 						<p className="text-muted-foreground mt-4 max-w-prose text-sm">
 							{isAuthenticated

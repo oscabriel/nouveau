@@ -1,49 +1,51 @@
 import { api } from "@nouveau/backend/convex/_generated/api";
 import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
+import {
+	Sheet,
+	SheetClose,
+	SheetContent,
+	SheetTitle,
+} from "@nouveau/ui/components/sheet";
 import { useMutation } from "convex/react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { DotToggle } from "@/components/dot-toggle";
-import { Stars } from "@/components/stars";
+import { StarsInput } from "@/components/stars-input";
 import { TastingTagsInput } from "@/components/tasting-tags-input";
 import { navLinkClass } from "@/lib/ui";
 
 const NOTES_MAX_LENGTH = 1000;
-const DEFAULT_RATING = 3;
+
+/** A log being edited: the row's id and its three fields as stored. */
+export interface ExistingLog {
+	logId: Id<"logs">;
+	notes: string | null;
+	rating: number | null;
+	tastingNotes: string[] | null;
+}
 
 /**
- * Create or edit a Log (build spec §14.1, ADR-0016). Inline under a
- * hairline, no box: the tasting-notes tag field beside the roaster's notes, RATE IT as a
- * toggle that reveals the slider, REVIEW as one line over a hairline that
- * grows with the text, then SAVE LOG and CANCEL as caps actions. Turning
- * the rating off stores a rating-less log; clearing it on edit sends
- * `null`. The freeform field is the review; the typed words are the
- * tasting notes (free text since 2026-09-21, each a pill colored by its
- * wheel family). `roasterNotes` (§14.4) is read-only reference, the
- * descriptors the roaster published, verbatim, never prefilled into the
- * taster's own picks.
+ * The log form's fields (build spec §14.1, ADR-0016, amended 2026-09-21),
+ * top to bottom under caps labels: RATING as five stars you click or drag
+ * across (unrated until touched; CLEAR takes it back), TASTING NOTES as
+ * the tag field, the roaster's own notes as one grey line under it for
+ * reference (never prefilled into the taster's), REVIEW as one line on a
+ * hairline that grows, then SAVE LOG (UPDATE LOG when editing) and CANCEL
+ * as caps actions. Saving with no rating stores a rating-less log;
+ * clearing on edit sends `null`.
  */
-export const LogForm = ({
+const LogFields = ({
 	existing,
 	lotId,
 	onDone,
 	roasterNotes,
 }: {
-	existing?: {
-		logId: Id<"logs">;
-		notes: string | null;
-		rating: number | null;
-		tastingNotes: string[] | null;
-	};
+	existing?: ExistingLog;
 	lotId: Id<"products">;
 	onDone: () => void;
 	roasterNotes: string | null;
 }) => {
-	const [rateIt, setRateIt] = useState(
-		existing?.rating !== undefined && existing.rating !== null
-	);
-	const [rating, setRating] = useState(existing?.rating ?? DEFAULT_RATING);
+	const [rating, setRating] = useState<number | null>(existing?.rating ?? null);
 	const [notes, setNotes] = useState(existing?.notes ?? "");
 	const [picks, setPicks] = useState<string[]>(existing?.tastingNotes ?? []);
 	const [saving, setSaving] = useState(false);
@@ -51,8 +53,9 @@ export const LogForm = ({
 	const create = useMutation(api.logs.createLog);
 	const update = useMutation(api.logs.updateLog);
 	const restore = useMutation(api.savedCoffees.save);
-	const reviewId = `review-${existing?.logId ?? lotId}`;
-	const tagsId = `tasting-${existing?.logId ?? lotId}`;
+	const key = existing?.logId ?? lotId;
+	const reviewId = `review-${key}`;
+	const tagsId = `tasting-${key}`;
 
 	const save = async () => {
 		const trimmed = notes.trim();
@@ -60,7 +63,7 @@ export const LogForm = ({
 		try {
 			if (existing === undefined) {
 				const { removedSave } = await create({
-					...(rateIt ? { rating } : {}),
+					...(rating === null ? {} : { rating }),
 					...(trimmed === "" ? {} : { notes: trimmed }),
 					...(picks.length > 0 ? { tastingNotes: picks } : {}),
 					productId: lotId,
@@ -88,7 +91,7 @@ export const LogForm = ({
 				await update({
 					logId: existing.logId,
 					notes: trimmed === "" ? null : trimmed,
-					rating: rateIt ? rating : null,
+					rating,
 					tastingNotes: picks.length === 0 ? null : picks,
 				});
 				toast.success("Log updated.");
@@ -103,54 +106,23 @@ export const LogForm = ({
 	};
 
 	return (
-		<div className="my-4 flex flex-col gap-6 border-t pt-5">
-			<div className="flex flex-col gap-6 md:flex-row md:gap-10">
-				<div className="md:w-1/2">
-					<label
-						className="label-caps text-foreground mb-2 block"
-						htmlFor={tagsId}
-					>
-						Tasting notes
-					</label>
-					<TastingTagsInput id={tagsId} onChange={setPicks} value={picks} />
-				</div>
-				{roasterNotes !== null && (
-					<div className="md:w-1/2">
-						<p className="label-caps text-foreground mb-4">Roaster notes</p>
-						<p className="text-muted-foreground text-sm leading-snug md:text-[15px]">
-							{roasterNotes}
-						</p>
-					</div>
-				)}
+		<div className="flex flex-col gap-8">
+			<div>
+				<p className="label-caps text-foreground mb-2">Rating</p>
+				<StarsInput onChange={setRating} value={rating} />
 			</div>
-			<div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-				<DotToggle
-					onClick={() => {
-						setRateIt((value) => !value);
-					}}
-					pressed={rateIt}
+			<div>
+				<label
+					className="label-caps text-foreground mb-2 block"
+					htmlFor={tagsId}
 				>
-					Rate it
-				</DotToggle>
-				{rateIt && (
-					<div className="flex items-center gap-3">
-						<input
-							aria-label="Rating"
-							className="accent-foreground h-11 w-32"
-							max={5}
-							min={1}
-							onChange={(event) => {
-								setRating(Number(event.target.value));
-							}}
-							step={0.5}
-							type="range"
-							value={rating}
-						/>
-						<Stars rating={rating} />
-						<span className="text-muted-foreground tnum w-6 text-right text-xs">
-							{rating}
-						</span>
-					</div>
+					Tasting notes
+				</label>
+				<TastingTagsInput id={tagsId} onChange={setPicks} value={picks} />
+				{roasterNotes !== null && (
+					<p className="text-muted-foreground mt-2 text-xs leading-snug">
+						The roaster says: {roasterNotes}
+					</p>
 				)}
 			</div>
 			<div>
@@ -167,7 +139,7 @@ export const LogForm = ({
 					onChange={(event) => {
 						setNotes(event.target.value);
 					}}
-					placeholder="Jasmine? Lemon? Too thin?"
+					placeholder="What'd you think?"
 					rows={1}
 					value={notes}
 				/>
@@ -195,3 +167,53 @@ export const LogForm = ({
 		</div>
 	);
 };
+
+/**
+ * Create or edit a log in a pane that slides in from the right, like the
+ * Find my next bag pane (batch 8, 2026-09-21; was an inline form under a
+ * hairline). The header names the action and the lot; CLOSE and the
+ * backdrop dismiss it. The fields remount on each open, so a cancelled
+ * edit leaves nothing behind.
+ */
+export const LogSheet = ({
+	existing,
+	lotId,
+	lotName,
+	onOpenChange,
+	open,
+	roasterNotes,
+}: {
+	existing?: ExistingLog;
+	lotId: Id<"products">;
+	lotName: string;
+	onOpenChange: (open: boolean) => void;
+	open: boolean;
+	roasterNotes: string | null;
+}) => (
+	<Sheet modal onOpenChange={onOpenChange} open={open}>
+		<SheetContent
+			aria-describedby={undefined}
+			className="px-5 pt-3 pb-16 md:px-8 md:pt-4"
+		>
+			<div className="flex items-center justify-between">
+				<SheetTitle className="label-caps inline-flex min-h-11 items-center font-semibold">
+					{existing === undefined ? "Log this lot" : "Edit log"}
+				</SheetTitle>
+				<SheetClose className={navLinkClass}>Close</SheetClose>
+			</div>
+			<p className="mt-4 text-[15px] leading-snug md:text-base">{lotName}</p>
+			<div className="mt-8">
+				{open && (
+					<LogFields
+						existing={existing}
+						lotId={lotId}
+						onDone={() => {
+							onOpenChange(false);
+						}}
+						roasterNotes={roasterNotes}
+					/>
+				)}
+			</div>
+		</SheetContent>
+	</Sheet>
+);

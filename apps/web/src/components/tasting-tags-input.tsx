@@ -68,8 +68,8 @@ export const TastingTagsInput = ({
 					className="placeholder:text-muted-foreground min-w-32 flex-1 bg-transparent text-[15px] leading-snug outline-none md:text-base"
 					id={id}
 					maxLength={MAX_TASTING_NOTE_LENGTH}
-					onBlur={() => {
-						commit(draft);
+					onBlur={(event) => {
+						commit(event.currentTarget.value);
 					}}
 					onChange={(event) => {
 						const typed = event.target.value;
@@ -82,10 +82,10 @@ export const TastingTagsInput = ({
 					onKeyDown={(event) => {
 						if (event.key === "Enter") {
 							event.preventDefault();
-							commit(draft);
+							commit(event.currentTarget.value);
 						} else if (
 							event.key === "Backspace" &&
-							draft === "" &&
+							event.currentTarget.value === "" &&
 							value.length > 0
 						) {
 							event.preventDefault();

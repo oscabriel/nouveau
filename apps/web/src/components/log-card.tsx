@@ -5,7 +5,7 @@ import type { FunctionReturnType } from "convex/server";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { LogForm } from "@/components/log-form";
+import { LogSheet } from "@/components/log-form";
 import { SaveButton } from "@/components/save-button";
 import { Stars } from "@/components/stars";
 import { TastingPill } from "@/components/tasting-pill";
@@ -148,24 +148,21 @@ export const LogCard = ({
 					{log.notes}
 				</p>
 			)}
-			{!editing && (
-				<LogNotes
-					roasterNotes={log.lot.roasterNotes}
-					tastingNotes={log.tastingNotes}
-				/>
-			)}
+			<LogNotes
+				roasterNotes={log.lot.roasterNotes}
+				tastingNotes={log.tastingNotes}
+			/>
 			{!isMine && <SaveButton className="self-start" lotId={log.lot.id} />}
 			{isMine && (
 				<div className="flex items-center gap-5">
 					<button
-						aria-expanded={editing}
 						className={navLinkClass}
 						onClick={() => {
-							setEditing((value) => !value);
+							setEditing(true);
 						}}
 						type="button"
 					>
-						{editing ? "Close" : "Edit"}
+						Edit
 					</button>
 					<button
 						className={`${navLinkClass} text-muted-foreground hover:text-foreground disabled:no-underline`}
@@ -179,8 +176,8 @@ export const LogCard = ({
 					</button>
 				</div>
 			)}
-			{editing && (
-				<LogForm
+			{isMine && (
+				<LogSheet
 					existing={{
 						logId: log.logId,
 						notes: log.notes,
@@ -191,9 +188,9 @@ export const LogCard = ({
 								: log.tastingNotes.map(({ note }) => note),
 					}}
 					lotId={log.lot.id}
-					onDone={() => {
-						setEditing(false);
-					}}
+					lotName={log.lot.name}
+					onOpenChange={setEditing}
+					open={editing}
 					roasterNotes={log.lot.roasterNotes}
 				/>
 			)}
