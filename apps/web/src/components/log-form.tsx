@@ -173,7 +173,7 @@ export const LogForm = ({
 					className={`${navLinkClass} disabled:text-muted-foreground disabled:no-underline`}
 					disabled={saving}
 					onClick={() => {
-						save();
+						void save();
 					}}
 					type="button"
 				>

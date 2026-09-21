@@ -358,7 +358,9 @@ const LotComponent = () => {
 								setLogging(false);
 							}}
 							roasterNotes={
-								lot.facts.notes.length === 0 ? null : lot.facts.notes.join(", ")
+								lot.facts.notes.length === 0
+									? null
+									: lot.facts.notes.join(" · ")
 							}
 						/>
 					)}
