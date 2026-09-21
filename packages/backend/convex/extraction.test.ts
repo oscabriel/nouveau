@@ -5,6 +5,7 @@ import {
 	extractRoasterNotes,
 	fetchFirstFeedPage,
 	isWholesale,
+	MAX_NOTE_CANDIDATES,
 	MAX_PRODUCTS_JSON_PAGES,
 	parseLotAttributes,
 	parseProductsJson,
@@ -1859,6 +1860,30 @@ describe("pageElements (ADR-0010)", () => {
 			"Prunes • Fig Danish • Nutmeg",
 		]);
 	});
+
+	test("the note candidates are the note lines split, then the flavor terms the page names, distinct and verifier-clean", () => {
+		// "Prunes" twice, once per line; "washed" is a process, not a flavor
+		// term; "Nutmeg" is both a split note and a vocabulary term, once.
+		expect(pageElements(pageText).noteCandidates).toEqual([
+			"Prunes",
+			"Fig Danish",
+			"Nutmeg",
+			"Fig",
+		]);
+	});
+
+	test("a candidate the verifier would drop is never proposed, and the list is capped", () => {
+		const prose = `Notes of ${Array.from({ length: 50 }, (_, index) => `note${index}`).join(", ")}`;
+		const { noteCandidates } = pageElements(
+			`${prose}\nThis classic Dark Roast tastes great, with a finish\nmango`
+		);
+		// splitNotes caps one line at MAX_NOTES; the scan adds mango.
+		expect(noteCandidates.length).toBeLessThanOrEqual(MAX_NOTE_CANDIDATES);
+		expect(noteCandidates).toContain("mango");
+		expect(noteCandidates).not.toContain(
+			"This classic Dark Roast tastes great"
+		);
+	});
 });
 
 describe("pageFactsFromPicks (ADR-0010)", () => {
@@ -2170,6 +2195,21 @@ describe("the probe pages, line in and fact out (ADR-0010)", () => {
 				...(approved.length === 0 ? {} : { tastingNotes: approved }),
 			})
 		).toEqual(expected[key]);
+	});
+
+	test("Sweet Bloom's notes line and prose propose the blend's notes, once each", () => {
+		const { noteCandidates } = pageElements(probePages.sweetbloom.text);
+		expect(noteCandidates.slice(0, 3)).toEqual([
+			"jasmine",
+			"red grape",
+			"mango",
+		]);
+		expect(noteCandidates).toEqual(
+			expect.arrayContaining(["floral", "chocolate", "toffee", "berries"])
+		);
+		expect(new Set(noteCandidates.map((note) => note.toLowerCase())).size).toBe(
+			noteCandidates.length
+		);
 	});
 
 	test("every pick is a line of the head Jev reads, so the state cap loses nothing", () => {

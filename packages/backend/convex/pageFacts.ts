@@ -35,6 +35,7 @@ import type { JevQuestion } from "./jev";
 import {
 	canonicalFactConfidenceValidator,
 	canonicalFactsValidator,
+	MAX_NOTES,
 	needsPageFacts,
 	pageFactConfidenceValidator,
 	pageFactsValidator,
@@ -179,14 +180,16 @@ const CHOICE_FIELDS: readonly (readonly [ChoiceField, string])[] = [
 ];
 
 /**
- * One Noul per note-shaped line (ADR-0010), the line spelled out. Sweet
- * Bloom's featured-products block once passed the note question with
+ * One Noul per note candidate (ADR-0010, amended 2026-09-21), the note
+ * spelled out. The unit Jev judges is the note, not the line: a line that
+ * mixes a real note with a roast word no longer gets one verdict for both.
+ * Sweet Bloom's featured-products block once passed the note question with
  * another blend's notes; the coffee is named, and another coffee the shop
  * sells is spelled out as a wrong answer.
  */
-const NOTE_LINE_QUESTION: JevQuestion = {
+const NOTE_QUESTION: JevQuestion = {
 	instructions:
-		'Is this line of the page a list of tasting notes (flavor or aroma words) of %COFFEE%, rather than notes of another coffee the shop sells, a roast level, a certification, or brewing guidance? Line: "%LINE%"',
+		'Is "%NOTE%" one of the flavor or aroma notes the roaster attributes to %COFFEE%, rather than a note of another coffee the shop sells, a roast level, a certification, a process, or brewing guidance?',
 	type: "noul",
 };
 
@@ -271,11 +274,11 @@ export const pageJevQuestions = (
 			type: "choice",
 		};
 	}
-	for (const [index, line] of elements.noteLines.entries()) {
+	for (const [index, note] of elements.noteCandidates.entries()) {
 		questions[`note_${index}`] = {
-			...NOTE_LINE_QUESTION,
-			instructions: NOTE_LINE_QUESTION.instructions
-				.replaceAll("%LINE%", line)
+			...NOTE_QUESTION,
+			instructions: NOTE_QUESTION.instructions
+				.replaceAll("%NOTE%", note)
 				.replaceAll("%COFFEE%", coffee),
 		};
 	}
@@ -355,15 +358,23 @@ const picksFromAnswers = (
 			picked[field] = probability;
 		}
 	}
-	const noteLines: string[] = [];
-	for (const [index, line] of elements.noteLines.entries()) {
+	// The notes Jev passed, highest probability first, page order for ties,
+	// capped at MAX_NOTES before the cut so the cap is Jev's ranking.
+	const passedNotes: { index: number; note: string; probability: number }[] =
+		[];
+	for (const [index, note] of elements.noteCandidates.entries()) {
 		const yes = jevNoul(answers[`note_${index}`]);
 		if (yes !== null && yes >= YES) {
-			noteLines.push(line);
+			passedNotes.push({ index, note, probability: yes });
 		}
 	}
-	if (noteLines.length > 0) {
-		picks.tastingNotes = noteLines;
+	// oxlint-disable-next-line unicorn/no-array-sort -- ES2021 backend; passedNotes is this function's own array
+	passedNotes.sort(
+		(a, b) => b.probability - a.probability || a.index - b.index
+	);
+	const topNotes = passedNotes.slice(0, MAX_NOTES);
+	if (topNotes.length > 0) {
+		picks.tastingNotes = topNotes.map((item) => item.note);
 	}
 	const approved: string[] = [];
 	for (const [index, sentence] of sentences.entries()) {
@@ -378,6 +389,20 @@ const picksFromAnswers = (
 		const probability = picked[field];
 		if (facts[field] !== undefined && probability !== undefined) {
 			confidence[field] = probability;
+		}
+	}
+	// One probability per stored note, index-aligned with pageFacts.tastingNotes.
+	// A candidate is a fixed point of the verifier, so every stored note is a
+	// candidate by spelling; the array is left off if one is not.
+	if (facts.tastingNotes !== undefined) {
+		const byNote = new Map(
+			topNotes.map((item) => [item.note.toLowerCase(), item.probability])
+		);
+		const aligned = facts.tastingNotes.map((note) =>
+			byNote.get(note.toLowerCase())
+		);
+		if (aligned.every((p): p is number => p !== undefined)) {
+			confidence.tastingNotes = aligned;
 		}
 	}
 	return {

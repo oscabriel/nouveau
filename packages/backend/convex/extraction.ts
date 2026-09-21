@@ -5,10 +5,12 @@
 
 import { v } from "convex/values";
 
+import { scanFlavorTerms } from "./flavorVocabulary";
 import type { PageFacts } from "./lotFacts";
 import {
 	NOTE_SEPARATOR,
 	splitNotes,
+	verifyNote,
 	verifyElevation,
 	verifyNotes,
 	verifyProducer,
@@ -1938,13 +1940,22 @@ const TABLE_ROW = /^\s*\|/u;
 /** Sentence punctuation with more text after it marks prose, never a note list. */
 const SENTENCE_PUNCTUATION = /[.!?]./u;
 
-/** The page as Jev's options: its distinct lines, and the note-shaped ones among them. */
+/** The page as Jev's options: its distinct lines, the note-shaped ones among them, and the notes proposed from both. */
 export interface PageElements {
 	/** Every distinct line up to MAX_ELEMENT_LENGTH, in page order. */
 	lines: string[];
-	/** The lines shaped like a notes list; each gets one Noul. */
+	/**
+	 * The tasting-note candidates (ADR-0010, amended 2026-09-21): every
+	 * note-shaped line split, then the flavor vocabulary's terms the page
+	 * names, distinct and verifier-clean, in page order. Each gets one Noul.
+	 */
+	noteCandidates: string[];
+	/** The lines shaped like a notes list. Kept for the trace; the Nouls are per candidate now. */
 	noteLines: string[];
 }
+
+/** Candidates one page proposes; past this the rest is prose that named a lot of fruit. */
+export const MAX_NOTE_CANDIDATES = 40;
 
 /**
  * Whether a line is shaped like a tasting-notes list: a notes lead with a
@@ -1962,25 +1973,6 @@ const isNoteLine = (line: string): boolean => {
 		return true;
 	}
 	return line.length <= MAX_NOTE_LINE_LENGTH && NOTE_SEPARATOR.test(line);
-};
-
-/**
- * The reduced page text as elements (ADR-0010): every distinct line up to
- * the element cap, in page order, is an option on each field's Choice; the
- * note-shaped lines among them each get a Noul. No cap on the count: the
- * probe sent 227 options and Jev answered; the state limit bounds it.
- */
-export const pageElements = (pageText: string): PageElements => {
-	const seen = new Set<string>();
-	const lines: string[] = [];
-	for (const raw of pageText.split(/\n+/u)) {
-		const line = raw.trim();
-		if (line !== "" && line.length <= MAX_ELEMENT_LENGTH && !seen.has(line)) {
-			seen.add(line);
-			lines.push(line);
-		}
-	}
-	return { lines, noteLines: lines.filter(isNoteLine) };
 };
 
 /**
@@ -2075,6 +2067,65 @@ const cutNotes = (line: string): string[] => {
 	return splitNotes(
 		mid === null ? list : list.slice(mid.index + mid[0].length)
 	);
+};
+
+/**
+ * The note candidates Jev judges one by one: the note-shaped lines split
+ * by the notes cutter (lead stripped, separators honored), then the flavor
+ * vocabulary's terms anywhere in the page head. Distinct case-insensitively,
+ * page order, each through verifyNote first so Jev is never asked about a
+ * candidate the verifier would drop anyway, capped at MAX_NOTE_CANDIDATES.
+ */
+const noteCandidates = (
+	noteLines: readonly string[],
+	pageText: string
+): string[] => {
+	const seen = new Set<string>();
+	const candidates: string[] = [];
+	const propose = (raw: string): void => {
+		const note = verifyNote(raw);
+		if (note === null) {
+			return;
+		}
+		const key = note.toLowerCase();
+		if (!seen.has(key) && candidates.length < MAX_NOTE_CANDIDATES) {
+			seen.add(key);
+			candidates.push(note);
+		}
+	};
+	for (const line of noteLines) {
+		for (const note of cutNotes(line)) {
+			propose(note);
+		}
+	}
+	for (const term of scanFlavorTerms(pageText)) {
+		propose(term);
+	}
+	return candidates;
+};
+
+/**
+ * The reduced page text as elements (ADR-0010): every distinct line up to
+ * the element cap, in page order, is an option on each field's Choice; the
+ * note-shaped lines among them each get a Noul. No cap on the count: the
+ * probe sent 227 options and Jev answered; the state limit bounds it.
+ */
+export const pageElements = (pageText: string): PageElements => {
+	const seen = new Set<string>();
+	const lines: string[] = [];
+	for (const raw of pageText.split(/\n+/u)) {
+		const line = raw.trim();
+		if (line !== "" && line.length <= MAX_ELEMENT_LENGTH && !seen.has(line)) {
+			seen.add(line);
+			lines.push(line);
+		}
+	}
+	const noteLines = lines.filter(isNoteLine);
+	return {
+		lines,
+		noteCandidates: noteCandidates(noteLines, pageText),
+		noteLines,
+	};
 };
 
 /**

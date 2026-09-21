@@ -64,10 +64,14 @@ interface ProviderOptions {
 	timeout?: boolean;
 	/** Firecrawl's HTTP status; 429 is its rate limit. */
 	firecrawlStatus?: number;
+	/** The Noul instructions Jev's stub says yes to; STUB_NOTE_YES by default. */
+	noteYes?: RegExp;
 	/** The line Jev's stub picks per field; STUB_PICKS by default. */
 	picks?: Record<string, RegExp>;
 }
 
+/** The Nouls the stub passes: the fixture's three notes, and a sentence that mentions peach. */
+const STUB_NOTE_YES = /"(?:peach|melon|red tea)"|peach/u;
 /** The probability the stub gives its pick; the rest goes to the hatch. */
 const STUB_PICK_PROBABILITY = 0.9;
 
@@ -93,6 +97,7 @@ const stubProviders = ({
 	firecrawlStatus = 200,
 	html = PAGE_HTML,
 	jev = true,
+	noteYes = STUB_NOTE_YES,
 	picks = STUB_PICKS,
 	rendered = PAGE_HTML,
 	statusCode = 200,
@@ -164,7 +169,7 @@ const stubProviders = ({
 					};
 				} else {
 					answers[key] = {
-						noul: question.instructions.includes("peach") ? 0.9 : 0.1,
+						noul: noteYes.test(question.instructions) ? 0.9 : 0.1,
 						type: "noul",
 					};
 				}
@@ -709,13 +714,12 @@ describe("pageFacts.scrape", () => {
 			expect(question.instructions).toContain('"Ethiopia Mullugeta Muntasha"');
 		}
 		// One Choice per field over the page's lines (ADR-0010), and one Noul
-		// per note-shaped line, the line spelled out in the question.
+		// per note candidate, the note spelled out in the question.
 		expect(Object.keys(body.questions.process?.criteria ?? {})).toEqual(
 			expect.arrayContaining(["Mullugeta", "Process: Natural", "none"])
 		);
-		expect(body.questions.note_0?.instructions).toContain(
-			'"Tasting notes: peach, melon, red tea."'
-		);
+		expect(body.questions.note_0?.instructions).toContain('"peach"');
+		expect(body.questions.note_1?.instructions).toContain('"melon"');
 		fetchMock.mockClear();
 		await fx.t.run((ctx) =>
 			ctx.db.patch(fx.lotId, { copyFetchedAt: undefined, pageReads: undefined })
@@ -779,8 +783,48 @@ describe("pageFacts.scrape", () => {
 		expect(read?.pageFactConfidence).toEqual({
 			elevation: STUB_PICK_PROBABILITY,
 			process: STUB_PICK_PROBABILITY,
+			tastingNotes: [0.9, 0.9, 0.9],
 			variety: STUB_PICK_PROBABILITY,
 		});
+	});
+
+	test("the note unit is the note: a line mixing a roast word with notes yields one Noul per candidate, and only the passed notes store, with a probability each", async () => {
+		const fx = await setup();
+		const mixedLine = [
+			"<html><body><main><h1>Mullugeta</h1>",
+			"<p>Medium roast. Notes of cherry, cocoa</p>",
+			"<p>Our cherry-picked lots are roasted weekly.</p>",
+			"<p>Mullugeta Muntasha's washing station sits above Yirgacheffe town. The lots are sorted by hand, fermented for 48 hours and dried slowly on raised beds for three weeks before milling.</p>",
+			"</main></body></html>",
+		].join("\n");
+		const fetchMock = stubProviders({
+			html: mixedLine,
+			noteYes: /"cherry"/u,
+			rendered: mixedLine,
+		});
+		await fx.t.action(internal.pageFacts.scrape, {
+			name: "Ethiopia Mullugeta Muntasha",
+			productId: fx.lotId,
+			url: PAGE_URL,
+		});
+		const jev = fetchMock.mock.calls.find(([url]) =>
+			String(url).includes("typesafe")
+		);
+		const body = JSON.parse(String(jev?.[1]?.body)) as {
+			questions: Record<string, { instructions: string; type: string }>;
+		};
+		const noteQuestions = Object.entries(body.questions)
+			.filter(([key]) => key.startsWith("note_"))
+			.map(
+				([, question]) =>
+					/Is "(?<note>[^"]+)"/u.exec(question.instructions)?.groups?.note
+			);
+		expect(noteQuestions).toEqual(["cherry", "cocoa"]);
+		const read = await product(fx);
+		expect(read?.pageFacts?.tastingNotes).toEqual(["cherry"]);
+		expect(read?.pageFactConfidence?.tastingNotes).toEqual([0.9]);
+		// The roast word on the same line went to its own field, not the notes.
+		expect(read?.pageFacts?.roastLevel).toBeUndefined();
 	});
 
 	test("the vocabulary Choices store the enum and its probability; not_stated and a choice outside the vocabulary leave the field unset", async () => {
