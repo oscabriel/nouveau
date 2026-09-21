@@ -194,6 +194,8 @@ None. No shadows anywhere. Depth is photograph over ground, and the chip over th
 - **Watch toggle** (`watch-button.tsx`): the toggle-pair vocabulary applied to one control. WATCH in grey with a faded dot; WATCHING in ink with a filled dot. `aria-pressed` carries the state.
 - **Save toggle** (`save-button.tsx`): the same control for a lot. SAVE in grey with a faded dot; SAVED in ink with a filled dot; the dot pulses while the mutation runs. Signed out it renders nothing, since the try list is private. On the lot page, the try list, other people's log rows and the next-bag cards.
 - **Tasting picker** (`tasting-picker.tsx`, ADR-0016): nine caps category labels, each with its terms as 14px text buttons under it, no boxes. Picked is ink with an underline like an active nav link; selectable is grey going ink on hover; at four picks the rest drop to half grey and disable. A tabular "n/4 picked" line closes it.
+- **Log row** (`log-card.tsx`, ADR-0016): one line of cell type under a hairline: taster (ink), "tried" in grey, the lot name in ink at weight 600, "from" and the roaster in grey, the relative time in 12px tabular at the right. Below: the stars, the review at `max-w-prose`, then a two-column list with caps TASTING NOTES and ROASTER NOTES labels and grey values, the picks joined by middle dots. The Save toggle on another taster's row; EDIT and DELETE as caps actions on one's own. `/activity`, `/$user` and the lot page.
+- **Log form** (`log-form.tsx`): inline under a hairline, no box. The tasting picker beside the roaster's notes under caps labels; RATE IT as a dot toggle that reveals a 128px native range (`accent-foreground`), the stars and the value; REVIEW as a caps label over one line of cell type on a hairline that grows with the text; SAVE LOG in ink and CANCEL in grey as caps actions.
 - **Caps action** (Check now, Load more, Close, Retry, Add a roaster): a caps link that happens to be a button. Disabled goes grey with no underline.
 - **Arrow cell** (`ArrowCell` in `table.tsx`, ADR-0015): every table row ends in a short right arrow (14px, 1.5 stroke) in a 24px hit area. The cell is a link into Nouveau: the lot page on drop tables and the catalog, the roaster page on the directory. Nothing in a row leaves the site.
 - **Hover image** (`TableHoverImage` in `table.tsx`, ADR-0015): one fixed element per table, the lot photo at 280px wide and 3:2, floating above-right of the pointer and clamped to the viewport, fine pointers only. Focus shows it at the row's leading edge. Rows opt in with `data-image-url`; the directory mounts none.
@@ -208,7 +210,7 @@ None. No shadows anywhere. Depth is photograph over ground, and the chip over th
 ## Do's and Don'ts
 
 - Do let the data be the page: hairline tables, caps headers, grey cells, ink for the one thing the row is about.
-- Do keep every control as text or an arrow; the filled ink block is for the one primary action on a screen (sign in, FIND MY NEXT BAG, the account Save).
+- Do keep every control as text or an arrow; the filled ink block is for the one primary action on a screen (sign in, FIND MY NEXT BAG, the account Save). Form submits elsewhere (SAVE LOG) are caps actions.
 - Do use photographs of the coffee for color. Never add an accent color to UI chrome.
 - Do keep dark mode a straight inversion; no tinted darks.
 - Don't use cards, borders around content groups, rounded corners, shadows, or gradients. The one exception is the next-bag shortlist (ADR-0017), where each pick is a fixed card over validated fields; nothing else gets one.

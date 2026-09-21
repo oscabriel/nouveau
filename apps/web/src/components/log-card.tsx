@@ -1,9 +1,7 @@
 import { api } from "@nouveau/backend/convex/_generated/api";
-import { Button } from "@nouveau/ui/components/button";
 import { Link } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -11,6 +9,7 @@ import { LogForm } from "@/components/log-form";
 import { SaveButton } from "@/components/save-button";
 import { Stars } from "@/components/stars";
 import { relativeTime } from "@/lib/format";
+import { navLinkClass } from "@/lib/ui";
 
 /** One hydrated log, exactly as recentLogs and profile return it (spec §14). */
 export type LogCardData = FunctionReturnType<
@@ -18,10 +17,13 @@ export type LogCardData = FunctionReturnType<
 >[number];
 
 /**
- * One log row. The activity feed shows the taster (showUser); the profile
+ * One log row under a hairline: who tried what from whom and when on one
+ * line, the stars, the review, then the taster's picks beside the roaster's
+ * descriptors. The activity feed shows the taster (showUser); the profile
  * already belongs to them, so it passes showUser={false} and may pass isMine
- * to get inline edit and delete. Someone else's log offers Save on its lot
- * instead: a log you read is the main way a lot gets onto "Want to try".
+ * to get EDIT and DELETE as caps actions. Someone else's log offers the Save
+ * toggle on its lot instead: a log you read is the main way a lot gets onto
+ * the try list.
  */
 export const LogCard = ({
 	log,
@@ -50,28 +52,30 @@ export const LogCard = ({
 	};
 
 	return (
-		<article className="flex flex-col gap-1 border-b px-1 py-4 last:border-b-0">
-			<div className="flex items-baseline justify-between gap-x-3">
-				<div className="flex min-w-0 flex-wrap items-center gap-x-2">
+		<article className="flex flex-col gap-2 border-b py-5">
+			<div className="flex items-baseline justify-between gap-x-6">
+				<p className="min-w-0 text-sm leading-snug md:text-[15px]">
 					{showUser && (
-						<Link
-							className="truncate font-medium hover:underline"
-							params={{ user: log.user.handle ?? log.user.id }}
-							to="/$user"
-						>
-							{log.user.name ?? "A taster"}
-						</Link>
+						<>
+							<Link
+								className="text-foreground hover:underline"
+								params={{ user: log.user.handle ?? log.user.id }}
+								to="/$user"
+							>
+								{log.user.name ?? "A taster"}
+							</Link>
+							<span className="text-muted-foreground"> tried </span>
+						</>
 					)}
-					<span className="text-muted-foreground text-sm">tried</span>
 					<Link
-						className="truncate font-medium hover:underline"
+						className="text-foreground font-semibold hover:underline"
 						params={{ lot: log.lot.handle, roaster: log.roaster.slug }}
 						to="/roaster/$roaster/$lot"
 					>
 						{log.lot.name}
 					</Link>
-					<span className="text-muted-foreground truncate text-sm">
-						from{" "}
+					<span className="text-muted-foreground">
+						{" from "}
 						<Link
 							className="hover:underline"
 							params={{ roaster: log.roaster.slug }}
@@ -80,58 +84,64 @@ export const LogCard = ({
 							{log.roaster.name}
 						</Link>
 					</span>
-				</div>
+				</p>
 				<time
-					className="text-muted-foreground shrink-0 text-xs tabular-nums"
+					className="text-muted-foreground tnum shrink-0 text-xs"
 					dateTime={new Date(log.loggedAt).toISOString()}
 				>
 					{relativeTime(log.loggedAt)}
 				</time>
 			</div>
 			{log.rating !== null && <Stars rating={log.rating} />}
-			{log.notes !== null && <p className="text-sm">{log.notes}</p>}
-			{log.tastingNotes !== null && !editing && (
-				<p className="text-muted-foreground flex flex-wrap items-center gap-1.5 text-xs">
-					<span className="text-foreground font-medium">Tasting notes:</span>
-					{log.tastingNotes.map((note) => (
-						<span className="rounded-full border px-2 py-0.5" key={note}>
-							{note}
-						</span>
-					))}
+			{log.notes !== null && (
+				<p className="max-w-prose text-sm leading-snug md:text-[15px]">
+					{log.notes}
 				</p>
 			)}
-			{log.lot.roasterNotes !== null && !editing && (
-				<p className="text-muted-foreground text-xs italic">
-					<span className="font-medium not-italic">Roaster notes:</span>{" "}
-					{log.lot.roasterNotes}
-				</p>
-			)}
+			{!editing &&
+				(log.tastingNotes !== null || log.lot.roasterNotes !== null) && (
+					<dl className="text-muted-foreground grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_minmax(0,1fr)]">
+						{log.tastingNotes !== null && (
+							<>
+								<dt className="label-caps text-foreground pt-0.5">
+									Tasting notes
+								</dt>
+								<dd>{log.tastingNotes.join(" · ")}</dd>
+							</>
+						)}
+						{log.lot.roasterNotes !== null && (
+							<>
+								<dt className="label-caps text-foreground pt-0.5">
+									Roaster notes
+								</dt>
+								<dd>{log.lot.roasterNotes}</dd>
+							</>
+						)}
+					</dl>
+				)}
 			{!isMine && <SaveButton className="self-start" lotId={log.lot.id} />}
 			{isMine && (
-				<div className="flex gap-1">
-					<Button
-						aria-label="Edit log"
+				<div className="flex items-center gap-5">
+					<button
+						aria-expanded={editing}
+						className={navLinkClass}
 						onClick={() => {
 							setEditing((value) => !value);
 						}}
-						size="sm"
-						variant="ghost"
+						type="button"
 					>
-						<Pencil aria-hidden className="size-3.5" />
 						{editing ? "Close" : "Edit"}
-					</Button>
-					<Button
-						aria-label="Delete log"
+					</button>
+					<button
+						className={`${navLinkClass} text-muted-foreground hover:text-foreground disabled:no-underline`}
 						disabled={deleting}
 						onClick={() => {
 							deleteLog();
 						}}
-						size="sm"
-						variant="ghost"
+						type="button"
 					>
-						<Trash2 aria-hidden className="size-3.5" />
 						Delete
-					</Button>
+					</button>
 				</div>
 			)}
 			{editing && (

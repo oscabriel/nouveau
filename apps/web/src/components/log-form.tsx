@@ -1,28 +1,27 @@
 import { api } from "@nouveau/backend/convex/_generated/api";
 import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
 import type { TastingNote } from "@nouveau/backend/convex/tasting";
-import { Button } from "@nouveau/ui/components/button";
-import { Checkbox } from "@nouveau/ui/components/checkbox";
-import { Label } from "@nouveau/ui/components/label";
-import { Textarea } from "@nouveau/ui/components/textarea";
 import { useMutation } from "convex/react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { Stars } from "@/components/stars";
 import { TastingNotesPicker } from "@/components/tasting-picker";
+import { navLinkClass } from "@/lib/ui";
 
 const NOTES_MAX_LENGTH = 1000;
 const DEFAULT_RATING = 3;
 
 /**
- * Create or edit a Log (build spec §14.1, ADR-0016). Inline rather than a
- * modal — the ui kit has no dialog primitive and the form is three fields.
- * Unchecking the rating stores a rating-less log; clearing it on edit sends
+ * Create or edit a Log (build spec §14.1, ADR-0016). Inline under a
+ * hairline, no box: the picker beside the roaster's notes, RATE IT as a
+ * toggle that reveals the slider, REVIEW as one line over a hairline that
+ * grows with the text, then SAVE LOG and CANCEL as caps actions. Turning
+ * the rating off stores a rating-less log; clearing it on edit sends
  * `null`. The freeform field is the review; the structured picks are the
- * tasting notes. `roasterNotes` (§14.4) sits beside the picker as read-only
- * reference: descriptors the roaster published, verbatim, to crib from —
- * never prefilled into the taster's own picks.
+ * tasting notes. `roasterNotes` (§14.4) is read-only reference, the
+ * descriptors the roaster published, verbatim, never prefilled into the
+ * taster's own picks.
  */
 export const LogForm = ({
 	existing,
@@ -53,7 +52,7 @@ export const LogForm = ({
 	const create = useMutation(api.logs.createLog);
 	const update = useMutation(api.logs.updateLog);
 	const restore = useMutation(api.savedCoffees.save);
-	const checkboxId = `rate-${existing?.logId ?? lotId}`;
+	const reviewId = `review-${existing?.logId ?? lotId}`;
 
 	const save = async () => {
 		const trimmed = notes.trim();
@@ -104,32 +103,47 @@ export const LogForm = ({
 	};
 
 	return (
-		<div className="my-2 flex flex-col gap-3 rounded-md border p-3">
-			<div className="flex flex-col gap-4 md:flex-row md:gap-8">
+		<div className="my-4 flex flex-col gap-6 border-t pt-5">
+			<div className="flex flex-col gap-6 md:flex-row md:gap-10">
 				<div className="md:w-1/2">
-					<p className="label-caps text-foreground mb-2">Tasting notes</p>
+					<p className="label-caps text-foreground mb-4">Tasting notes</p>
 					<TastingNotesPicker onChange={setPicks} value={picks} />
 				</div>
 				{roasterNotes !== null && (
-					<p className="text-muted-foreground text-xs italic md:w-1/2">
-						<span className="font-medium not-italic">Roaster notes:</span>{" "}
-						{roasterNotes}
-					</p>
+					<div className="md:w-1/2">
+						<p className="label-caps text-foreground mb-4">Roaster notes</p>
+						<p className="text-muted-foreground text-sm leading-snug md:text-[15px]">
+							{roasterNotes}
+						</p>
+					</div>
 				)}
 			</div>
-			<div className="flex items-center gap-3">
-				<Checkbox
-					checked={rateIt}
-					id={checkboxId}
-					onCheckedChange={(checked) => {
-						setRateIt(checked);
+			<div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+				<button
+					aria-pressed={rateIt}
+					className={`label-caps inline-flex min-h-11 items-center gap-2 whitespace-nowrap transition-colors ${
+						rateIt
+							? "text-foreground"
+							: "text-muted-foreground hover:text-foreground"
+					}`}
+					onClick={() => {
+						setRateIt((value) => !value);
 					}}
-				/>
-				<Label htmlFor={checkboxId}>Rate it</Label>
+					type="button"
+				>
+					<span
+						aria-hidden
+						className={`inline-block size-2 rounded-full bg-current transition-opacity ${
+							rateIt ? "opacity-100" : "opacity-30"
+						}`}
+					/>
+					Rate it
+				</button>
 				{rateIt && (
-					<div className="flex items-center gap-2">
+					<div className="flex items-center gap-3">
 						<input
 							aria-label="Rating"
+							className="accent-foreground h-11 w-32"
 							max={5}
 							min={1}
 							onChange={(event) => {
@@ -140,35 +154,50 @@ export const LogForm = ({
 							value={rating}
 						/>
 						<Stars rating={rating} />
-						<span className="text-muted-foreground w-8 text-right text-xs tabular-nums">
+						<span className="text-muted-foreground tnum w-6 text-right text-xs">
 							{rating}
 						</span>
 					</div>
 				)}
 			</div>
-			<Textarea
-				aria-label="Review"
-				maxLength={NOTES_MAX_LENGTH}
-				onChange={(event) => {
-					setNotes(event.target.value);
-				}}
-				placeholder="Your review — jasmine? lemon? too thin?"
-				rows={2}
-				value={notes}
-			/>
-			<div className="flex gap-2">
-				<Button
+			<div>
+				<label
+					className="label-caps text-foreground mb-2 block"
+					htmlFor={reviewId}
+				>
+					Review
+				</label>
+				<textarea
+					className="placeholder:text-muted-foreground focus-visible:border-foreground field-sizing-content min-h-11 w-full resize-none border-b bg-transparent py-2.5 text-[15px] leading-snug outline-none focus-visible:outline-none md:text-base"
+					id={reviewId}
+					maxLength={NOTES_MAX_LENGTH}
+					onChange={(event) => {
+						setNotes(event.target.value);
+					}}
+					placeholder="Jasmine? Lemon? Too thin?"
+					rows={1}
+					value={notes}
+				/>
+			</div>
+			<div className="flex items-center gap-5">
+				<button
+					className={`${navLinkClass} disabled:text-muted-foreground disabled:no-underline`}
 					disabled={saving}
 					onClick={() => {
 						save();
 					}}
-					size="sm"
+					type="button"
 				>
 					{existing === undefined ? "Save log" : "Update log"}
-				</Button>
-				<Button disabled={saving} onClick={onDone} size="sm" variant="ghost">
+				</button>
+				<button
+					className={`${navLinkClass} text-muted-foreground hover:text-foreground disabled:no-underline`}
+					disabled={saving}
+					onClick={onDone}
+					type="button"
+				>
 					Cancel
-				</Button>
+				</button>
 			</div>
 		</div>
 	);

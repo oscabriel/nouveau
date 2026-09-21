@@ -322,7 +322,7 @@ const LotComponent = () => {
 							: "No logs yet."}
 					</p>
 				) : (
-					<div className="divide-y">
+					<div>
 						{page.logs.map((log) => (
 							<LogCard isMine={isMine(log.logId)} key={log.logId} log={log} />
 						))}
