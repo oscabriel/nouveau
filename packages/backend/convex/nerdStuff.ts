@@ -17,7 +17,7 @@ import {
 	mutation,
 	query,
 } from "./_generated/server";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
 	classifyLot,
 	extractRoasterNotes,
@@ -582,48 +582,64 @@ export const latestRun = query({
 	returns: nullableRun,
 });
 
-/** One run's traces, oldest first. Bounded by the run's lot count. */
+/** A trace joined with the lot's address, so the row can link its page. Either half may be gone. */
+const addressedTrace = traceDoc.extend({
+	handle: v.union(v.string(), v.null()),
+	roasterSlug: v.union(v.string(), v.null()),
+});
+
+const withAddress = async (
+	ctx: QueryCtx,
+	rows: Doc<"pipelineTraces">[]
+): Promise<Infer<typeof addressedTrace>[]> =>
+	await Promise.all(
+		rows.map(async (row) => {
+			const [product, roaster] = await Promise.all([
+				ctx.db.get("products", row.productId),
+				ctx.db.get("roasters", row.roasterId),
+			]);
+			return {
+				...row,
+				handle: product?.handle ?? null,
+				roasterSlug: roaster?.slug ?? null,
+			};
+		})
+	);
+
+/** One run's traces, oldest first, with the lot's address. Bounded by the run's lot count. */
 export const traces = query({
 	args: { runId: v.id("pipelineRuns") },
 	handler: async (ctx, args) =>
-		await ctx.db
-			.query("pipelineTraces")
-			.withIndex("by_run_id_and_started_at", (q) => q.eq("runId", args.runId))
-			.take(MAX_RUN_LOTS),
-	returns: v.array(traceDoc),
+		await withAddress(
+			ctx,
+			await ctx.db
+				.query("pipelineTraces")
+				.withIndex("by_run_id_and_started_at", (q) =>
+					q.eq("runId", args.runId)
+				)
+				.take(MAX_RUN_LOTS)
+		),
+	returns: v.array(addressedTrace),
 });
 
 /** The live tail: the newest traces across every read, with the lot's address. */
 export const recentTraces = query({
 	args: { limit: v.optional(v.number()) },
-	handler: async (ctx, args) => {
-		const rows = await ctx.db
-			.query("pipelineTraces")
-			.withIndex("by_started_at")
-			.order("desc")
-			.take(
-				Math.min(Math.max(1, Math.floor(args.limit ?? 20)), RECENT_TRACES_CAP)
-			);
-		return await Promise.all(
-			rows.map(async (row) => {
-				const [product, roaster] = await Promise.all([
-					ctx.db.get("products", row.productId),
-					ctx.db.get("roasters", row.roasterId),
-				]);
-				return {
-					...row,
-					handle: product?.handle ?? null,
-					roasterSlug: roaster?.slug ?? null,
-				};
-			})
-		);
-	},
-	returns: v.array(
-		traceDoc.extend({
-			handle: v.union(v.string(), v.null()),
-			roasterSlug: v.union(v.string(), v.null()),
-		})
-	),
+	handler: async (ctx, args) =>
+		await withAddress(
+			ctx,
+			await ctx.db
+				.query("pipelineTraces")
+				.withIndex("by_started_at")
+				.order("desc")
+				.take(
+					Math.min(
+						Math.max(1, Math.floor(args.limit ?? 20)),
+						RECENT_TRACES_CAP
+					)
+				)
+		),
+	returns: v.array(addressedTrace),
 });
 
 /**
