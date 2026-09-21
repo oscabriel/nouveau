@@ -136,9 +136,11 @@ const AccountComponent = () => {
 	const { isAuthenticated, isLoading } = useConvexAuth();
 	const me = useQuery(api.users.getCurrentUser, isAuthenticated ? {} : "skip");
 
-	if (isLoading || me === undefined) {
+	if (isLoading) {
 		return <Loader />;
 	}
+	// Signed out the query is skipped and `me` stays undefined, so the auth
+	// check has to come before the loading check or the spinner never ends.
 	if (!isAuthenticated || me === null) {
 		return (
 			<main>
@@ -153,6 +155,9 @@ const AccountComponent = () => {
 				</div>
 			</main>
 		);
+	}
+	if (me === undefined) {
+		return <Loader />;
 	}
 
 	return (
