@@ -54,10 +54,12 @@ const GlobalDrops = ({
 	feed,
 	filter,
 	onChange,
+	showYour,
 }: {
 	feed: GlobalRow[];
 	filter: Filter;
 	onChange: (next: Filter) => void;
+	showYour: boolean;
 }) => {
 	const counts = {
 		all: feed.length,
@@ -73,8 +75,10 @@ const GlobalDrops = ({
 		{ label: DROP_TYPE_LABEL.new, value: "new" },
 		{ label: DROP_TYPE_LABEL.back_in_stock, value: "back_in_stock" },
 		{ label: DROP_TYPE_LABEL.price_drop, value: "price_drop" },
-		{ label: "Your roasters", value: "your" },
 	];
+	if (showYour) {
+		tabs.push({ label: "Your roasters", value: "your" });
+	}
 	const shown =
 		filter === "all" ? feed : feed.filter((row) => row.type === filter);
 	return (
@@ -162,7 +166,14 @@ const FeedComponent = () => {
 	} else if (filter === "your") {
 		body = mine === undefined ? <Loader /> : <YourDrops mine={mine} />;
 	} else {
-		body = <GlobalDrops feed={feed} filter={filter} onChange={setFilter} />;
+		body = (
+			<GlobalDrops
+				feed={feed}
+				filter={filter}
+				onChange={setFilter}
+				showYour={isAuthenticated}
+			/>
+		);
 	}
 
 	return (
