@@ -45,12 +45,22 @@ const RoasterRow = ({
 			{roaster.city}, {roaster.state}
 		</td>
 		<td
+			className={`${bodyCell} text-muted-foreground tnum hidden pr-4 text-right sm:table-cell`}
+		>
+			{roaster.lotCount}
+		</td>
+		<td
+			className={`${bodyCell} text-muted-foreground tnum hidden pr-4 text-right md:table-cell`}
+		>
+			{roaster.newLotCount}
+		</td>
+		<td
 			className={`${bodyCell} text-muted-foreground tnum hidden pr-4 text-right md:table-cell`}
 		>
 			{roaster.followerCount}
 		</td>
 		{canWatch && (
-			<td className={`${bodyCell} w-24 py-0 text-right align-middle`}>
+			<td className="w-24 py-0 text-right align-middle">
 				<WatchButton roasterId={roaster.id} />
 			</td>
 		)}
@@ -101,6 +111,18 @@ const Directory = ({
 						City
 					</th>
 					<th
+						className={`${headCell} hidden text-right sm:table-cell`}
+						scope="col"
+					>
+						Lots
+					</th>
+					<th
+						className={`${headCell} hidden text-right md:table-cell`}
+						scope="col"
+					>
+						New
+					</th>
+					<th
 						className={`${headCell} hidden text-right md:table-cell`}
 						scope="col"
 					>
@@ -131,9 +153,12 @@ const Directory = ({
 };
 
 /**
- * The directory: every active roaster in one hairline table. Your status is
- * the Status column: the WATCH / WATCHING toggle signed in, no column at all
- * signed out (ADR-0015). Crawl health lives on the roaster page's status
+ * The directory: every active roaster in one hairline table. Lots is the
+ * roaster's current lot count and New the lots first seen inside the last
+ * seven days; both are counted at crawl time and stored on the roaster (0
+ * until its first counted crawl), never scanned at read time. Your status
+ * is the Status column: the WATCH / WATCHING toggle signed in, no column at
+ * all signed out (ADR-0015). Crawl health lives on the roaster page's status
  * line, not here. Search filters the loaded list client-side.
  */
 const RoastersComponent = () => {
