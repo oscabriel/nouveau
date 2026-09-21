@@ -4,21 +4,28 @@ import {
 } from "@nouveau/backend/convex/tasting";
 import type { TastingNote } from "@nouveau/backend/convex/tasting";
 
-const chipClass = (picked: boolean, selectable: boolean): string => {
+const BASE =
+	"inline-flex min-h-8 items-center text-sm leading-none transition-colors disabled:cursor-default";
+
+/**
+ * A note is text, no box: picked in ink and underlined like an active nav
+ * link, selectable in grey going ink on hover, capped out at half grey.
+ */
+const noteClass = (picked: boolean, selectable: boolean): string => {
 	if (picked) {
-		return "border-foreground bg-foreground text-background rounded-full border px-3 py-1 text-sm transition-colors";
+		return `${BASE} text-foreground underline decoration-1 underline-offset-4`;
 	}
 	if (selectable) {
-		return "text-muted-foreground hover:text-foreground hover:border-foreground rounded-full border px-3 py-1 text-sm transition-colors";
+		return `${BASE} text-muted-foreground hover:text-foreground`;
 	}
-	return "text-muted-foreground/50 border-muted rounded-full border px-3 py-1 text-sm";
+	return `${BASE} text-muted-foreground/50`;
 };
 
 /**
  * The tasting-note picker (ADR-0016): up to four picks from the SCA wheel's
  * top two levels, category and its terms side by side, never prefilled from
- * the roaster's notes. The four-pick cap disables further chips; an already
- * picked chip always unselects.
+ * the roaster's notes. The four-pick cap disables further notes; an already
+ * picked note always unselects.
  */
 export const TastingNotesPicker = ({
 	onChange,
@@ -37,17 +44,18 @@ export const TastingNotesPicker = ({
 	};
 	return (
 		<div>
-			<div className="flex flex-wrap gap-3">
+			<div className="flex flex-wrap gap-x-8 gap-y-5">
 				{TASTING_PICKER.map(({ category, notes }) => (
 					<div className="min-w-40" key={category}>
 						<p className="label-caps text-foreground">{category}</p>
-						<div className="mt-2 flex flex-wrap gap-1.5">
+						<div className="mt-1 flex flex-wrap gap-x-4">
 							<button
 								aria-pressed={value.includes(category)}
-								className={chipClass(
+								className={noteClass(
 									value.includes(category),
 									!full || value.includes(category)
 								)}
+								disabled={full && !value.includes(category)}
 								onClick={() => {
 									toggle(category);
 								}}
@@ -58,10 +66,11 @@ export const TastingNotesPicker = ({
 							{notes.map((note) => (
 								<button
 									aria-pressed={value.includes(note)}
-									className={chipClass(
+									className={noteClass(
 										value.includes(note),
 										!full || value.includes(note)
 									)}
+									disabled={full && !value.includes(note)}
 									key={note}
 									onClick={() => {
 										toggle(note);
