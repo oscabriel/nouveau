@@ -2,7 +2,9 @@
 // page read writes, plus a bounded run loop that reads up to MAX_RUN_LOTS
 // of one roaster's lots through the same Firecrawl budget as the sweep and
 // records a trace per lot. A run writes no facts unless asked (`commit`).
-// Anyone can view; starting needs sign-in and passes two limiters.
+// Anyone can view. Starting needs sign-in (or, once appConfig names a
+// workbench user, that user) and passes one hourly limiter; a new run
+// supersedes the one going, so the owner never waits on a full roaster.
 
 import { HOUR, RateLimiter } from "@convex-dev/rate-limiter";
 import { ConvexError, v } from "convex/values";
@@ -48,10 +50,12 @@ import type {
 } from "./pipelineTrace";
 import schema from "./schema";
 
-/** Runs anyone may start in an hour, deployment-wide: each takes a Firecrawl minute. */
-export const RUNS_PER_HOUR = 4;
-/** Runs one person may start in an hour. */
-export const RUNS_PER_USER_PER_HOUR = 2;
+/**
+ * Runs started in an hour, deployment-wide. A loose guard: the workbench
+ * is the owner's, and the Firecrawl bucket in readPageFacts is the real
+ * limit (a full run is about a minute of it, MAX_RUN_LOTS reads).
+ */
+export const RUNS_PER_HOUR = 20;
 /** A run still going past this is failed by its watchdog. */
 export const RUN_TIMEOUT_MS = 15 * 60_000;
 /** Traces live this long; the tail is a window, not a log. */
@@ -67,11 +71,6 @@ const RECENT_TRACES_CAP = 50;
 
 const limiter = new RateLimiter(components.rateLimiter, {
 	nerdStuffGlobal: { kind: "fixed window", period: HOUR, rate: RUNS_PER_HOUR },
-	nerdStuffUser: {
-		kind: "fixed window",
-		period: HOUR,
-		rate: RUNS_PER_USER_PER_HOUR,
-	},
 });
 
 const runDoc = schema.doc("pipelineRuns");
@@ -122,25 +121,80 @@ export const pickLots = (
 };
 
 /**
- * Start a run over one roaster. Signed in, two limiters (one per person,
- * one for the deployment), and one run at a time: a run takes the whole
- * Firecrawl minute, and two would only defer each other.
+ * Who may start a run: the user appConfig names as the workbench user,
+ * or any signed-in user while none is named (dev, tests). There is no
+ * admin role in the schema; this key is the plan's stand-in for one.
+ */
+const requireWorkbenchUser = async (ctx: MutationCtx): Promise<Id<"users">> => {
+	const userId = await requireUserId(ctx);
+	const config = await ctx.db.query("appConfig").unique();
+	const allowed = config?.workbenchUserId;
+	if (allowed !== undefined && allowed !== userId) {
+		throw new ConvexError("The workbench is the owner's. Watching is open.");
+	}
+	return userId;
+};
+
+/** Name the one user who may start runs. `npx convex run nerdStuff:allowWorkbenchUser '{"email":"..."}'`. */
+export const allowWorkbenchUser = internalMutation({
+	args: { email: v.string() },
+	handler: async (ctx, args) => {
+		const user = await ctx.db
+			.query("users")
+			.withIndex("by_email", (q) => q.eq("email", args.email))
+			.unique();
+		if (user === null) {
+			throw new ConvexError(`No user with email ${args.email}.`);
+		}
+		const config = await ctx.db.query("appConfig").unique();
+		await (config === null
+			? ctx.db.insert("appConfig", { workbenchUserId: user._id })
+			: ctx.db.patch(config._id, { workbenchUserId: user._id }));
+		return user._id;
+	},
+	returns: v.id("users"),
+});
+
+/** The run going now, if any. */
+const activeRun = async (
+	ctx: MutationCtx
+): Promise<Doc<"pipelineRuns"> | null> => {
+	const found = await Promise.all(
+		(["queued", "running"] as const).map((status) =>
+			ctx.db
+				.query("pipelineRuns")
+				.withIndex("by_status", (q) => q.eq("status", status))
+				.first()
+		)
+	);
+	return found.find((run) => run !== null) ?? null;
+};
+
+/** End a run that is still going; the loop exits at its next check. */
+const settle = async (
+	ctx: MutationCtx,
+	run: Doc<"pipelineRuns">,
+	message: string
+): Promise<void> => {
+	await ctx.db.patch("pipelineRuns", run._id, {
+		currentStage: undefined,
+		message,
+		status: "stopped",
+		updatedAt: Date.now(),
+	});
+	await cancelWatchdog(ctx, run);
+};
+
+/**
+ * Start a run over one roaster. The workbench user, one hourly limiter,
+ * and a run already going is stopped first: two runs through the one-token
+ * Firecrawl bucket would only defer each other, and the owner should not
+ * have to wait on a full roaster to look at another.
  */
 export const start = mutation({
 	args: { commit: v.optional(v.boolean()), roasterId: v.id("roasters") },
 	handler: async (ctx, args) => {
-		const userId = await requireUserId(ctx);
-		const active = await Promise.all(
-			(["queued", "running"] as const).map((status) =>
-				ctx.db
-					.query("pipelineRuns")
-					.withIndex("by_status", (q) => q.eq("status", status))
-					.first()
-			)
-		);
-		if (active.some((run) => run !== null)) {
-			throw new ConvexError("A run is already going. Wait for it to finish.");
-		}
+		const userId = await requireWorkbenchUser(ctx);
 		const roaster = await ctx.db.get("roasters", args.roasterId);
 		if (roaster === null) {
 			throw new ConvexError("No such roaster.");
@@ -156,8 +210,11 @@ export const start = mutation({
 		if (productIds.length === 0) {
 			throw new ConvexError("This roaster has no current lot with a page.");
 		}
-		await limiter.limit(ctx, "nerdStuffUser", { key: userId, throws: true });
 		await limiter.limit(ctx, "nerdStuffGlobal", { throws: true });
+		const going = await activeRun(ctx);
+		if (going !== null) {
+			await settle(ctx, going, "superseded");
+		}
 		const now = Date.now();
 		const runId = await ctx.db.insert("pipelineRuns", {
 			commit: args.commit ?? false,
@@ -204,13 +261,7 @@ export const stop = mutation({
 		if (run.status !== "queued" && run.status !== "running") {
 			return null;
 		}
-		await ctx.db.patch("pipelineRuns", args.runId, {
-			currentStage: undefined,
-			message: "stopped",
-			status: "stopped",
-			updatedAt: Date.now(),
-		});
-		await cancelWatchdog(ctx, run);
+		await settle(ctx, run, "stopped");
 		return null;
 	},
 	returns: v.null(),

@@ -24,6 +24,8 @@ Two things made "just add a debug page" the wrong shape. The interesting reads a
 
 **Who may do what.** Anyone may read runs and traces; the queries take no identity. Starting needs sign-in, two fixed-window limiters (four runs an hour deployment-wide, two per person) and no other run `queued` or `running`. Only the owner may stop a run. A watchdog fails a run still going after fifteen minutes.
 
+**2026-09-21 (owner, after the route landed). The workbench is the owner's, so the limits loosen.** The route is for the owner to look at the pipeline and show it, not a feature visitors use, so the guards above change in three ways. One limiter, twenty runs an hour deployment-wide; the per-person limiter goes. The Firecrawl bucket inside `readPageFacts` was always the real limit, and twenty runs of ten lots is under an hour of it. `appConfig.workbenchUserId` names the one user who may start runs (set with `internal.nerdStuff.allowWorkbenchUser` by email); while unset, any signed-in user may, which is the dev and test default. And a new run supersedes the one going instead of being refused: `start` marks it `stopped` with message "superseded", cancels its watchdog, and the old loop exits at its next `activeAt` check. The owner does not have to wait on a full roaster to look at another. The loop stays a scheduler chain beside the sweep, not a workpool entry: the `recommendationPool` bounds next-bag runs, and the budget every page read shares is the rate limiter, which this loop already goes through.
+
 ## Considered alternatives
 
 - **Trace only the workbench's reads.** Simplest, and it would have made the page a demo of a demo. The production reads are what need explaining.

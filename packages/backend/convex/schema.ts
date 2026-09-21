@@ -32,6 +32,9 @@ export default defineSchema({
 		// concurrent scheduled provisions don't both call AgentMail; expired
 		// claims are treated as stale and can be retaken.
 		alertInboxClaimedAt: v.optional(v.number()),
+		// The one user who may start /nerd-stuff runs (ADR-0018). Unset, any
+		// signed-in user may; set with nerdStuff.allowWorkbenchUser.
+		workbenchUserId: v.optional(v.id("users")),
 	}),
 
 	crawlSources: defineTable({
@@ -408,7 +411,8 @@ export default defineSchema({
 		providerAccountId: v.string(),
 	})
 		.index("by_provider_account_id", ["providerAccountId"])
-		.index("by_handle", ["handle"]),
+		.index("by_handle", ["handle"])
+		.index("by_email", ["email"]),
 
 	watches: defineTable({
 		muted: v.boolean(),

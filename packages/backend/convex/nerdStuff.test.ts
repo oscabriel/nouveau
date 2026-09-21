@@ -147,6 +147,7 @@ const setup = async (lotCount = 2): Promise<Fixture> => {
 	registerFirecrawl(t);
 	const ids = await t.run(async (ctx) => {
 		const userId = await ctx.db.insert("users", {
+			email: "one@example.com",
 			name: "One",
 			providerAccountId: "one",
 		});
@@ -247,17 +248,49 @@ describe("nerdStuff.start", () => {
 		).rejects.toThrow("Sign in required");
 	});
 
-	test("one run at a time, deployment-wide", async () => {
+	test("a new run supersedes the one going: it is stopped, its watchdog cancelled", async () => {
 		const fx = await setup();
 		stubProviders();
-		await asUser(fx.t, fx.userId).mutation(api.nerdStuff.start, {
+		const first = await asUser(fx.t, fx.userId).mutation(api.nerdStuff.start, {
 			roasterId: fx.roasterId,
+		});
+		const second = await asUser(fx.t, fx.otherId).mutation(
+			api.nerdStuff.start,
+			{ roasterId: fx.roasterId }
+		);
+		expect(await getRun(fx, first)).toMatchObject({
+			message: "superseded",
+			status: "stopped",
+		});
+		expect(await getRun(fx, second)).toMatchObject({ status: "running" });
+		// The first run's watchdog is gone; the second's watchdog and first lot remain.
+		expect(await pending(fx)).toHaveLength(3);
+		expect(await fx.t.query(api.nerdStuff.latestRun, {})).toMatchObject({
+			_id: second,
+		});
+	});
+
+	test("once appConfig names a workbench user, only that user may start", async () => {
+		const fx = await setup();
+		stubProviders();
+		await fx.t.mutation(internal.nerdStuff.allowWorkbenchUser, {
+			email: "one@example.com",
 		});
 		await expect(
 			asUser(fx.t, fx.otherId).mutation(api.nerdStuff.start, {
 				roasterId: fx.roasterId,
 			})
-		).rejects.toThrow("already going");
+		).rejects.toThrow("the owner's");
+		await expect(
+			asUser(fx.t, fx.userId).mutation(api.nerdStuff.start, {
+				roasterId: fx.roasterId,
+			})
+		).resolves.toBeDefined();
+		await expect(
+			fx.t.mutation(internal.nerdStuff.allowWorkbenchUser, {
+				email: "nobody@example.com",
+			})
+		).rejects.toThrow("No user");
 	});
 
 	test("picks at most MAX_RUN_LOTS lots, those missing a page fact first, newest first", () => {

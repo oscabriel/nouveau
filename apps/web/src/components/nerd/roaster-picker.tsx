@@ -17,8 +17,10 @@ const selectClass =
 /**
  * The run controls: a hairline select over the active roasters, the COMMIT
  * dot toggle (off by default; a run is a viewer, ADR-0018), START as a caps
- * action, and STOP while the viewer's own run is going. Signed out, the
- * sign-in block stands in for the whole row; anyone may still watch.
+ * action, and STOP beside it while the viewer's own run is going. START
+ * during a run supersedes it (the backend stops the old one), so a roaster
+ * never has to finish before the next. Signed out, the sign-in block stands
+ * in for the whole row; anyone may still watch.
  */
 export const RoasterPicker = ({
 	onStarted,
@@ -96,7 +98,6 @@ export const RoasterPicker = ({
 			<select
 				aria-label="Roaster"
 				className={selectClass}
-				disabled={going}
 				onChange={(event) => {
 					setRoasterId(event.target.value);
 				}}
@@ -118,7 +119,16 @@ export const RoasterPicker = ({
 			>
 				Commit
 			</DotToggle>
-			{mine ? (
+			<button
+				className={`${navLinkClass} disabled:text-muted-foreground disabled:no-underline`}
+				disabled={busy}
+				onClick={onStart}
+				title={going ? "Stops the run going and starts this one." : undefined}
+				type="button"
+			>
+				Start
+			</button>
+			{mine && (
 				<button
 					className={`${navLinkClass} disabled:text-muted-foreground disabled:no-underline`}
 					disabled={busy}
@@ -126,16 +136,6 @@ export const RoasterPicker = ({
 					type="button"
 				>
 					Stop
-				</button>
-			) : (
-				<button
-					className={`${navLinkClass} disabled:text-muted-foreground disabled:no-underline`}
-					disabled={busy || going}
-					onClick={onStart}
-					title={going ? "A run is already going." : undefined}
-					type="button"
-				>
-					Start
 				</button>
 			)}
 			{failure !== null && (

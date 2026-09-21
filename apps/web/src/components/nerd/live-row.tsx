@@ -52,7 +52,8 @@ export const statusWord = (run: Run): string => {
 			return `Done, ${run.total} ${run.total === 1 ? "lot" : "lots"}`;
 		}
 		case "stopped": {
-			return `Stopped after ${run.index} of ${run.total}`;
+			const how = run.message === "superseded" ? "Superseded" : "Stopped";
+			return `${how} after ${run.index} of ${run.total}`;
 		}
 		case "failed": {
 			return run.message === undefined ? "Failed" : `Failed, ${run.message}`;
