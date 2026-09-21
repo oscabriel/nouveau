@@ -7,6 +7,7 @@ import { useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useState } from "react";
 
+import { DotToggle } from "@/components/dot-toggle";
 import { DropTable } from "@/components/drop-index";
 import Loader from "@/components/loader";
 import { PageTitle } from "@/components/page-title";
@@ -20,7 +21,11 @@ type PersonalizedRow = FunctionReturnType<
 
 const FEED_PAGE_LIMIT = 100;
 
-type Filter = "all" | DropType | "your";
+const isFamily = (value: unknown): value is TastingFamily =>
+	typeof value === "string" &&
+	(TASTING_FAMILIES as readonly string[]).includes(value);
+
+type Filter = "all" | DropType;
 
 const DELIVERY_LABEL = {
 	delivered: "Alert delivered",
@@ -62,17 +67,15 @@ const deliveryUnderRow = (row: PersonalizedRow, columnCount: number) => (
 	<DeliveryRow columnCount={columnCount} row={row} />
 );
 
-/** The filter strip above both bodies; counts come from the global feed. */
+/** The type tabs above the table; counts come from the global feed. */
 const FilterTabs = ({
 	feed,
 	filter,
 	onChange,
-	showYour,
 }: {
 	feed: GlobalRow[];
 	filter: Filter;
 	onChange: (next: Filter) => void;
-	showYour: boolean;
 }) => {
 	const counts = {
 		all: feed.length,
@@ -89,9 +92,6 @@ const FilterTabs = ({
 		{ label: DROP_TYPE_LABEL.back_in_stock, value: "back_in_stock" },
 		{ label: DROP_TYPE_LABEL.price_drop, value: "price_drop" },
 	];
-	if (showYour) {
-		tabs.push({ label: "Your roasters", value: "your" });
-	}
 	return (
 		<div className="flex overflow-x-auto">
 			<div
@@ -116,9 +116,7 @@ const FilterTabs = ({
 							type="button"
 						>
 							{tab.label}
-							{tab.value !== "your" && (
-								<span className="tnum text-xs">({counts[tab.value]})</span>
-							)}
+							<span className="tnum text-xs">({counts[tab.value]})</span>
 						</button>
 					);
 				})}
@@ -127,76 +125,293 @@ const FilterTabs = ({
 	);
 };
 
-const GlobalDrops = ({
-	family,
-	feed,
-	filter,
-}: {
+/** The column filters, all client-side over the loaded rows. */
+interface ColumnFilters {
+	city: string;
 	family: TastingFamily | null;
-	feed: GlobalRow[];
-	filter: Exclude<Filter, "your">;
+	maxPriceDollars: string;
+	origin: string;
+	roaster: string;
+}
+
+const NO_FILTERS: ColumnFilters = {
+	city: "",
+	family: null,
+	maxPriceDollars: "",
+	origin: "",
+	roaster: "",
+};
+
+/** The price a row is filtered on: the event's new price, else the lot's minimum. */
+const rowPriceCents = (row: GlobalRow): number | null =>
+	row.newPriceCents ?? row.minPriceCents;
+
+const applyFilters = <Row extends GlobalRow>(
+	rows: Row[],
+	type: Filter,
+	filters: ColumnFilters
+): Row[] => {
+	const maxCents = Math.round(Number(filters.maxPriceDollars) * 100);
+	const priceCapped = !Number.isNaN(maxCents) && maxCents > 0;
+	const originTerm = filters.origin.trim().toLowerCase();
+	return rows.filter((row) => {
+		if (type !== "all" && row.type !== type) {
+			return false;
+		}
+		if (filters.roaster !== "" && row.roasterSlug !== filters.roaster) {
+			return false;
+		}
+		if (
+			filters.city !== "" &&
+			`${row.roasterCity}, ${row.roasterState}` !== filters.city
+		) {
+			return false;
+		}
+		if (
+			originTerm !== "" &&
+			!(row.origin ?? "").toLowerCase().includes(originTerm)
+		) {
+			return false;
+		}
+		if (filters.family !== null && !row.families.includes(filters.family)) {
+			return false;
+		}
+		if (priceCapped) {
+			const cents = rowPriceCents(row);
+			if (cents === null || cents > maxCents) {
+				return false;
+			}
+		}
+		return true;
+	});
+};
+
+/** Distinct values of one column across the rows, sorted for a select. */
+const distinct = <Row,>(rows: Row[], pick: (row: Row) => string): string[] =>
+	[...new Set(rows.map(pick))].toSorted((a, b) => a.localeCompare(b));
+
+const selectClass =
+	"text-muted-foreground focus-visible:border-foreground h-11 max-w-44 border-b bg-transparent text-sm outline-none";
+const inputClass =
+	"placeholder:text-muted-foreground focus-visible:border-foreground h-11 border-b bg-transparent text-sm outline-none [&::-webkit-search-cancel-button]:hidden";
+
+/**
+ * The filter row under the tabs: one hairline control per column (roaster,
+ * city, origin, tasting-note family, price at most), the MY ROASTERS dot
+ * toggle first when signed in, and CLEAR when anything is set. The roaster
+ * and city choices are the ones present in the loaded rows.
+ */
+const DropFilterRow = ({
+	filters,
+	mine,
+	onFilters,
+	onMine,
+	rows,
+	showMine,
+}: {
+	filters: ColumnFilters;
+	mine: boolean;
+	onFilters: (next: ColumnFilters) => void;
+	onMine: (next: boolean) => void;
+	rows: GlobalRow[];
+	showMine: boolean;
 }) => {
-	const byType =
-		filter === "all" ? feed : feed.filter((row) => row.type === filter);
-	const shown =
-		family === null
-			? byType
-			: byType.filter((row) => row.families.includes(family));
+	const roasters = distinct(rows, (row) => row.roasterSlug).map((slug) => ({
+		name: rows.find((row) => row.roasterSlug === slug)?.roasterName ?? slug,
+		slug,
+	}));
+	const cities = distinct(
+		rows,
+		(row) => `${row.roasterCity}, ${row.roasterState}`
+	);
+	const set = <Key extends keyof ColumnFilters>(
+		key: Key,
+		value: ColumnFilters[Key]
+	) => {
+		onFilters({ ...filters, [key]: value });
+	};
+	const anySet =
+		filters.roaster !== "" ||
+		filters.city !== "" ||
+		filters.origin !== "" ||
+		filters.family !== null ||
+		filters.maxPriceDollars !== "";
 	return (
-		<div className="px-5 md:px-10">
-			<DropTable rows={shown} />
-			{shown.length === 0 && (
-				<p className="text-muted-foreground py-16 text-center text-[15px]">
-					{family === null
-						? "No drops yet. The crawlers are out there checking."
-						: `No recent lot with ${family} notes.`}
-				</p>
+		<div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 px-5 md:px-10">
+			{showMine && (
+				<DotToggle
+					onClick={() => {
+						onMine(!mine);
+					}}
+					pressed={mine}
+				>
+					My roasters
+				</DotToggle>
+			)}
+			<select
+				aria-label="Roaster"
+				className={selectClass}
+				onChange={(event) => {
+					set("roaster", event.target.value);
+				}}
+				value={filters.roaster}
+			>
+				<option value="">Any roaster</option>
+				{roasters.map((roaster) => (
+					<option key={roaster.slug} value={roaster.slug}>
+						{roaster.name}
+					</option>
+				))}
+			</select>
+			<select
+				aria-label="City"
+				className={selectClass}
+				onChange={(event) => {
+					set("city", event.target.value);
+				}}
+				value={filters.city}
+			>
+				<option value="">Any city</option>
+				{cities.map((city) => (
+					<option key={city} value={city}>
+						{city}
+					</option>
+				))}
+			</select>
+			<input
+				aria-label="Origin contains"
+				autoComplete="off"
+				className={`${inputClass} w-36`}
+				onChange={(event) => {
+					set("origin", event.target.value);
+				}}
+				placeholder="Origin"
+				type="search"
+				value={filters.origin}
+			/>
+			<select
+				aria-label="Tasting-note family"
+				className={selectClass}
+				onChange={(event) => {
+					const { value } = event.target;
+					set("family", isFamily(value) ? value : null);
+				}}
+				value={filters.family ?? ""}
+			>
+				<option value="">Any notes</option>
+				{TASTING_FAMILIES.map((family) => (
+					<option key={family} value={family}>
+						{family}
+					</option>
+				))}
+			</select>
+			<input
+				aria-label="Price at most, dollars"
+				autoComplete="off"
+				className={`${inputClass} w-28`}
+				min="0"
+				onChange={(event) => {
+					set("maxPriceDollars", event.target.value);
+				}}
+				placeholder="≤ $ price"
+				step="any"
+				type="number"
+				value={filters.maxPriceDollars}
+			/>
+			{anySet && (
+				<button
+					className="label-caps text-muted-foreground hover:text-foreground inline-flex min-h-11 items-center"
+					onClick={() => {
+						onFilters(NO_FILTERS);
+					}}
+					type="button"
+				>
+					Clear
+				</button>
 			)}
 		</div>
 	);
 };
 
-const YourDrops = ({ mine }: { mine: PersonalizedRow[] }) => (
-	<div className="px-5 md:px-10">
-		<DropTable rows={mine} underRow={deliveryUnderRow} />
-		{mine.length === 0 && (
-			<p className="text-muted-foreground py-16 text-center text-[15px]">
+/** The empty line under an empty table, naming what was asked for. */
+const emptyLine = (mine: boolean, filtered: boolean): React.ReactNode => {
+	if (mine && !filtered) {
+		return (
+			<>
 				Nothing from your roasters yet. Find one to watch in the{" "}
 				<Link className="underline" to="/roasters">
 					roaster directory
 				</Link>
 				.
-			</p>
-		)}
-	</div>
-);
+			</>
+		);
+	}
+	if (filtered) {
+		return "No recent drop matches those filters.";
+	}
+	return "No drops yet. The crawlers are out there checking.";
+};
 
 /**
- * The drop feed as a table (ADR-0015): one row per event, the landing's
- * filter tabs above, the event price with its strike on price drops and
- * the lot's minimum "from"-prefixed otherwise. Signed in, a Your roasters
- * tab carries the watched roasters' events with the delivery line under
- * each row (ADR-0016). The tab strip sits above both bodies, so the Your
- * roasters tab has a way back; signing out while on it falls back to All.
+ * The drop feed as a table (ADR-0015): one row per event, the type tabs
+ * above, then a filter row (batch 8, 2026-09-21): roaster, city, origin,
+ * tasting-note family and a price cap, all client-side over the loaded
+ * rows, plus MY ROASTERS signed in, which swaps the rows for the watched
+ * roasters' events with the delivery line under each (ADR-0016; it was the
+ * Your roasters tab). `?family=` seeds the family filter from a pill link.
+ * The event price carries its strike on price drops and the lot's minimum
+ * "from"-prefixed otherwise.
  */
 const FeedComponent = () => {
 	const { isAuthenticated } = useConvexAuth();
 	const { family } = useSearch({ from: "/drops" });
-	const [chosen, setChosen] = useState<Filter>("all");
-	const filter: Filter = chosen === "your" && !isAuthenticated ? "all" : chosen;
+	const [type, setType] = useState<Filter>("all");
+	const [wantMine, setWantMine] = useState(false);
+	const [filters, setFilters] = useState<ColumnFilters>({
+		...NO_FILTERS,
+		family: family ?? null,
+	});
+	const mine = wantMine && isAuthenticated;
 	const feed = useQuery(api.feed.globalFeed, { limit: FEED_PAGE_LIMIT });
-	const mine = useQuery(
+	const personal = useQuery(
 		api.feed.personalizedFeed,
 		isAuthenticated ? { limit: FEED_PAGE_LIMIT } : "skip"
 	);
+	const filtered =
+		type !== "all" ||
+		filters.roaster !== "" ||
+		filters.city !== "" ||
+		filters.origin !== "" ||
+		filters.family !== null ||
+		filters.maxPriceDollars !== "";
 
 	let body: React.ReactNode;
-	if (feed === undefined) {
+	if (feed === undefined || (mine && personal === undefined)) {
 		body = <Loader />;
-	} else if (filter === "your") {
-		body = mine === undefined ? <Loader /> : <YourDrops mine={mine} />;
+	} else if (mine && personal !== undefined) {
+		const shown = applyFilters(personal, type, filters);
+		body = (
+			<div className="px-5 md:px-10">
+				<DropTable rows={shown} underRow={deliveryUnderRow} />
+				{shown.length === 0 && (
+					<p className="text-muted-foreground py-16 text-center text-[15px]">
+						{emptyLine(true, filtered)}
+					</p>
+				)}
+			</div>
+		);
 	} else {
-		body = <GlobalDrops family={family ?? null} feed={feed} filter={filter} />;
+		const shown = applyFilters(feed, type, filters);
+		body = (
+			<div className="px-5 md:px-10">
+				<DropTable rows={shown} />
+				{shown.length === 0 && (
+					<p className="text-muted-foreground py-16 text-center text-[15px]">
+						{emptyLine(false, filtered)}
+					</p>
+				)}
+			</div>
+		);
 	}
 
 	return (
@@ -210,22 +425,25 @@ const FeedComponent = () => {
 			</div>
 			<div className="mt-12 md:mt-16">
 				{feed !== undefined && (
-					<FilterTabs
-						feed={feed}
-						filter={filter}
-						onChange={setChosen}
-						showYour={isAuthenticated}
-					/>
+					<>
+						<FilterTabs feed={feed} filter={type} onChange={setType} />
+						<div className="mt-8">
+							<DropFilterRow
+								filters={filters}
+								mine={mine}
+								onFilters={setFilters}
+								onMine={setWantMine}
+								rows={feed}
+								showMine={isAuthenticated}
+							/>
+						</div>
+					</>
 				)}
-				<div className={feed === undefined ? "" : "mt-16"}>{body}</div>
+				<div className={feed === undefined ? "" : "mt-10"}>{body}</div>
 			</div>
 		</main>
 	);
 };
-
-const isFamily = (value: unknown): value is TastingFamily =>
-	typeof value === "string" &&
-	(TASTING_FAMILIES as readonly string[]).includes(value);
 
 /**
  * `?family=fruity` narrows the table to lots whose roaster notes fall in
