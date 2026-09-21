@@ -149,7 +149,7 @@ export const run = internalAction({
 				internal.recommendationAgent.searchCatalogQuery,
 				{
 					flavour: filters?.flavour,
-					maxGrams: undefined,
+					maxGrams: filters?.maxGrams,
 					maxPriceCents: filters?.maxPriceCents,
 					minGrams: filters?.minGrams,
 					now: Date.now(),

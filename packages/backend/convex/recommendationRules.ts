@@ -70,6 +70,83 @@ export const structuredFilters = v.object({
 	process: v.optional(v.string()),
 });
 export type StructuredFilters = Infer<typeof structuredFilters>;
+
+/**
+ * The flavour buckets Jev sorts a request into, each with the words a lot's
+ * text may use for it. A bucket name is a direction, not a word roasters
+ * write ("chocolatey" appears on almost no bag; "chocolate" and "cocoa" do),
+ * so the catalog search matches any synonym, on word boundaries, and never
+ * the bare bucket name.
+ */
+export const FLAVOUR_SYNONYMS = {
+	balanced: ["balanced", "smooth", "easy", "classic", "everyday", "round"],
+	bright: ["bright", "acidity", "acidic", "juicy", "tea", "crisp", "lively"],
+	chocolatey: [
+		"chocolate",
+		"cocoa",
+		"cacao",
+		"nutty",
+		"nut",
+		"caramel",
+		"toffee",
+		"brown sugar",
+		"praline",
+		"hazelnut",
+		"almond",
+	],
+	floral: [
+		"floral",
+		"flower",
+		"flowers",
+		"jasmine",
+		"blossom",
+		"perfume",
+		"bergamot",
+		"rose",
+		"lavender",
+		"hibiscus",
+	],
+	fruity: [
+		"fruit",
+		"fruity",
+		"berry",
+		"berries",
+		"peach",
+		"apricot",
+		"cherry",
+		"plum",
+		"mango",
+		"tropical",
+		"apple",
+		"grape",
+		"strawberry",
+		"blueberry",
+		"raspberry",
+		"citrus",
+	],
+} as const;
+export type FlavourBucket = keyof typeof FLAVOUR_SYNONYMS;
+export const FLAVOUR_BUCKET_NAMES = Object.keys(
+	FLAVOUR_SYNONYMS
+) as FlavourBucket[];
+
+const isFlavourBucket = (term: string): term is FlavourBucket =>
+	(FLAVOUR_BUCKET_NAMES as readonly string[]).includes(term);
+
+/**
+ * True when the lot's text carries the flavour term. A known bucket matches
+ * any of its synonyms as a whole word; any other string (an origin, a
+ * process, a term the model typed) matches as a plain substring.
+ */
+export const textMatchesTerm = (text: string, term: string): boolean => {
+	const lower = text.toLowerCase();
+	if (!isFlavourBucket(term)) {
+		return lower.includes(term.toLowerCase());
+	}
+	return FLAVOUR_SYNONYMS[term].some((word) =>
+		new RegExp(`\\b${word}\\b`, "u").test(lower)
+	);
+};
 export const evidenceValidator = v.object({
 	id: v.string(),
 	observedAt: v.number(),

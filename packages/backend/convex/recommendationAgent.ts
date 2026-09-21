@@ -33,6 +33,7 @@ import {
 	preferenceScore,
 	preferenceTokens,
 	structuredFilters,
+	textMatchesTerm,
 	WHY_MAX_CHARS,
 } from "./recommendationRules";
 
@@ -253,10 +254,12 @@ export const describeFilters = (filters: StructuredFilters): string => {
 // ---------------------------------------------------------------------------
 
 const lotMatchesTerm = (candidate: Candidate, term: string): boolean =>
-	[candidate.name, ...candidate.evidence.map((item) => item.passage)]
-		.join(" ")
-		.toLowerCase()
-		.includes(term);
+	textMatchesTerm(
+		[candidate.name, ...candidate.evidence.map((item) => item.passage)].join(
+			" "
+		),
+		term
+	);
 
 /** What the readLotFacts tool hands back to the model. */
 export interface ReadLotResult {
@@ -423,7 +426,9 @@ export const searchCatalog: Tool = createTool({
 		flavour: z
 			.enum(["balanced", "bright", "chocolatey", "floral", "fruity"])
 			.optional()
-			.describe("A flavour direction the lots' text must mention"),
+			.describe(
+				"A flavour direction; lots match on any word roasters use for it (chocolatey: chocolate, cocoa, caramel, nutty ...)"
+			),
 		maxGrams: z.number().int().positive().optional(),
 		maxPriceCents: z.number().int().positive().optional(),
 		minGrams: z.number().int().positive().optional(),

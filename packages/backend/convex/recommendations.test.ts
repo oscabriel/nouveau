@@ -617,6 +617,47 @@ test("the search tool ranks lots, records them on the run, and applies the typed
 	expect(repeat.recorded.added).toBe(0);
 });
 
+test("a flavour bucket matches its synonyms, not its own name (S3)", async () => {
+	const f = await setup();
+	await f.t.run(async (ctx) => {
+		const productId = await ctx.db.insert("products", {
+			description: "A dark roast blend with chocolate and caramel.",
+			externalId: "blend",
+			firstSeenAt: NOW,
+			handle: "dark-roast-blend",
+			lastSeenAt: NOW,
+			name: "Dark roast blend",
+			roasterId: f.roasterId,
+			status: "current",
+		});
+		await ctx.db.insert("productVariants", {
+			available: true,
+			grams: 340,
+			name: "12oz",
+			observedAt: NOW,
+			priceCents: 1800,
+			productId,
+			sizeObservedAt: NOW,
+		});
+	});
+	const chocolatey = await f.t.query(
+		internal.recommendationAgent.searchCatalogQuery,
+		{ flavour: "chocolatey", now: NOW, query: "dark roast blend" }
+	);
+	expect(chocolatey.rows.map((row) => row.name)).toEqual(["Dark roast blend"]);
+	const floral = await f.t.query(
+		internal.recommendationAgent.searchCatalogQuery,
+		{ flavour: "floral", now: NOW, query: "anything" }
+	);
+	expect(floral.rows.map((row) => row.name)).toEqual(["Fixture coffee"]);
+	// The bag ceiling holds on the same query (S2).
+	const small = await f.t.query(
+		internal.recommendationAgent.searchCatalogQuery,
+		{ maxGrams: 250, now: NOW, query: "anything" }
+	);
+	expect(small.rows.map((row) => row.name)).toEqual(["Fixture coffee"]);
+});
+
 test("readLotFacts reads the page once, stores the facts, and reuses the cache", async () => {
 	const f = await setup();
 	const { run } = await claimWithCandidates(f);
