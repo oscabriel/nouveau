@@ -14,14 +14,17 @@ import { SignInCta } from "@/components/sign-in-cta";
  * THESIS: Nouveau is an index, not a store. One column, centered, sparse;
  *   the page refuses the two-column pitch-plus-feed landing and every card.
  * OWN-WORLD: white ground, black type, one grey, hairline rules, square
- *   corners. Grotesk caps labels at 11px tracked; a text serif for the one
- *   sentence of prose. No accent color; the only color is the coffee itself
- *   (Thornton's 1808 Coffea arabica plate, lot photos).
- * STORY: a visitor sees a specimen, a name, one sentence, three lots, then
- *   the whole recent index; they open a lot, a roaster, or sign in.
- * FIRST VIEWPORT: caps nav top; plate centered; NOUVEAU wordmark; serif
- *   sentence; the primary button (sign in, or Find my next bag signed in,
- *   ADR-0014); LATEST/SHUFFLE and three tiles start at the fold.
+ *   corners. Grotesk caps labels at 11px tracked; a Garamond for the
+ *   wordmark, the titles and the one sentence of prose (amended 2026-09-21,
+ *   was grotesk wordmark + serif lede only). No accent color; the only color
+ *   is the coffee itself (Thornton's 1808 Coffea arabica branch, lot photos).
+ * STORY: a visitor sees the name with the specimen through it, one
+ *   sentence, three lots, then the whole recent index; they open a lot, a
+ *   roaster, or sign in.
+ * FIRST VIEWPORT: caps nav top; the NOUVEAU wordmark spanning the width with
+ *   the branch threaded through the V; serif sentence; the primary button
+ *   (sign in, or Find my next bag signed in, ADR-0014); LATEST/SHUFFLE and
+ *   the tiles start just above the fold at 1440x900.
  * FORM: reference-pinned (theindex.website structure, vanschneider.com
  *   row hover). Code-led, no comp.
  */
@@ -45,29 +48,46 @@ const PrimarySlot = () => {
 	return <SignInCta />;
 };
 
-/** One page for both states (ADR-0014); only the primary slot differs. */
-const LandingComponent = () => {
-	const feed = useQuery(api.feed.globalFeed, { limit: INDEX_LIMIT });
-	return (
-		<main>
-			<section className="flex flex-col items-center px-5 pt-14 text-center md:pt-20">
+/**
+ * The wordmark (owner's mock, 2026-09-21): NOUVEAU in Garamond italic
+ * spanning the viewport, three layers deep. NOU and EAU sit at the back, the Thornton
+ * branch in front of them, and the V in front of the branch, so the branch
+ * threads through the word instead of sitting beside it.
+ */
+const Wordmark = () => (
+	<h1
+		aria-label="Nouveau"
+		className="relative w-full font-serif text-[17.5vw] leading-none font-normal tracking-[-0.01em] uppercase italic"
+	>
+		<span aria-hidden="true" className="flex items-baseline justify-center">
+			<span>Nou</span>
+			<span className="relative inline-block">
 				<img
-					alt="Coffea arabica: a flowering, fruiting branch, engraved and hand-colored for Robert Thornton in 1808"
-					className="h-64 w-auto md:h-96"
+					alt=""
+					className="pointer-events-none absolute top-1/2 left-1/2 z-10 h-[2.05em] w-auto max-w-none -translate-x-1/2 -translate-y-[54%]"
 					fetchPriority="high"
 					height={1160}
 					src="/coffea-arabica.webp"
 					width={1112}
 				/>
-				<h1 className="mt-10 text-[1.75rem] leading-none font-semibold tracking-[0.01em] uppercase md:mt-12 md:text-[2.25rem]">
-					Nouveau
-				</h1>
-				<p className="mt-4 max-w-[44rem] font-serif text-[1.375rem] leading-[1.3] text-balance md:text-[1.75rem]">
-					Track every coffee you try. Get an email when a roaster you watch
-					drops a new lot. Tell the agent what you&apos;re after and it finds
-					your next bag.
+				<span className="relative z-20">V</span>
+			</span>
+			<span>eau</span>
+		</span>
+	</h1>
+);
+
+/** One page for both states (ADR-0014); only the primary slot differs. */
+const LandingComponent = () => {
+	const feed = useQuery(api.feed.globalFeed, { limit: INDEX_LIMIT });
+	return (
+		<main>
+			<section className="flex flex-col items-center px-5 pt-[14vw] text-center md:pt-[9vw]">
+				<Wordmark />
+				<p className="mt-[9vw] max-w-[44rem] font-serif text-[1.5rem] leading-[1.25] text-balance md:text-[1.875rem]">
+					Never forget your favorite cup or miss the next one.
 				</p>
-				<div className="mt-9 min-h-11">
+				<div className="mt-6 min-h-11">
 					<PrimarySlot />
 				</div>
 			</section>
@@ -78,10 +98,10 @@ const LandingComponent = () => {
 				</div>
 			) : (
 				<>
-					<div className="mt-20 px-5 md:mt-28 md:px-10">
+					<div className="mt-16 px-5 md:mt-14 md:px-10">
 						<LatestTiles />
 					</div>
-					<div className="mt-20 px-5 md:mt-28 md:px-10">
+					<div className="mt-16 px-5 md:mt-20 md:px-10">
 						<DropIndex rows={feed} />
 					</div>
 				</>
