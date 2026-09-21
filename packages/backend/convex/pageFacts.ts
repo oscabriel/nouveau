@@ -28,14 +28,23 @@ import {
 	pageTextFromHtml,
 } from "./extraction";
 import type { PageElements } from "./extraction";
+import { NOT_STATED, VOCABULARY_CHOICES } from "./factVocabulary";
+import type { CanonicalField } from "./factVocabulary";
 import { askJev, JEV_MODEL, jevChoice, jevNoul, pickProbability } from "./jev";
 import type { JevQuestion } from "./jev";
 import {
+	canonicalFactConfidenceValidator,
+	canonicalFactsValidator,
 	needsPageFacts,
 	pageFactConfidenceValidator,
 	pageFactsValidator,
 } from "./lotFacts";
-import type { PageFactConfidence, PageFacts } from "./lotFacts";
+import type {
+	CanonicalFactConfidence,
+	CanonicalFacts,
+	PageFactConfidence,
+	PageFacts,
+} from "./lotFacts";
 import { lotShopUrl } from "./lotUrl";
 import { sentenceCandidates } from "./recommendationRules";
 
@@ -211,6 +220,9 @@ export const pageHead = (pageText: string, name: string): string => {
 	return head.slice(0, Math.max(0, head.lastIndexOf("\n")));
 };
 
+/** The question key of one vocabulary Choice (ADR-0010, amended 2026-09-21). */
+const canonicalKey = (id: CanonicalField): string => `canon_${id}`;
+
 /** The Choice options: the page's lines, minus one that spells the hatch, then the hatch. */
 const choiceOptions = (elements: PageElements): string[] => [
 	...elements.lines.filter((line) => line !== NONE_OPTION),
@@ -223,11 +235,13 @@ export const pageJevState = (pageText: string, name: string): string =>
 
 /**
  * The page read's questions: one Choice per field over every line of the
- * page head, one Noul per note-shaped line and per description-sentence
- * candidate, all in a single /v1/systemone request (Jev evaluates them
- * against the state in parallel, so extra questions cost almost nothing;
- * the probe sent 227 options and 233 questions for one page). Every
- * question names the lot when the read knows its name.
+ * page head, one Choice per closed vocabulary (origin country, process
+ * family, roast level band, altitude band), one Noul per note-shaped line
+ * and per description-sentence candidate, all in a single /v1/systemone
+ * request (Jev evaluates them against the state in parallel, so extra
+ * questions cost almost nothing; the probe sent 227 options and 233
+ * questions for one page). Every question names the lot when the read
+ * knows its name.
  */
 export const pageJevQuestions = (
 	elements: PageElements,
@@ -250,6 +264,13 @@ export const pageJevQuestions = (
 			};
 		}
 	}
+	for (const choice of VOCABULARY_CHOICES) {
+		questions[canonicalKey(choice.id)] = {
+			criteria: choice.criteria,
+			instructions: choice.instructions.replaceAll("%COFFEE%", coffee),
+			type: "choice",
+		};
+	}
 	for (const [index, line] of elements.noteLines.entries()) {
 		questions[`note_${index}`] = {
 			...NOTE_LINE_QUESTION,
@@ -268,12 +289,43 @@ export const pageJevQuestions = (
 	return questions;
 };
 
-/** What one answer map yields: the verified facts, Jev's probability per kept fact, the approved sentences. */
+/** What one answer map yields: the verified facts, Jev's probability per kept fact, the canonical enums, the approved sentences. */
 interface Picks {
+	canonical: CanonicalFacts;
+	canonicalConfidence: CanonicalFactConfidence;
 	confidence: PageFactConfidence;
 	facts: PageFacts;
 	sentences: string[];
 }
+
+/**
+ * The canonical enums out of one answer map. Each answer is narrowed
+ * against its own vocabulary plus the hatch; a choice outside it is a
+ * protocol error and leaves the field unset, and `not_stated` leaves it
+ * unset by meaning. Never defaulted.
+ */
+const canonicalFromAnswers = (
+	answers: Record<string, unknown>
+): Pick<Picks, "canonical" | "canonicalConfidence"> => {
+	const canonical: Record<string, string> = {};
+	const canonicalConfidence: CanonicalFactConfidence = {};
+	for (const choice of VOCABULARY_CHOICES) {
+		const chosen = jevChoice(answers[canonicalKey(choice.id)], [
+			...choice.options,
+			NOT_STATED,
+		]);
+		if (chosen === null || chosen.choice === NOT_STATED) {
+			continue;
+		}
+		canonical[choice.id] = chosen.choice;
+		const probability = pickProbability(chosen);
+		if (probability !== undefined) {
+			canonicalConfidence[choice.id] = probability;
+		}
+	}
+	// Every stored key was checked against its field's own option list above.
+	return { canonical: canonical as CanonicalFacts, canonicalConfidence };
+};
 
 /**
  * The lines out of one answer map, then the facts cut from them. A choice
@@ -329,6 +381,7 @@ const picksFromAnswers = (
 		}
 	}
 	return {
+		...canonicalFromAnswers(answers),
 		confidence,
 		facts,
 		sentences: approved.slice(0, MAX_PAGE_SENTENCES),
@@ -496,6 +549,10 @@ export const resetReads = internalMutation({
 
 /** What one page read yields: facts for the product, sentences for evidence. */
 export interface PageRead {
+	/** The closed facts as vocabulary enums, `not_stated` already dropped. */
+	canonical: CanonicalFacts;
+	/** Jev's probability for the chosen option, per canonical fact. */
+	canonicalConfidence: CanonicalFactConfidence;
 	/** Jev's probability for the picked line, per stored fact. */
 	confidence: PageFactConfidence;
 	facts: PageFacts;
@@ -686,6 +743,8 @@ export const readPageFacts = async (
 ): Promise<PageRead> => {
 	const pageText = await readPageWithinBudget(ctx, url, budget);
 	const empty: PageRead = {
+		canonical: {},
+		canonicalConfidence: {},
 		confidence: {},
 		facts: {},
 		pageText,
@@ -720,6 +779,43 @@ export const readPageFacts = async (
 	};
 };
 
+/** The read's stored half: what `store` takes, less the product id. */
+export const storeArgs = (
+	read: PageRead
+): Pick<
+	PageRead,
+	"canonical" | "canonicalConfidence" | "confidence" | "facts"
+> => ({
+	canonical: read.canonical,
+	canonicalConfidence: read.canonicalConfidence,
+	confidence: read.confidence,
+	facts: read.facts,
+});
+
+/**
+ * The confidence map after a read: a field the read stored takes the
+ * read's probability (or none, so an earlier read's never sits beside a
+ * value it did not pick); a field an earlier read stored keeps its own.
+ */
+const mergeConfidence = <T extends Record<string, unknown>>(
+	previous: T | undefined,
+	stored: Record<string, unknown>,
+	confidence: T | undefined
+): T => {
+	const kept = Object.entries(previous ?? {}).filter(
+		([field]) => !(field in stored)
+	);
+	return { ...Object.fromEntries(kept), ...confidence } as T;
+};
+
+/** The bookkeeping every read outcome writes: the stamp and the counter. */
+const attemptPatch = (
+	product: Doc<"products">
+): { copyFetchedAt: number; pageReads: number } => ({
+	copyFetchedAt: Date.now(),
+	pageReads: (product.pageReads ?? 0) + 1,
+});
+
 export const scrape = internalAction({
 	// `name`, `deferrals` and `reserved` are optional so reads scheduled
 	// before they existed still run.
@@ -733,19 +829,15 @@ export const scrape = internalAction({
 		url: v.string(),
 	},
 	handler: async (ctx, args) => {
-		let facts: PageFacts = {};
-		let confidence: PageFactConfidence = {};
+		let read: PageRead;
 		const deferrals = args.deferrals ?? 0;
 		// A read at the cap must not hold a slot it will never run in.
 		const mayDefer = deferrals < MAX_READ_DEFERRALS;
 		try {
-			({ confidence, facts } = await readPageFacts(
-				ctx,
-				args.url,
-				"",
-				args.name ?? "",
-				{ reserve: mayDefer, reserved: args.reserved }
-			));
+			read = await readPageFacts(ctx, args.url, "", args.name ?? "", {
+				reserve: mayDefer,
+				reserved: args.reserved,
+			});
 		} catch (error) {
 			// A deferred read never reached the page: the stamp from the
 			// schedule stands and the try does not spend one of the lot's
@@ -770,21 +862,12 @@ export const scrape = internalAction({
 			return null;
 		}
 		await ctx.runMutation(internal.pageFacts.store, {
-			confidence,
-			facts,
+			...storeArgs(read),
 			productId: args.productId,
 		});
 		return null;
 	},
 	returns: v.null(),
-});
-
-/** The bookkeeping every read outcome writes: the stamp and the counter. */
-const attemptPatch = (
-	product: Doc<"products">
-): { copyFetchedAt: number; pageReads: number } => ({
-	copyFetchedAt: Date.now(),
-	pageReads: (product.pageReads ?? 0) + 1,
 });
 
 /**
@@ -796,7 +879,10 @@ const attemptPatch = (
  */
 export const store = internalMutation({
 	args: {
-		// Optional so reads scheduled before it existed still store.
+		// Everything but the facts is optional so reads scheduled before a
+		// field existed still store.
+		canonical: v.optional(canonicalFactsValidator),
+		canonicalConfidence: v.optional(canonicalFactConfidenceValidator),
 		confidence: v.optional(pageFactConfidenceValidator),
 		facts: pageFactsValidator,
 		productId: v.id("products"),
@@ -806,24 +892,31 @@ export const store = internalMutation({
 		if (product === null) {
 			return null;
 		}
-		if (Object.keys(args.facts).length === 0) {
-			await ctx.db.patch("products", args.productId, attemptPatch(product));
-			return null;
-		}
-		// The confidence follows the facts: a field this read stored takes
-		// this read's probability (or none, so an earlier read's never sits
-		// beside a value it did not pick); a field an earlier read stored
-		// keeps its own. Only patched when the facts patch is.
-		const kept = Object.entries(product.pageFactConfidence ?? {}).filter(
-			([field]) => !(field in args.facts)
-		);
+		const canonical = args.canonical ?? {};
 		await ctx.db.patch("products", args.productId, {
 			...attemptPatch(product),
-			pageFactConfidence: {
-				...Object.fromEntries(kept),
-				...args.confidence,
-			},
-			pageFacts: { ...product.pageFacts, ...args.facts },
+			// Each map is patched only when its facts are, and its confidence
+			// follows its facts (mergeConfidence).
+			...(Object.keys(args.facts).length === 0
+				? {}
+				: {
+						pageFactConfidence: mergeConfidence(
+							product.pageFactConfidence,
+							args.facts,
+							args.confidence
+						),
+						pageFacts: { ...product.pageFacts, ...args.facts },
+					}),
+			...(Object.keys(canonical).length === 0
+				? {}
+				: {
+						canonicalFactConfidence: mergeConfidence(
+							product.canonicalFactConfidence,
+							canonical,
+							args.canonicalConfidence
+						),
+						canonicalFacts: { ...product.canonicalFacts, ...canonical },
+					}),
 		});
 		return null;
 	},

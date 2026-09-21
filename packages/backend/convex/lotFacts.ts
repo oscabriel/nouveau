@@ -7,6 +7,14 @@
 import type { Infer } from "convex/values";
 import { v } from "convex/values";
 
+import {
+	ALTITUDE_BAND_OPTIONS,
+	ORIGIN_COUNTRY_OPTIONS,
+	optionLabel,
+	PROCESS_FAMILY_OPTIONS,
+	ROAST_LEVEL_BAND_OPTIONS,
+} from "./factVocabulary";
+
 /**
  * Facts read off the roaster's rendered product page, owned by the page
  * scrape. The feed write never touches this object, so the next hourly crawl
@@ -41,6 +49,47 @@ export const pageFactConfidenceValidator = v.object({
 	variety: v.optional(v.number()),
 });
 export type PageFactConfidence = Infer<typeof pageFactConfidenceValidator>;
+
+/** A union of one literal per option key, so the stored field is the vocabulary's type. */
+const optionUnion = <const T extends readonly [string, string, ...string[]]>(
+	options: T
+) =>
+	v.union(
+		...(options.map((option) => v.literal(option)) as {
+			[K in keyof T]: ReturnType<typeof v.literal<T[K]>>;
+		})
+	);
+
+/**
+ * The canonical facts (ADR-0010, amended 2026-09-21): one enum per closed
+ * field, chosen by Jev from factVocabulary's lists in the same request as
+ * the line picks. `not_stated` is never stored; it leaves the field unset.
+ * The verbatim page fact stays the display value; this is what a filter or
+ * the recommendation prompt relies on.
+ */
+export const canonicalFactsValidator = v.object({
+	altitudeBand: v.optional(optionUnion(ALTITUDE_BAND_OPTIONS)),
+	originCountry: v.optional(optionUnion(ORIGIN_COUNTRY_OPTIONS)),
+	processFamily: v.optional(optionUnion(PROCESS_FAMILY_OPTIONS)),
+	roastLevelBand: v.optional(optionUnion(ROAST_LEVEL_BAND_OPTIONS)),
+});
+export type CanonicalFacts = Infer<typeof canonicalFactsValidator>;
+
+/** Jev's probability for the chosen option, per stored canonical fact. */
+export const canonicalFactConfidenceValidator = v.object({
+	altitudeBand: v.optional(v.number()),
+	originCountry: v.optional(v.number()),
+	processFamily: v.optional(v.number()),
+	roastLevelBand: v.optional(v.number()),
+});
+export type CanonicalFactConfidence = Infer<
+	typeof canonicalFactConfidenceValidator
+>;
+
+/** The canonical facts on a stored product, empty when the page has not been read. */
+export const canonicalOf = (product: {
+	canonicalFacts?: CanonicalFacts;
+}): CanonicalFacts => product.canonicalFacts ?? {};
 
 /** A lot has at most this many descriptors; the rest is prose. */
 export const MAX_NOTES = 8;
@@ -220,6 +269,7 @@ export const verifyProducer = (raw: string): string | null => {
 
 /** The stored fields the merge reads; every one optional on `products`. */
 export interface FactSource {
+	canonicalFacts?: CanonicalFacts;
 	copyFetchedAt?: number;
 	elevation?: string;
 	origin?: string;
@@ -279,15 +329,26 @@ export const FACT_LABELS = [
 /**
  * The facts as one evidence passage for the recommendation prompt:
  * `Process: Washed. Variety: Heirloom. Tasting notes: a, b, c.` Null when
- * the lot has none.
+ * the lot has none. With `canonical`, the canonical origin country and
+ * process family fill in where the verbatim field is missing, labelled as
+ * what they are.
  */
-export const factPassage = (facts: LotFacts): string | null => {
+export const factPassage = (
+	facts: LotFacts,
+	canonical: CanonicalFacts = {}
+): string | null => {
 	const parts: string[] = [];
 	for (const [key, label] of FACT_LABELS) {
 		const value = facts[key];
 		if (value !== null) {
 			parts.push(`${label}: ${value}.`);
 		}
+	}
+	if (facts.origin === null && canonical.originCountry !== undefined) {
+		parts.push(`Origin country: ${optionLabel(canonical.originCountry)}.`);
+	}
+	if (facts.process === null && canonical.processFamily !== undefined) {
+		parts.push(`Process family: ${optionLabel(canonical.processFamily)}.`);
 	}
 	if (facts.notes.length > 0) {
 		parts.push(`Tasting notes: ${facts.notes.join(", ")}.`);

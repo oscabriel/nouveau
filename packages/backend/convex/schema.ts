@@ -2,7 +2,12 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 import { healthValidator } from "./health";
-import { pageFactConfidenceValidator, pageFactsValidator } from "./lotFacts";
+import {
+	canonicalFactConfidenceValidator,
+	canonicalFactsValidator,
+	pageFactConfidenceValidator,
+	pageFactsValidator,
+} from "./lotFacts";
 import {
 	candidateValidator,
 	pickValidator,
@@ -182,6 +187,15 @@ export default defineSchema({
 		// has not seen this lot's variants yet. Written only at upsert; the
 		// page scrape never touches it.
 		anyAvailable: v.optional(v.boolean()),
+		// Jev's probability for the option it chose, per stored canonical fact.
+		canonicalFactConfidence: v.optional(canonicalFactConfidenceValidator),
+		// The closed facts as vocabulary enums (ADR-0010, amended 2026-09-21):
+		// origin country, process family, roast level band, altitude band,
+		// chosen by Jev from factVocabulary's lists in the page read. Owned by
+		// the page scrape like pageFacts; the verbatim pick stays the display
+		// value, this is what a filter can rely on. `not_stated` is never
+		// stored.
+		canonicalFacts: v.optional(canonicalFactsValidator),
 		// When the roaster's product page was last read for pageFacts (ADR-0005).
 		// Set at the request so concurrent viewers share one scrape; a read that
 		// left facts missing keeps the stamp and is retried after

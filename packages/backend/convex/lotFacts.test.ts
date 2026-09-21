@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+	canonicalOf,
 	factPassage,
 	hasMissingPageFacts,
 	isThin,
@@ -176,6 +177,24 @@ describe("merge", () => {
 			"Origin: Kenya. Process: Washed. Variety: SL28. Elevation: 1800 MASL. Tasting notes: Blackberry, Cocoa."
 		);
 		expect(factPassage(mergedFacts({}))).toBeNull();
+	});
+
+	test("the canonical origin country and process family fill the passage only where the verbatim field is missing", () => {
+		const canonical = {
+			originCountry: "el_salvador",
+			processFamily: "honey",
+		} as const;
+		expect(factPassage(mergedFacts({}), canonical)).toBe(
+			"Origin country: El Salvador. Process family: Honey."
+		);
+		expect(
+			factPassage(
+				mergedFacts({ origin: "Kenya", process: "Washed" }),
+				canonical
+			)
+		).toBe("Origin: Kenya. Process: Washed.");
+		expect(canonicalOf({})).toEqual({});
+		expect(canonicalOf({ canonicalFacts: canonical })).toEqual(canonical);
 	});
 
 	test("a lot is thin until process, variety and notes are all known", () => {

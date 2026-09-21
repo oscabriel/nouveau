@@ -1,6 +1,11 @@
 import type { Doc } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
-import { factPassage, mergedFacts, needsPageFacts } from "./lotFacts";
+import {
+	canonicalOf,
+	factPassage,
+	mergedFacts,
+	needsPageFacts,
+} from "./lotFacts";
 import { lotShopUrl } from "./lotUrl";
 import {
 	CANDIDATE_LIMIT,
@@ -85,7 +90,7 @@ export const catalogText = (product: Doc<"products">): string =>
 	[
 		product.name,
 		product.description,
-		factPassage(mergedFacts(product)),
+		factPassage(mergedFacts(product), canonicalOf(product)),
 		...(product.tags ?? []),
 	]
 		.filter(Boolean)
@@ -126,7 +131,7 @@ const makeCandidate = async (
 	}
 	// The lot's facts (feed columns, page facts filling gaps) lead as one
 	// labelled passage; description sentences follow.
-	const facts = factPassage(mergedFacts(product));
+	const facts = factPassage(mergedFacts(product), canonicalOf(product));
 	const passage = (product.description ?? "").slice(0, 2500);
 	const evidence: Candidate["evidence"] = [
 		...(facts === null ? [] : [facts]),
@@ -182,7 +187,7 @@ interface RoasterQueue {
 const productHaystack = (product: Doc<"products">): string =>
 	[
 		product.name,
-		factPassage(mergedFacts(product)),
+		factPassage(mergedFacts(product), canonicalOf(product)),
 		product.description,
 		...(product.tags ?? []),
 	]

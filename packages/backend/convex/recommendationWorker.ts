@@ -13,7 +13,7 @@ import { v } from "convex/values";
 
 import { components, internal } from "./_generated/api";
 import { env, internalAction } from "./_generated/server";
-import { readPageFacts } from "./pageFacts";
+import { readPageFacts, storeArgs } from "./pageFacts";
 import type { ReadLotResult } from "./recommendationAgent";
 import {
 	buildAgent,
@@ -85,8 +85,7 @@ export const readLot = internalAction({
 				candidate.name
 			);
 			await ctx.runMutation(internal.pageFacts.store, {
-				confidence: page.confidence,
-				facts: page.facts,
+				...storeArgs(page),
 				productId: candidate.productId,
 			});
 			const passages = pagePassages(

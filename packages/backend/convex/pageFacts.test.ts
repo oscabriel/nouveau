@@ -73,6 +73,8 @@ const STUB_PICK_PROBABILITY = 0.9;
 
 /** The line Jev's stub picks per field: the fixture's spec lines, as the reader offers them. */
 const STUB_PICKS: Record<string, RegExp> = {
+	canon_originCountry: /^ethiopia$/u,
+	canon_processFamily: /^natural$/u,
 	elevation: /1,900/u,
 	process: /Natural/u,
 	variety: /Heirloom/u,
@@ -680,8 +682,29 @@ describe("pageFacts.scrape", () => {
 			true
 		);
 		expect(Object.keys(body.questions)).toEqual(
-			expect.arrayContaining(["process", "variety", "note_0"])
+			expect.arrayContaining([
+				"process",
+				"variety",
+				"note_0",
+				"canon_altitudeBand",
+				"canon_originCountry",
+				"canon_processFamily",
+				"canon_roastLevelBand",
+			])
 		);
+		// The vocabulary Choices are over the fixed lists, the hatch last.
+		expect(
+			Object.keys(body.questions.canon_processFamily?.criteria ?? {})
+		).toEqual([
+			"washed",
+			"natural",
+			"honey",
+			"anaerobic_or_experimental",
+			"wet_hulled",
+			"mixed",
+			"other",
+			"not_stated",
+		]);
 		for (const question of Object.values(body.questions)) {
 			expect(question.instructions).toContain('"Ethiopia Mullugeta Muntasha"');
 		}
@@ -758,6 +781,70 @@ describe("pageFacts.scrape", () => {
 			process: STUB_PICK_PROBABILITY,
 			variety: STUB_PICK_PROBABILITY,
 		});
+	});
+
+	test("the vocabulary Choices store the enum and its probability; not_stated and a choice outside the vocabulary leave the field unset", async () => {
+		const fx = await setup();
+		// Origin: not_stated. Roast: a key from another vocabulary, which the
+		// stub cannot find in the criteria and so answers with the hatch that
+		// is not in this vocabulary ("none"), a protocol error. Altitude: no
+		// pick, the same "none".
+		stubProviders({
+			picks: {
+				...STUB_PICKS,
+				canon_originCountry: /^not_stated$/u,
+				canon_roastLevelBand: /^washed$/u,
+			},
+		});
+		await fx.t.action(internal.pageFacts.scrape, {
+			name: "Ethiopia Mullugeta Muntasha",
+			productId: fx.lotId,
+			url: PAGE_URL,
+		});
+		const read = await product(fx);
+		expect(read?.canonicalFacts).toEqual({ processFamily: "natural" });
+		expect(read?.canonicalFactConfidence).toEqual({
+			processFamily: STUB_PICK_PROBABILITY,
+		});
+		// The verbatim pick is still the stored display value.
+		expect(read?.pageFacts?.process).toBe("Natural");
+	});
+
+	test("not_stated is never stored: the validator refuses it", async () => {
+		const fx = await setup();
+		await expect(
+			fx.t.mutation(internal.pageFacts.store, {
+				canonical: {
+					processFamily: "not_stated" as unknown as "washed",
+				},
+				facts: {},
+				productId: fx.lotId,
+			})
+		).rejects.toThrow();
+	});
+
+	test("a later read's canonical facts merge over the earlier read's, and their confidence follows", async () => {
+		const fx = await setup({
+			canonicalFactConfidence: { originCountry: 0.6, processFamily: 0.7 },
+			canonicalFacts: { originCountry: "ethiopia", processFamily: "washed" },
+		});
+		await fx.t.mutation(internal.pageFacts.store, {
+			canonical: { processFamily: "natural", roastLevelBand: "light" },
+			canonicalConfidence: { roastLevelBand: 0.8 },
+			facts: {},
+			productId: fx.lotId,
+		});
+		const stored = await product(fx);
+		expect(stored?.canonicalFacts).toEqual({
+			originCountry: "ethiopia",
+			processFamily: "natural",
+			roastLevelBand: "light",
+		});
+		expect(stored?.canonicalFactConfidence).toEqual({
+			originCountry: 0.6,
+			roastLevelBand: 0.8,
+		});
+		expect(stored?.pageFacts).toBeUndefined();
 	});
 
 	test("Firecrawl's rate limit falls back to the shop's own page at no credit; the read counts", async () => {
