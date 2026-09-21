@@ -160,8 +160,7 @@ const RoastersComponent = () => {
 					</Link>
 				</PageTitle>
 				<p className="text-muted-foreground mt-4 max-w-prose text-sm md:text-[15px]">
-					The American specialty roasters Nouveau watches around the clock, with
-					their live catalogs.
+					The specialty roasters we&apos;re watching around the clock.
 				</p>
 				<div className="mt-10 md:mt-12">
 					<SearchField

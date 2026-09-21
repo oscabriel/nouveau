@@ -22,7 +22,7 @@ export const ActivityFeed = () => {
 				title="Activity"
 			/>
 			<p className="text-muted-foreground mt-4 max-w-prose text-sm md:text-[15px]">
-				What people are tasting, every lot logged across Nouveau, newest first.
+				What people are tasting from around the world.
 			</p>
 			<div className="mt-12 md:mt-16">
 				{feed === undefined && <Loader />}

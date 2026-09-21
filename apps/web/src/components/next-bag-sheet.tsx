@@ -208,9 +208,9 @@ export const NextBagSheet = () => {
 				</div>
 				<div className="mt-6">
 					<p className="text-muted-foreground text-sm">
-						Describe the coffee you&apos;re after. The agent searches the
-						catalog, checks stock and hands you up to five in-stock picks, one
-						card at a time.
+						Describe the coffee you&apos;re after. Our agent searches the
+						catalog to find the best match based on tasting notes, origin,
+						price, and any other criteria you specify.
 					</p>
 					<div className="mt-4">
 						<PaneContent />
