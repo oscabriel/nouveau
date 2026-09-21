@@ -70,7 +70,7 @@ export const LogForm = ({
 				if (removedSave === null) {
 					toast.success("Logged.");
 				} else {
-					toast.success("Logged. Removed from Want to try.", {
+					toast.success("Logged. Removed from your try list.", {
 						action: {
 							label: "Undo",
 							onClick: () => {

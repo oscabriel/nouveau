@@ -146,7 +146,7 @@ const OwnerRecord = ({
 
 			<section aria-labelledby="try-heading" className="mt-16 md:mt-24">
 				<h2 className="text-xl md:text-2xl" id="try-heading">
-					Want to try
+					Try list
 					<span className="text-muted-foreground tnum ml-2 text-xs">
 						({saved.length})
 					</span>
