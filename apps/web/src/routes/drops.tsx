@@ -81,9 +81,9 @@ const FilterTabs = ({
 		tabs.push({ label: "Your roasters", value: "your" });
 	}
 	return (
-		<div className="flex justify-center">
+		<div className="flex overflow-x-auto">
 			<div
-				className="flex max-w-full gap-5 overflow-x-auto border-b md:gap-8"
+				className="mx-auto flex shrink-0 gap-5 border-b md:gap-8"
 				role="tablist"
 			>
 				{tabs.map((tab) => {
