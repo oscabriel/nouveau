@@ -17,25 +17,26 @@ const scrollToTop = () => {
 const PlateDetail = ({
 	alt,
 	caption,
-	captionFor,
 	height,
 	src,
+	wiki,
 }: {
 	alt: string;
 	caption: string;
-	captionFor: string;
+	/* Rendered height in px; inline, because preflight's height:auto beats the attribute. */
 	height: number;
 	src: string;
+	wiki: string;
 }) => (
 	<a
 		className="group inline-flex flex-col items-center gap-3"
-		href={captionFor}
+		href={`https://en.wikipedia.org/wiki/${wiki}`}
 	>
 		<img
 			alt={alt}
-			className="w-auto transition-opacity group-hover:opacity-80"
-			height={height}
+			className="transition-opacity group-hover:opacity-80"
 			src={src}
+			style={{ height, width: "auto" }}
 		/>
 		<span className="font-caveat text-foreground text-2xl leading-none md:text-3xl">
 			{caption}
@@ -115,31 +116,31 @@ export const SiteFooter = () => (
 					<PlateDetail
 						alt="Five stamens of Coffea arabica, the flower's pollen-bearing organs, engraved and hand-colored for Thornton in 1808"
 						caption="Stamen"
-						captionFor="https://en.wikipedia.org/wiki/Stamen"
-						height={88}
+						height={112}
 						src={stamens}
+						wiki="Stamen"
 					/>
 					<PlateDetail
 						alt="The gynoecium of Coffea arabica, the flower's pistil, engraved and hand-colored for Thornton in 1808"
 						caption="Gynoecium"
-						captionFor="https://en.wikipedia.org/wiki/Gynoecium"
-						height={88}
+						height={128}
 						src={pistil}
+						wiki="Gynoecium"
 					/>
 					<DrupePair />
 					<PlateDetail
 						alt="A seed of Coffea arabica, a coffee bean, engraved and hand-colored for Thornton in 1808"
 						caption="Seed"
-						captionFor="https://en.wikipedia.org/wiki/Seed"
-						height={88}
+						height={96}
 						src={seed}
+						wiki="Seed"
 					/>
 					<PlateDetail
 						alt="A Coffea arabica seed sitting in its aril cup, engraved and hand-colored for Thornton in 1808"
 						caption="Aril"
-						captionFor="https://en.wikipedia.org/wiki/Aril"
-						height={88}
+						height={96}
 						src={arilCup}
+						wiki="Aril"
 					/>
 				</div>
 				<a
