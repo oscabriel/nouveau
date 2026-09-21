@@ -128,6 +128,108 @@ describe("user handles", () => {
 	});
 });
 
+describe("updateMe (ADR-0011, ADR-0016)", () => {
+	test("changes the name alone", async () => {
+		const { t } = await setup();
+		const userId = await createUser(t, "Ada Lovelace", "google-ada");
+		await asUser(t, userId).mutation(api.users.updateMe, {
+			name: "Ada K. Lovelace",
+		});
+		const user = await t.run((ctx) => ctx.db.get("users", userId));
+		expect(user?.name).toBe("Ada K. Lovelace");
+		expect(user?.handle).toBe("ada-lovelace");
+	});
+
+	test("a handle change keeps the old handle as a redirect", async () => {
+		const { t } = await setup();
+		const userId = await createUser(t, "Ada Lovelace", "google-ada");
+		await asUser(t, userId).mutation(api.users.updateMe, {
+			handle: "ada-2",
+		});
+		const user = await t.run((ctx) => ctx.db.get("users", userId));
+		expect(user?.handle).toBe("ada-2");
+		const redirect = await t.run(
+			async (ctx) =>
+				await ctx.db
+					.query("handleRedirects")
+					.withIndex("by_handle", (q) => q.eq("handle", "ada-lovelace"))
+					.unique()
+		);
+		expect(redirect?.userId).toBe(userId);
+	});
+
+	test("reclaiming a retired handle removes its redirect row", async () => {
+		const { t } = await setup();
+		const userId = await createUser(t, "Ada Lovelace", "google-ada");
+		await asUser(t, userId).mutation(api.users.updateMe, {
+			handle: "ada-2",
+		});
+		await asUser(t, userId).mutation(api.users.updateMe, {
+			handle: "ada-lovelace",
+		});
+		const rows = await t.run(
+			async (ctx) => await ctx.db.query("handleRedirects").collect()
+		);
+		expect(rows).toHaveLength(1);
+		expect(rows[0]?.handle).toBe("ada-2");
+	});
+
+	test("a taken handle is rejected", async () => {
+		const { t } = await setup();
+		const first = await createUser(t, "Ada Lovelace", "google-ada-1");
+		const second = await createUser(t, "Ada Lovelace", "google-ada-2");
+		await expect(
+			asUser(t, second).mutation(api.users.updateMe, {
+				handle: "ada-lovelace",
+			})
+		).rejects.toThrow("That handle is taken");
+		const user = await t.run((ctx) => ctx.db.get("users", first));
+		expect(user?.handle).toBe("ada-lovelace");
+	});
+
+	test("a reserved handle is rejected", async () => {
+		const { t } = await setup();
+		const userId = await createUser(t, "Ada Lovelace", "google-ada");
+		await expect(
+			asUser(t, userId).mutation(api.users.updateMe, { handle: "settings" })
+		).rejects.toThrow("reserved");
+	});
+
+	test("a malformed handle is rejected", async () => {
+		const { t } = await setup();
+		const userId = await createUser(t, "Ada Lovelace", "google-ada");
+		await expect(
+			asUser(t, userId).mutation(api.users.updateMe, { handle: "Ada!" })
+		).rejects.toThrow("Handles are");
+	});
+
+	test("a legacy row takes its first handle with no redirect row", async () => {
+		const { t } = await setup();
+		const userId = await t.run((ctx) =>
+			ctx.db.insert("users", {
+				name: "Grace Hopper",
+				providerAccountId: "google-legacy",
+			})
+		);
+		await asUser(t, userId).mutation(api.users.updateMe, {
+			handle: "grace",
+		});
+		const user = await t.run((ctx) => ctx.db.get("users", userId));
+		expect(user?.handle).toBe("grace");
+		const rows = await t.run(
+			async (ctx) => await ctx.db.query("handleRedirects").collect()
+		);
+		expect(rows).toHaveLength(0);
+	});
+
+	test("nothing signed out", async () => {
+		const { t } = await setup();
+		await expect(
+			t.mutation(api.users.updateMe, { name: "Nobody" })
+		).rejects.toThrow("Sign in required");
+	});
+});
+
 describe("profile lookup (logs.profile)", () => {
 	const setupUser = async () => {
 		const { t } = await setup();

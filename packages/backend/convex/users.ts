@@ -2,8 +2,13 @@ import { vGoogleProfile } from "@convex-dev/auth/providers/oauth/google";
 import { v } from "convex/values";
 
 import { internalMutation, mutation, query } from "./_generated/server";
-import { claimHandle, deriveBaseHandle } from "./handles";
-import { optionalUserId } from "./identity";
+import {
+	claimHandle,
+	deriveBaseHandle,
+	isReserved,
+	isValidHandle,
+} from "./handles";
+import { optionalUserId, requireUserId } from "./identity";
 
 /**
  * Create the user row for a first-time Google sign-in and return its id. The
@@ -44,6 +49,88 @@ export const createUser = internalMutation({
 		return userId;
 	},
 	returns: v.id("users"),
+});
+
+/**
+ * Save the account's own fields: the handle and the name (ADR-0011,
+ * ADR-0016). The handle's rules are the derivation's, checked here rather
+ * than trusted; a change keeps the old handle as a `handleRedirects` row so
+ * no shared `/$user` link rots, and a row for the new handle is removed —
+ * the handle is live again, so the redirect can never fire past the
+ * current-handle lookup. Absent fields stay alone; `null` is not an option:
+ * a row always keeps a name or a handle once it has one.
+ */
+export const updateMe = mutation({
+	args: {
+		handle: v.optional(v.string()),
+		name: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const userId = await requireUserId(ctx);
+		const user = await ctx.db.get(userId);
+		if (user === null) {
+			throw new Error("Unknown user");
+		}
+		const patch: { handle?: string; name?: string } = {};
+		if (args.name !== undefined) {
+			const name = args.name.trim();
+			if (name === "") {
+				throw new Error("Name cannot be empty");
+			}
+			if (name.length > 80) {
+				throw new Error("Name is capped at 80 characters");
+			}
+			patch.name = name;
+		}
+		if (args.handle !== undefined && args.handle !== user.handle) {
+			const handle = args.handle.trim().toLowerCase();
+			if (!isValidHandle(handle)) {
+				throw new Error(
+					"Handles are lowercase letters, digits and dashes, up to 40 characters"
+				);
+			}
+			if (isReserved(handle)) {
+				throw new Error("That name is reserved");
+			}
+			const taken = await ctx.db
+				.query("users")
+				.withIndex("by_handle", (q) => q.eq("handle", handle))
+				.unique();
+			if (taken !== null && taken._id !== userId) {
+				throw new Error("That handle is taken");
+			}
+			// The change keeps the old handle as a redirect, unless a row for it
+			// already exists (an earlier change reused it) — one row per handle.
+			const previousHandle = user.handle;
+			if (previousHandle !== undefined) {
+				const previous = await ctx.db
+					.query("handleRedirects")
+					.withIndex("by_handle", (q) => q.eq("handle", previousHandle))
+					.unique();
+				if (previous === null) {
+					await ctx.db.insert("handleRedirects", {
+						handle: previousHandle,
+						userId,
+					});
+				}
+			}
+			// Reclaiming a retired handle removes its redirect row: by_handle
+			// answers first, so the row could never fire again anyway.
+			const reclaimed = await ctx.db
+				.query("handleRedirects")
+				.withIndex("by_handle", (q) => q.eq("handle", handle))
+				.unique();
+			if (reclaimed !== null) {
+				await ctx.db.delete("handleRedirects", reclaimed._id);
+			}
+			patch.handle = handle;
+		}
+		if (Object.keys(patch).length > 0) {
+			await ctx.db.patch(userId, patch);
+		}
+		return null;
+	},
+	returns: v.null(),
 });
 
 /**
