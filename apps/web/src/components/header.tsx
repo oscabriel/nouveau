@@ -2,7 +2,7 @@ import {
 	useOauth,
 	useSignInWithGoogle,
 } from "@convex-dev/auth/providers/oauth/react";
-import { useConvexAuth } from "@convex-dev/auth/react";
+import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
 import {
 	DropdownMenu,
@@ -23,6 +23,14 @@ const activeProps = { className: "underline" };
 
 /** Caps menu item, same shape as the header links it drops from. */
 const menuItemClass = `${navLinkClass} justify-start px-2 text-foreground`;
+
+/**
+ * The label is the person, not the data: the first word of their Google
+ * account name (ADR-0012 amendment). Fallbacks exist for rows that lack a
+ * name; the users-document id never renders.
+ */
+const firstName = (name: string | undefined): string | undefined =>
+	name?.trim().split(/\s+/u)[0];
 
 const SignInButton = () => {
 	const { signInGoogle } = useSignInWithGoogle(api.auth);
@@ -55,18 +63,20 @@ const SignInButton = () => {
 };
 
 /**
- * The handle's dropdown: settings, and the LIGHT / DARK theme pair (ADR-0012,
- * ADR-0013). Sign out is not here; it lives in /settings/account.
+ * The label's dropdown: the LIGHT / DARK theme pair (ADR-0013), settings,
+ * and sign out at the bottom (ADR-0012 amendment). The link target is
+ * `/$user` by handle-or-id path (ADR-0011); the label is display only.
  */
-const HandleMenu = ({ handle, path }: { handle: string; path: string }) => {
+const HandleMenu = ({ label, path }: { label: string; path: string }) => {
 	const { resolved, choose } = useThemeControls();
+	const { signOut } = useAuthActions();
 	const themeItemClass = (active: boolean) =>
 		`${menuItemClass} text-muted-foreground hover:text-foreground ${
 			active ? "text-foreground" : ""
 		}`;
 	const sides = [
-		{ label: "Light", target: "light" },
-		{ label: "Dark", target: "dark" },
+		{ name: "Light", target: "light" },
+		{ name: "Dark", target: "dark" },
 	] as const;
 	return (
 		<DropdownMenu>
@@ -76,10 +86,10 @@ const HandleMenu = ({ handle, path }: { handle: string; path: string }) => {
 					<Link activeProps={activeProps} params={{ user: path }} to="/$user" />
 				}
 			>
-				{handle}
+				{label}
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end" className="min-w-40">
-				{sides.map(({ label, target }) => (
+				{sides.map(({ name, target }) => (
 					<DropdownMenuItem
 						className={themeItemClass(resolved === target)}
 						key={target}
@@ -87,7 +97,7 @@ const HandleMenu = ({ handle, path }: { handle: string; path: string }) => {
 							choose(target);
 						}}
 					>
-						{label}
+						{name}
 					</DropdownMenuItem>
 				))}
 				<DropdownMenuSeparator />
@@ -97,6 +107,15 @@ const HandleMenu = ({ handle, path }: { handle: string; path: string }) => {
 				>
 					Settings
 				</DropdownMenuItem>
+				<DropdownMenuSeparator />
+				<DropdownMenuItem
+					className={menuItemClass}
+					onSelect={() => {
+						void signOut();
+					}}
+				>
+					Sign out
+				</DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);
@@ -105,9 +124,10 @@ const HandleMenu = ({ handle, path }: { handle: string; path: string }) => {
 /**
  * Site header: one row of caps labels, one nav, no bar and no rule. The left
  * side names what the site is about (Nouveau, Roasters, Drops), the right
- * names the people (Activity, then Log in or the handle). Below `md` the
- * right group wraps under the left instead of mounting twice. The handle
- * carries the dropdown, so settings and theme are one click deep.
+ * names the people (Activity, then Log in or the person's first name). Below
+ * `md` the right group wraps under the left instead of mounting twice. The
+ * name carries the dropdown, so settings, theme and sign out are one click
+ * deep.
  */
 const Header = () => {
 	const { isAuthenticated, isLoading } = useConvexAuth();
@@ -116,18 +136,25 @@ const Header = () => {
 	// no-op when the inbox already exists. Lives here because the nav renders
 	// exactly once.
 	const ensureAlertInbox = useMutation(api.notifications.ensureAlertInbox);
+	const ensureHandle = useMutation(api.users.ensureMyHandle);
 	useEffect(() => {
 		if (isAuthenticated) {
 			void ensureAlertInbox();
+			// The handle backfill for rows that predate ADR-0011 (the id never
+			// renders; the first name does), a no-op once a handle exists.
+			void ensureHandle();
 		}
-	}, [ensureAlertInbox, isAuthenticated]);
+	}, [ensureAlertInbox, ensureHandle, isAuthenticated]);
 
-	const handle = me?.handle ?? me?.id ?? undefined;
+	// The link resolves by handle-or-id path, so a row whose handle has not
+	// landed yet still reaches its profile through the legacy id (ADR-0011).
+	const path = me?.handle ?? me?.id ?? undefined;
+	const label = firstName(me?.name) ?? me?.handle ?? "Account";
 	let authControl: React.ReactNode;
 	if (isLoading) {
 		authControl = null;
-	} else if (isAuthenticated && handle !== undefined) {
-		authControl = <HandleMenu handle={handle} path={handle} />;
+	} else if (isAuthenticated && path !== undefined) {
+		authControl = <HandleMenu label={label} path={path} />;
 	} else if (isAuthenticated) {
 		// Signed in but the user record has not arrived; render nothing yet.
 		authControl = null;
