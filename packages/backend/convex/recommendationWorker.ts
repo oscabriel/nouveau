@@ -136,7 +136,7 @@ export const run = internalAction({
 				return null;
 			}
 			// One fresh thread per run, never reused (ADR-0017): the thread is
-			// the run's HOW IT LOOKED record.
+			// the run's record, kept after the pane stops showing it.
 			const threadId = await createThread(ctx, components.agent, {
 				title: "next-bag",
 			});

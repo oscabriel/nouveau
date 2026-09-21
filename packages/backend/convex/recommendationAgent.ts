@@ -1,8 +1,9 @@
 import { createOpenAI } from "@ai-sdk/openai";
 // The next-bag agent loop's pieces (ADR-0017): the catalog search the tools
-// run, the tool wrappers the model calls, and the per-pick pickLot handoff. The loop is OpenAI only (ADR-0017, amendment of 2026-09-20). The run-document lifecycle
-// (quotas, watchdog, retries) stays in recommendations.ts; this file owns
-// what the model sees and does.
+// run, the tool wrappers the model calls, and the per-pick pickLot handoff.
+// The loop is OpenAI only (ADR-0017, amendment of 2026-09-20). The
+// run-document lifecycle (quotas, watchdog, retries) stays in
+// recommendations.ts; this file owns what the model sees and does.
 //
 // Tools wrap the internal queries and mutations the old worker owned, so
 // authorization and the re-checks are the same code path as the single-call
@@ -26,7 +27,6 @@ import {
 	budgetFilters,
 	candidateValidator,
 	FLAVOUR_BUCKET_NAMES,
-	MAX_PICKS,
 	MAX_STEPS,
 	OPENAI_MODEL,
 	preferenceScore,
@@ -46,8 +46,11 @@ const MAX_FILTER_PRICE_CENTS = 50_000;
 const MIN_FILTER_GRAMS = 50;
 const MAX_FILTER_GRAMS = 5000;
 
-/** The three numeric filters the search tool accepts. */
-export interface SearchFilters {
+/**
+ * The three numeric filters the search tool accepts: the BudgetFilters
+ * shape as the model sends it, before the ceiling rule below.
+ */
+export interface ToolFilters {
 	maxGrams?: number;
 	maxPriceCents?: number;
 	minGrams?: number;
@@ -60,7 +63,7 @@ const limitOrNone = (
 	value === undefined || isNoLimit(value) ? undefined : value;
 
 /** The filters the search applies: a value at its ceiling is dropped. */
-export const appliedFilters = (args: SearchFilters): SearchFilters => ({
+export const appliedFilters = (args: ToolFilters): ToolFilters => ({
 	maxGrams: limitOrNone(args.maxGrams, (g) => g >= MAX_FILTER_GRAMS),
 	maxPriceCents: limitOrNone(
 		args.maxPriceCents,
@@ -336,7 +339,7 @@ export const pickLot: Tool = createTool({
 			why: args.why,
 		});
 		return result.accepted
-			? `Pick ${result.rank} of ${MAX_PICKS} is on the list.`
+			? `Pick ${result.rank} is on the list.`
 			: result.reason;
 	},
 	inputSchema: z.object({

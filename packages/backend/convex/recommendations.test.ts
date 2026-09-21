@@ -928,7 +928,7 @@ test("the pickLot tool turns a refusal into text the model can act on", async ()
 		productId: f.productId,
 		why: "Jasmine echoes the request.",
 	});
-	expect(accepted).toBe("Pick 1 of 5 is on the list.");
+	expect(accepted).toBe("Pick 1 is on the list.");
 });
 
 test("a price change before the pick refuses it without failing the run", async () => {
