@@ -31,6 +31,10 @@ The split is that the left names what the site is about (roasters, drops) and th
 
 **Hero.** The branch turns on its side, about 80 degrees, leaves hanging left, as a pre-rotated export rather than a CSS transform, so the layout box is right and the cream-fringe fix rides along in the same cut. It renders somewhat larger than today's 224 and 272 pixels. It stays the signed-out and signed-in landing's opening image (ADR-0014). The owner will supply a fresh export in `apps/web/public/`.
 
+## Amendment
+
+**2026-09-20 (owner feedback after the live signed-in check). The header label is the first name, not the handle; sign out joins the dropdown.** The signed-in header showed the raw users-document id when the row predates handles ("looks crazy"). The label becomes the user's first name, the first word of the Google account name, falling back to the handle when no name exists; the id never renders. The label still links to `/$user`, addressed by handle-or-id path (ADR-0011), so the display change needs no routing. Sign out, which the header item originally moved to `/settings/account`, also mounts as the dropdown's last item; `/settings/account` keeps its own sign out. The handle remains the stored identity and the profile's address; the label is display only. Rows created before ADR-0011 landed never run the sign-in derivation again (it fires for new sign-ins only), so the backfill rides the app shell: on first load after sign-in the header calls a lazy mutation that claims the row's handle with the same derivation and suffix rules.
+
 ## Considered alternatives
 
 - **Keep the marquee and add the plate elsewhere.** The marquee is the loudest thing on every page and says the domain name, which the wordmark already does. The plate says what the product is about.

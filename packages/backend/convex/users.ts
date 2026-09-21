@@ -1,8 +1,9 @@
 import { vGoogleProfile } from "@convex-dev/auth/providers/oauth/google";
 import { v } from "convex/values";
 
-import { internalMutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { claimHandle, deriveBaseHandle } from "./handles";
+import { optionalUserId } from "./identity";
 
 /**
  * Create the user row for a first-time Google sign-in and return its id. The
@@ -43,6 +44,32 @@ export const createUser = internalMutation({
 		return userId;
 	},
 	returns: v.id("users"),
+});
+
+/**
+ * Backfill a row that predates handles (ADR-0011, ADR-0012 amendment). The
+ * sign-in derivation rides createUser, which fires for new sign-ins only,
+ * so a user who signed in before the field existed would otherwise never
+ * get one. The app shell calls this on first load after sign-in; it claims
+ * the handle with the same derivation and suffix rules, and does nothing
+ * for signed-out callers and rows that already carry a handle.
+ */
+export const ensureMyHandle = mutation({
+	args: {},
+	handler: async (ctx) => {
+		const userId = await optionalUserId(ctx);
+		if (userId === null) {
+			return null;
+		}
+		const user = await ctx.db.get(userId);
+		if (user === null || user.handle !== undefined) {
+			return null;
+		}
+		const handle = await claimHandle(ctx, deriveBaseHandle(user.name));
+		await ctx.db.patch(userId, { handle });
+		return handle;
+	},
+	returns: v.union(v.null(), v.string()),
 });
 
 export const getCurrentUser = query({

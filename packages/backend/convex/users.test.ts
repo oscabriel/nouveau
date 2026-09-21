@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import { deriveBaseHandle, isValidHandle } from "./handles";
 import schema from "./schema";
+import { asUser } from "./test.helpers";
 
 const modules = import.meta.glob("./**/*.ts");
 
@@ -89,6 +90,41 @@ describe("user handles", () => {
 		expect(returned).toBe(legacyId);
 		const user = await t.run((ctx) => ctx.db.get("users", legacyId));
 		expect(user?.handle).toBe("grace-hopper");
+	});
+
+	test("ensureMyHandle backfills a legacy row with the same derivation", async () => {
+		const { t } = await setup();
+		const legacyId = await t.run((ctx) =>
+			ctx.db.insert("users", {
+				name: "Grace Hopper",
+				providerAccountId: "google-legacy",
+			})
+		);
+		const handle = await asUser(t, legacyId).mutation(
+			api.users.ensureMyHandle,
+			{}
+		);
+		expect(handle).toBe("grace-hopper");
+		const user = await t.run((ctx) => ctx.db.get("users", legacyId));
+		expect(user?.handle).toBe("grace-hopper");
+	});
+
+	test("ensureMyHandle leaves rows that already carry a handle", async () => {
+		const { t } = await setup();
+		const userId = await createUser(t, "Ada Lovelace", "google-ada");
+		const handle = await asUser(t, userId).mutation(
+			api.users.ensureMyHandle,
+			{}
+		);
+		expect(handle).toBe(null);
+		const user = await t.run((ctx) => ctx.db.get("users", userId));
+		expect(user?.handle).toBe("ada-lovelace");
+	});
+
+	test("ensureMyHandle does nothing signed out", async () => {
+		const { t } = await setup();
+		const handle = await t.mutation(api.users.ensureMyHandle, {});
+		expect(handle).toBe(null);
 	});
 });
 
