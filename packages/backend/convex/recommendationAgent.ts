@@ -14,6 +14,7 @@ import { Agent, createTool } from "@convex-dev/agent";
 import type { Tool } from "ai";
 import { stepCountIs } from "ai";
 import type { GenericActionCtx } from "convex/server";
+import type { Infer } from "convex/values";
 import { v } from "convex/values";
 import { z } from "zod";
 
@@ -261,12 +262,15 @@ const lotMatchesTerm = (candidate: Candidate, term: string): boolean =>
 		term
 	);
 
-/** What the readLotFacts tool hands back to the model. */
-export interface ReadLotResult {
-	error?: string;
-	note?: string;
-	says?: string[];
-}
+/**
+ * What the readLotFacts tool hands back to the model; the returns validator
+ * of recommendationWorker.readLot, so the tool's result types through it.
+ */
+export const readLotResultValidator = v.union(
+	v.object({ error: v.string() }),
+	v.object({ note: v.string(), says: v.array(v.string()) })
+);
+export type ReadLotResult = Infer<typeof readLotResultValidator>;
 
 interface CatalogRow {
 	productId: Id<"products">;
@@ -451,6 +455,11 @@ export const searchCatalog: Tool = createTool({
 	title: "searchCatalog",
 });
 
+// The page read goes action to action inside the Node runtime: this file
+// exports internalQuery functions, so it cannot import the Node-only
+// readPageFacts that recommendationWorker.readLot uses, and the loop's
+// streaming action already runs there. The extra hop is the price of keeping
+// the queries and the tools in one file.
 export const readLotFacts: Tool = createTool({
 	description:
 		"Read one lot's page details (process, variety, roast level, tasting notes) when the search details are thin. The lot must come from a searchCatalog result. Page reads share a small budget; a read may be unavailable.",
@@ -459,7 +468,7 @@ export const readLotFacts: Tool = createTool({
 			attempt: ctx.attempt,
 			productId: args.productId as Id<"products">,
 			runId: ctx.runId,
-		}) as unknown as Promise<ReadLotResult>,
+		}),
 	inputSchema: z.object({
 		productId: z.string().describe("The productId of a searchCatalog result"),
 	}),

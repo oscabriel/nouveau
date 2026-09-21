@@ -14,10 +14,12 @@ import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import { env, internalAction } from "./_generated/server";
 import { readPageFacts } from "./pageFacts";
+import type { ReadLotResult } from "./recommendationAgent";
 import {
 	buildAgent,
 	buildPrompt,
 	checkWhys,
+	readLotResultValidator,
 	structureRequest,
 } from "./recommendationAgent";
 import {
@@ -40,7 +42,7 @@ export const readLot = internalAction({
 	handler: async (
 		ctx,
 		{ attempt, productId, runId }
-	): Promise<{ error: string } | { note: string; says: string[] }> => {
+	): Promise<ReadLotResult> => {
 		const run = await ctx.runQuery(internal.recommendations.getRun, {
 			attempt,
 			runId,
@@ -114,10 +116,7 @@ export const readLot = internalAction({
 			};
 		}
 	},
-	returns: v.union(
-		v.object({ error: v.string() }),
-		v.object({ note: v.string(), says: v.array(v.string()) })
-	),
+	returns: readLotResultValidator,
 });
 
 export const run = internalAction({
