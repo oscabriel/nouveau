@@ -1009,7 +1009,9 @@ test("the Jev claim check blanks a why that outruns the facts", async () => {
 	installProviders();
 	const kept = await checkWhys(null as never, settled);
 	expect(kept.blanked).toBe(0);
-	// Jev answering no blanks it, and summarize writes the summary line.
+	expect(kept.selections[0]?.why).toBe("Jasmine echoes the floral request.");
+	// Jev answering no blanks it, and summarize writes the blanked selections
+	// with the summary line.
 	vi.stubGlobal(
 		"fetch",
 		vi.fn(() =>
@@ -1021,15 +1023,17 @@ test("the Jev claim check blanks a why that outruns the facts", async () => {
 	);
 	const checked = await checkWhys(null as never, settled);
 	expect(checked.blanked).toBe(1);
+	expect(checked.selections[0]?.why).toBe("");
 	await f.t.mutation(internal.recommendations.summarize, {
 		attempt: 1,
-		blanked: checked.blanked,
 		runId: run._id,
+		selections: checked.selections,
 		summary: "Picked one washed lot.",
 	});
 	expect(await readRun(f, run._id)).toMatchObject({
 		message:
 			"Picked one washed lot. A why sentence was dropped because it did not match the facts.",
+		selections: [{ productId: f.productId, why: "" }],
 	});
 });
 

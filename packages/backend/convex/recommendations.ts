@@ -549,15 +549,37 @@ export const checkCandidate = internalQuery({
 
 /**
  * The loop's last touch: the model's final prose becomes the summary line
- * (ADR-0017), with a note when the Jev claim check blanked a why sentence.
+ * (ADR-0017), and the why check's selections replace the stored ones so a
+ * blanked sentence disappears from the card. The check may only blank; a
+ * list that renames or reorders the picks is ignored and the stored
+ * selections stand.
  */
 export const summarize = internalMutation({
-	args: { ...attemptArgs, blanked: v.number(), summary: v.string() },
-	handler: async (ctx, { attempt, blanked, runId, summary }) => {
+	args: {
+		...attemptArgs,
+		selections: v.array(pickValidator),
+		summary: v.string(),
+	},
+	handler: async (ctx, { attempt, runId, selections, summary }) => {
 		const run = await ctx.db.get(runId);
 		if (!run || run.attempt !== attempt || run.status !== "ready") {
 			return null;
 		}
+		const checked =
+			selections.length === run.selections.length &&
+			selections.every((pick, index) => {
+				const stored = run.selections[index];
+				return (
+					stored !== undefined &&
+					pick.productId === stored.productId &&
+					(pick.why === stored.why || pick.why === "")
+				);
+			})
+				? selections
+				: run.selections;
+		const blanked = checked.filter(
+			(pick, index) => pick.why === "" && run.selections[index]?.why !== ""
+		).length;
 		const note =
 			blanked > 0
 				? " A why sentence was dropped because it did not match the facts."
@@ -567,6 +589,7 @@ export const summarize = internalMutation({
 				summary.length > 0
 					? `${summary}${note}`
 					: `Compared the lots the tools found.${note} Fewer than five matches is a valid result.`,
+			selections: checked,
 			updatedAt: Date.now(),
 		});
 		return null;

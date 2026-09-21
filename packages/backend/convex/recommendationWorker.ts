@@ -217,13 +217,14 @@ export const run = internalAction({
 				return null;
 			}
 			// One Jev Noul per card checks the why against the run's facts;
-			// a failed check blanks the sentence (ADR-0017).
+			// a failed check blanks the sentence and summarize writes the
+			// blanked list back (ADR-0017).
 			const checked = await checkWhys(ctx, settled);
 			const text = await result.text;
 			const summary = text.trim().slice(0, SUMMARY_MAX_CHARS);
 			await ctx.runMutation(internal.recommendations.summarize, {
 				...args,
-				blanked: checked.blanked,
+				selections: checked.selections,
 				summary,
 			});
 		} catch (error) {

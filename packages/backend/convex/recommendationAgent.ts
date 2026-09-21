@@ -621,11 +621,14 @@ export const buildPrompt = (
 // ---------------------------------------------------------------------------
 // The why check (ADR-0017): one parallel batch of Jev Nouls, one per card,
 // after submitPicks. A why whose claims outrun the run's facts is blanked.
+// The caller writes `selections` back through `summarize`; this function
+// only reads.
 // ---------------------------------------------------------------------------
 
 export interface WhyCheck {
 	blanked: number;
 	model: string | null;
+	selections: Doc<"recommendationRuns">["selections"];
 }
 
 export const checkWhys = async (
@@ -634,7 +637,7 @@ export const checkWhys = async (
 ): Promise<WhyCheck> => {
 	const apiKey = env.TYPESAFE_API_KEY;
 	if (!apiKey || run.selections.length === 0) {
-		return { blanked: 0, model: null };
+		return { blanked: 0, model: null, selections: run.selections };
 	}
 	const picks = run.selections.map((pick) => {
 		const candidate = run.candidates.find(
@@ -661,7 +664,7 @@ export const checkWhys = async (
 	}
 	const result = await askJev(apiKey, "next-bag-why", { picks }, questions);
 	if (!result) {
-		return { blanked: 0, model: null };
+		return { blanked: 0, model: null, selections: run.selections };
 	}
 	const selections = run.selections.map((pick) => {
 		const answer = jevNoul(result.answers[pick.productId]);
@@ -672,5 +675,6 @@ export const checkWhys = async (
 	return {
 		blanked: selections.filter((pick) => pick.why === "").length,
 		model: result.model,
+		selections,
 	};
 };
