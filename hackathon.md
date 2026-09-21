@@ -13,7 +13,7 @@
 - **Auth:** Convex Auth
 - **AI models:** OpenAI `gpt-5.6-luna` (Responses API, tool loop on @convex-dev/agent) for Find my next bag; TypeSafe System One `jev-1.13.0` picks and verifies spans in the page reader
 - **Started:** 2026-08-29T18:06:09Z
-- **Last updated:** 2026-09-21T17:24:29Z
+- **Last updated:** 2026-09-21T19:26:04Z
 
 ## Log
 
@@ -156,3 +156,7 @@ Find my next bag is a pane that slides in from the right (`?bag=true`, `/next-ba
 ### 2026-09-21 - 55ce15c
 
 The last scaffold-era pages and controls got the design pass. Stars are ink everywhere; Save is a dot toggle like Watch; tasting notes are text buttons, picked ones underlined, locked ones half grey but still reachable by keyboard; the log row and log form lost their card boxes; `/activity` and the lot page sit in the same inner-page shell as the rest, the lot page with its facts as a hairline list and Sizes as a table whose rows end in an up-right arrow to the exact bag. Every old URL was checked headless against dev and lands on its ADR-0011 address, including the links in an alert email sent before the route change. Both themes were checked full-page at 1440 and 390 on every rebuilt page; the one bug found was `/settings/account` spinning forever signed out. A third code review (`.agents/research/design-pass-review-2026-09-20-part-3.md`) was worked one fix per commit: one `DotToggle` component for the five dot-and-word controls, the try list called the try list everywhere, and the lot page no longer waiting on the viewer query.
+
+### 2026-09-21 - afaeffe
+
+The landing got its wordmark. NOUVEAU is set in EB Garamond italic across the viewport and the branch drawing, trimmed to a transparent WebP, sits over the V so the leaves thread through the word; the standalone hero image is gone and the lot tiles start just above the fold at 1440x900. The font change went wider than the wordmark: EB Garamond replaces Source Serif 4 as the serif, so every page title and the landing lede are Garamond now, while the grotesk keeps labels, tabs, section heads, cells and controls. Before that, a copy pass: LEARN MORE joined the header, `/about` was rewritten as one caps-labeled section per feature, and each inner page got its one-line pitch, then the owner shortened the landing lede to "Never forget your favorite cup or miss the next one." Checked headless on dev at 1440 in both themes and at 390. Prod has not been redeployed since batch 7.
