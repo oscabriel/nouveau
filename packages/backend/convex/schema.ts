@@ -109,10 +109,11 @@ export default defineSchema({
 		notes: v.optional(v.string()),
 		productId: v.id("products"),
 		rating: v.optional(v.number()),
-		// Personal tasting notes (ADR-0016): up to four picks from the SCA
-		// wheel's top two levels (tasting.ts), never prefilled from the
-		// roaster's descriptors. The freeform text stays on `notes`, relabelled
-		// REVIEW where it renders.
+		// Personal tasting notes (ADR-0016, amended 2026-09-21): the taster's
+		// own words, trimmed and lowercased, up to MAX_TASTING_NOTES
+		// (tasting.ts), never prefilled from the roaster's descriptors. The
+		// wheel family is derived on read, not stored. The freeform text stays
+		// on `notes`, relabelled REVIEW where it renders.
 		tastingNotes: v.optional(v.array(tastingNoteValidator)),
 		userId: v.id("users"),
 	})

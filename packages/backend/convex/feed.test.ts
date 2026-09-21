@@ -142,6 +142,24 @@ describe("globalFeed", () => {
 		});
 	});
 
+	test("a card carries the wheel families of the lot's roaster notes", async () => {
+		const { roasterA, t } = await setup();
+		const productId = await addProduct(t, roasterA);
+		await t.run(async (ctx) => {
+			await ctx.db.patch(productId, {
+				roasterNotes: ["Prunes", "Fig Danish", "Nutmeg"],
+			});
+		});
+		await addEvent(t, {
+			detectedAt: T0 + 1,
+			productId,
+			roasterId: roasterA,
+			type: "new",
+		});
+		const [card] = await t.query(api.feed.globalFeed, {});
+		expect(card?.families).toEqual(["fruity", "spices"]);
+	});
+
 	test("a collapsed event cites the headline size once, first", async () => {
 		const { roasterA, t } = await setup();
 		const productId = await addProduct(t, roasterA);

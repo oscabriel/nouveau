@@ -17,8 +17,14 @@ import { redirectTarget } from "./handles";
 import { optionalUserId, requireUserId } from "./identity";
 import { joinNotes } from "./lotFacts";
 import { findSave, savedCards, savedCoffeeValidator } from "./savedCoffees";
-import { MAX_TASTING_NOTES, tastingNoteValidator } from "./tasting";
-import type { TastingNote } from "./tasting";
+import {
+	familiesOf,
+	MAX_TASTING_NOTE_LENGTH,
+	MAX_TASTING_NOTES,
+	normalizeTastingNote,
+	tastingFamilyValidator,
+	tastingNoteValidator,
+} from "./tasting";
 import { watchCards, watchCardValidator } from "./watches";
 /** Ratings are 1–5 in half steps (spec §14.1); anything else is rejected. */
 export const isValidRating = (rating: number): boolean =>
@@ -28,8 +34,7 @@ const NOTES_MAX_LENGTH = 1000;
 
 const checkInput = (
 	rating: number | undefined,
-	notes: string | undefined,
-	tastingNotes: TastingNote[] | null | undefined
+	notes: string | undefined
 ): void => {
 	if (rating !== undefined && !isValidRating(rating)) {
 		throw new Error("Rating must be 1–5 in half steps");
@@ -37,20 +42,39 @@ const checkInput = (
 	if (notes !== undefined && notes.length > NOTES_MAX_LENGTH) {
 		throw new Error(`Notes are capped at ${NOTES_MAX_LENGTH} characters`);
 	}
-	if (
-		tastingNotes !== undefined &&
-		tastingNotes !== null &&
-		tastingNotes.length > MAX_TASTING_NOTES
-	) {
-		throw new Error(`Tasting notes are capped at ${MAX_TASTING_NOTES} picks`);
+};
+
+/**
+ * The stored shape of a log's tasting notes (ADR-0016, amended
+ * 2026-09-21): each word trimmed and lowercased, empties dropped,
+ * duplicates dropped, at most MAX_TASTING_NOTES of them, none longer than
+ * MAX_TASTING_NOTE_LENGTH. Undefined when nothing is left.
+ */
+const cleanTastingNotes = (
+	tastingNotes: string[] | null | undefined
+): string[] | undefined => {
+	if (tastingNotes === undefined || tastingNotes === null) {
+		return undefined;
 	}
-	if (
-		tastingNotes !== undefined &&
-		tastingNotes !== null &&
-		new Set(tastingNotes).size !== tastingNotes.length
-	) {
-		throw new Error("Each tasting note can be picked once");
+	const seen = new Set<string>();
+	const cleaned: string[] = [];
+	for (const raw of tastingNotes) {
+		const note = normalizeTastingNote(raw);
+		if (note === "" || seen.has(note)) {
+			continue;
+		}
+		if (note.length > MAX_TASTING_NOTE_LENGTH) {
+			throw new Error(
+				`A tasting note is capped at ${MAX_TASTING_NOTE_LENGTH} characters`
+			);
+		}
+		seen.add(note);
+		cleaned.push(note);
 	}
+	if (cleaned.length > MAX_TASTING_NOTES) {
+		throw new Error(`Tasting notes are capped at ${MAX_TASTING_NOTES}`);
+	}
+	return cleaned.length === 0 ? undefined : cleaned;
 };
 
 const tasterValidator = v.object({
@@ -83,9 +107,19 @@ export const logCardValidator = v.object({
 	notes: v.union(v.string(), v.null()),
 	rating: v.union(v.number(), v.null()),
 	roaster: v.object({ name: v.string(), slug: v.string() }),
-	// The taster's own picks (ADR-0016), stored on the log; the roaster's
-	// descriptors live beside them on lot.roasterNotes.
-	tastingNotes: v.union(v.array(tastingNoteValidator), v.null()),
+	// The taster's own words (ADR-0016, free text since 2026-09-21), stored
+	// on the log; the roaster's descriptors live beside them on
+	// lot.roasterNotes. Each note with the wheel family it resolves to, or
+	// null when the wheel does not know the word (tasting.ts).
+	tastingNotes: v.union(
+		v.array(
+			v.object({
+				family: v.union(tastingFamilyValidator, v.null()),
+				note: v.string(),
+			})
+		),
+		v.null()
+	),
 	user: tasterValidator,
 });
 
@@ -120,7 +154,13 @@ const hydrateLog = async (
 		notes: log.notes ?? null,
 		rating: log.rating ?? null,
 		roaster: { name: roaster.name, slug: roaster.slug },
-		tastingNotes: log.tastingNotes ?? null,
+		tastingNotes:
+			log.tastingNotes === undefined
+				? null
+				: log.tastingNotes.map((note) => ({
+						family: familiesOf([note])[0] ?? null,
+						note,
+					})),
 		user: {
 			handle: user.handle,
 			id: user._id,
@@ -251,7 +291,8 @@ export const createLog = mutation({
 	handler: async (ctx, args) => {
 		const userId = await requireUserId(ctx);
 		const notes = args.notes?.trim();
-		checkInput(args.rating, notes, args.tastingNotes);
+		checkInput(args.rating, notes);
+		const tastingNotes = cleanTastingNotes(args.tastingNotes);
 		const product = await ctx.db.get(args.productId);
 		if (product === null) {
 			throw new Error("Unknown lot");
@@ -273,10 +314,7 @@ export const createLog = mutation({
 			notes: notes === "" ? undefined : notes,
 			productId: args.productId,
 			rating: args.rating,
-			tastingNotes:
-				args.tastingNotes !== undefined && args.tastingNotes.length > 0
-					? args.tastingNotes
-					: undefined,
+			tastingNotes,
 			userId,
 		});
 		return { logId, removedSave };
@@ -315,11 +353,11 @@ export const updateLog = mutation({
 		// distinguishes "leave alone" (absent) from "clear" (null).
 		const rating = args.rating ?? undefined;
 		const notes = args.notes?.trim();
-		checkInput(rating, notes, args.tastingNotes);
+		checkInput(rating, notes);
 		const patch: {
 			notes?: string;
 			rating?: number;
-			tastingNotes?: TastingNote[];
+			tastingNotes?: string[];
 		} = {};
 		if (args.rating !== undefined) {
 			patch.rating = rating;
@@ -328,10 +366,7 @@ export const updateLog = mutation({
 			patch.notes = notes === "" ? undefined : notes;
 		}
 		if (args.tastingNotes !== undefined) {
-			patch.tastingNotes =
-				args.tastingNotes === null || args.tastingNotes.length === 0
-					? undefined
-					: args.tastingNotes;
+			patch.tastingNotes = cleanTastingNotes(args.tastingNotes);
 		}
 		await ctx.db.patch(args.logId, patch);
 		return null;

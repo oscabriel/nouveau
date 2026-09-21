@@ -87,18 +87,22 @@ describe("rating rules", () => {
 });
 
 describe("tasting notes", () => {
-	test("a log carries its picks and the feed card hydrates them", async () => {
+	test("a log carries the taster's words and the card resolves each to its family", async () => {
 		const { lotId, t, userId } = await setup();
 		await asUser(t, userId).mutation(api.logs.createLog, {
 			productId: lotId,
 			rating: 4,
-			tastingNotes: ["floral", "berry"],
+			tastingNotes: ["Floral", "  blackberry ", "Fig Danish"],
 		});
 		const feed = await t.query(api.logs.recentLogs, {});
-		expect(feed[0]?.tastingNotes).toEqual(["floral", "berry"]);
+		expect(feed[0]?.tastingNotes).toEqual([
+			{ family: "floral", note: "floral" },
+			{ family: "fruity", note: "blackberry" },
+			{ family: null, note: "fig danish" },
+		]);
 	});
 
-	test("a log without picks reads as null, not an empty array", async () => {
+	test("a log without notes reads as null, not an empty array", async () => {
 		const { lotId, t, userId } = await setup();
 		await asUser(t, userId).mutation(api.logs.createLog, {
 			productId: lotId,
@@ -108,46 +112,46 @@ describe("tasting notes", () => {
 		expect(feed[0]?.tastingNotes).toBeNull();
 	});
 
-	test("five picks are rejected", async () => {
+	test("nine notes are rejected; eight are kept", async () => {
+		const { lotId, t, userId } = await setup();
+		const eight = ["a", "b", "c", "d", "e", "f", "g", "h"];
+		await expect(
+			asUser(t, userId).mutation(api.logs.createLog, {
+				productId: lotId,
+				tastingNotes: [...eight, "i"],
+			})
+		).rejects.toThrow("capped at 8");
+		await asUser(t, userId).mutation(api.logs.createLog, {
+			productId: lotId,
+			tastingNotes: eight,
+		});
+		const feed = await t.query(api.logs.recentLogs, {});
+		expect(feed[0]?.tastingNotes).toHaveLength(8);
+	});
+
+	test("duplicates and blanks are dropped on write, whatever their case", async () => {
+		const { lotId, t, userId } = await setup();
+		await asUser(t, userId).mutation(api.logs.createLog, {
+			productId: lotId,
+			tastingNotes: ["floral", "Floral", "  ", "FLORAL"],
+		});
+		const feed = await t.query(api.logs.recentLogs, {});
+		expect(feed[0]?.tastingNotes).toEqual([
+			{ family: "floral", note: "floral" },
+		]);
+	});
+
+	test("a note longer than 32 characters is rejected", async () => {
 		const { lotId, t, userId } = await setup();
 		await expect(
 			asUser(t, userId).mutation(api.logs.createLog, {
 				productId: lotId,
-				tastingNotes: [
-					"fruity",
-					"berry",
-					"citrus fruit",
-					"dried fruit",
-					"other fruit",
-				],
+				tastingNotes: ["x".repeat(33)],
 			})
-		).rejects.toThrow("capped at 4");
+		).rejects.toThrow("32 characters");
 	});
 
-	test("a duplicate pick is rejected", async () => {
-		const { lotId, t, userId } = await setup();
-		await expect(
-			asUser(t, userId).mutation(api.logs.createLog, {
-				productId: lotId,
-				tastingNotes: ["floral", "floral"],
-			})
-		).rejects.toThrow("picked once");
-	});
-
-	test("a term outside the wheel fails validation", async () => {
-		const { lotId, t, userId } = await setup();
-		await expect(
-			asUser(t, userId).mutation(api.logs.createLog, {
-				productId: lotId,
-				// The roaster's own vocabulary is freeform; the taster's picks
-				// come only from the wheel.
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				tastingNotes: ["stone fruit" as never],
-			})
-		).rejects.toThrow();
-	});
-
-	test("update can replace or clear the picks", async () => {
+	test("update can replace or clear the notes", async () => {
 		const { lotId, t, userId } = await setup();
 		const { logId } = await asUser(t, userId).mutation(api.logs.createLog, {
 			productId: lotId,
@@ -158,7 +162,9 @@ describe("tasting notes", () => {
 			tastingNotes: ["fruity"],
 		});
 		let feed = await t.query(api.logs.recentLogs, {});
-		expect(feed[0]?.tastingNotes).toEqual(["fruity"]);
+		expect(feed[0]?.tastingNotes).toEqual([
+			{ family: "fruity", note: "fruity" },
+		]);
 
 		await asUser(t, userId).mutation(api.logs.updateLog, {
 			logId,
@@ -532,7 +538,10 @@ describe("logs", () => {
 		const profile = await t.query(api.logs.profile, { address: userId });
 		expect(profile?.logs[0]).toMatchObject({
 			lot: { roasterNotes: "peach, melon" },
-			tastingNotes: ["floral", "berry"],
+			tastingNotes: [
+				{ family: "floral", note: "floral" },
+				{ family: "fruity", note: "berry" },
+			],
 		});
 	});
 

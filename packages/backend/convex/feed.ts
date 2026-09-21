@@ -10,6 +10,8 @@ import { ALERT_WORTHY_TYPES, MAX_WATCHES_PER_USER } from "./constants";
 import { crawlStatusValidator, getCrawlStatus } from "./health";
 import type { CrawlStatus } from "./health";
 import { optionalUserId } from "./identity";
+import { familiesOf, tastingFamilyValidator } from "./tasting";
+import type { TastingFamily } from "./tasting";
 
 /** How many events a single feed query returns, before the client loads more. */
 export const FEED_LIMIT = 30;
@@ -26,6 +28,10 @@ const PER_ROASTER_LIMIT = 10;
 export const feedCardValidator = v.object({
 	detectedAt: v.number(),
 	eventId: v.id("dropEvents"),
+	// The wheel families the lot's roaster notes resolve to (tasting.ts),
+	// for the /drops family filter and the pill links. Empty when the lot
+	// has no notes the wheel knows.
+	families: v.array(tastingFamilyValidator),
 	imageUrl: v.union(v.string(), v.null()),
 	// The lot's address pair (ADR-0011): links go /roaster/$roasterSlug/$lotHandle.
 	lotHandle: v.string(),
@@ -59,6 +65,7 @@ type AlertType = (typeof ALERT_WORTHY_TYPES)[number];
 export interface FeedCard {
 	detectedAt: number;
 	eventId: Id<"dropEvents">;
+	families: TastingFamily[];
 	imageUrl: string | null;
 	lotHandle: string;
 	lotUrl: string;
@@ -110,6 +117,7 @@ const toCard = async (
 	return {
 		detectedAt: event.detectedAt,
 		eventId: event._id,
+		families: familiesOf(product.roasterNotes ?? []),
 		imageUrl: product.imageUrl ?? null,
 		// The lot's address pair (ADR-0011): the drop table links
 		// /roaster/$roasterSlug/$lotHandle instead of the shop URL.

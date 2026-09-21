@@ -226,7 +226,10 @@ describe("lots.get", () => {
 		// The lot carries the roaster's descriptors; the log card carries the
 		// taster's picks and the roaster's notes both (ADR-0016).
 		expect(page?.lot.facts.notes).toEqual(["peach", "melon", "red tea"]);
-		expect(page?.logs[0]?.tastingNotes).toEqual(["floral", "berry"]);
+		expect(page?.logs[0]?.tastingNotes).toEqual([
+			{ family: "floral", note: "floral" },
+			{ family: "fruity", note: "berry" },
+		]);
 		expect(page?.logs[0]?.lot.roasterNotes).toBe("peach, melon, red tea");
 	});
 
