@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 import { ArrowCell, TableHoverImage } from "@/components/table";
 import { DROP_TYPE_LABEL, formatDropDate } from "@/lib/drops";
@@ -73,8 +74,22 @@ const DropTableRow = ({
 	row: DropRow;
 	showRoaster: boolean;
 }) => {
-	const price = displayPriceCents(row.newPriceCents);
+	const eventPrice = displayPriceCents(row.newPriceCents);
 	const oldPrice = displayPriceCents(row.oldPriceCents);
+	const minPrice = displayPriceCents(row.minPriceCents);
+	// A price-drop row shows the event's own price, old one struck; every
+	// other row shows the lot's lowest available price, "from" prefixed
+	// (ADR-0015), falling back to the event price when the rollup has not
+	// written a minimum yet.
+	const isDrop = row.type === "price_drop";
+	let priceCell: string;
+	if (isDrop) {
+		priceCell = eventPrice === null ? "" : formatPrice(eventPrice);
+	} else if (minPrice === null) {
+		priceCell = eventPrice === null ? "" : formatPrice(eventPrice);
+	} else {
+		priceCell = `from ${formatPrice(minPrice)}`;
+	}
 	return (
 		<tr
 			className="group hover:bg-muted focus-within:bg-muted border-b transition-colors"
@@ -130,12 +145,15 @@ const DropTableRow = ({
 			<td
 				className={`${bodyCell} text-muted-foreground tnum hidden pr-4 text-right whitespace-nowrap sm:table-cell`}
 			>
-				{oldPrice !== null && price !== null && oldPrice !== price && (
-					<span className="mr-2 line-through opacity-60">
-						{formatPrice(oldPrice)}
-					</span>
-				)}
-				{price === null ? "" : formatPrice(price)}
+				{isDrop &&
+					oldPrice !== null &&
+					eventPrice !== null &&
+					oldPrice !== eventPrice && (
+						<span className="mr-2 line-through opacity-60">
+							{formatPrice(oldPrice)}
+						</span>
+					)}
+				{priceCell}
 			</td>
 			<ArrowCell
 				label={`Open ${row.productName} at ${row.roasterName}`}
@@ -155,15 +173,25 @@ const DropTableRow = ({
  */
 export const DropTable = ({
 	className = "",
+	onlyTypes,
 	rows,
 	showRoaster = true,
+	underRow,
 }: {
 	className?: string;
+	/** A filter for the event types shown; absent shows every event. */
+	onlyTypes?: readonly DropType[];
 	rows: DropRow[];
 	/** Off on a roaster's own page, where the name is the title. */
 	showRoaster?: boolean;
+	/** An extra full-width row under each event row (the delivery lines). */
+	underRow?: (row: DropRow) => ReactNode;
 }) => {
 	const tableRef = useRef<HTMLTableElement>(null);
+	const shown =
+		onlyTypes === undefined
+			? rows
+			: rows.filter((row) => onlyTypes.includes(row.type));
 	return (
 		<>
 			<table className={`w-full border-collapse ${className}`} ref={tableRef}>
@@ -206,13 +234,11 @@ export const DropTable = ({
 					</tr>
 				</thead>
 				<tbody>
-					{rows.map((row, index) => (
-						<DropTableRow
-							index={index}
-							key={row.eventId}
-							row={row}
-							showRoaster={showRoaster}
-						/>
+					{shown.map((row, index) => (
+						<Fragment key={row.eventId}>
+							<DropTableRow index={index} row={row} showRoaster={showRoaster} />
+							{underRow?.(row)}
+						</Fragment>
 					))}
 				</tbody>
 			</table>
