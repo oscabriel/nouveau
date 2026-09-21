@@ -439,8 +439,12 @@ const applyVariants = async (
 };
 
 interface UpsertProductInput {
+	/** The stored row for this externalId, or null for a first sighting. */
+	current: Doc<"products"> | null;
 	eventsAllowed: boolean;
 	fetchedAt: number;
+	/** The handle a first sighting is stored under; see claimLotHandle. */
+	handle: string;
 	product: ExtractedProduct;
 	roasterId: Id<"roasters">;
 }
@@ -490,30 +494,33 @@ const lotCopyFields = (product: ExtractedProduct): Partial<Doc<"products">> => {
 };
 
 /**
- * Give a colliding archived lot its last-seen year (ADR-0011): a shop that
- * sells "ethiopia-guji" again leaves the archived lot "ethiopia-guji-2024"
- * and hands the original handle to the new lot. Detected through the
- * by_roaster_and_handle index at upsert time, no scan. Only archived lots
- * move; two current lots sharing a handle would be a source bug and the
- * collision is left alone. A target still taken gets a numeric suffix.
+ * The handle a new lot is stored under (ADR-0011, amended). The first lot
+ * with a handle keeps it for good, so no saved link, alert email or log
+ * moves; a later lot arriving with the same handle in the same shop, whether
+ * the earlier one is archived or still current, takes the year it was first
+ * seen ("ethiopia-guji-2025") and a number after that if the year is taken
+ * too. Detected through the by_roaster_and_handle index at upsert, no scan,
+ * and every handle in a shop stays unique, so lots.get's .unique() holds.
+ * `claimed` carries the handles already given out in this batch, since the
+ * batch's inserts have not happened when the claims run.
  */
-const yieldHandle = async (
+const claimLotHandle = async (
 	ctx: MutationCtx,
 	roasterId: Id<"roasters">,
-	handle: string
-): Promise<void> => {
-	const others = await ctx.db
+	handle: string,
+	now: number,
+	claimed: Set<string>
+): Promise<string> => {
+	const holder = await ctx.db
 		.query("products")
 		.withIndex("by_roaster_and_handle", (q) =>
 			q.eq("roasterId", roasterId).eq("handle", handle)
 		)
-		.collect();
-	const archived = others.find((doc) => doc.status === "archived");
-	if (archived === undefined) {
-		return;
+		.first();
+	if (holder === null && !claimed.has(handle)) {
+		return handle;
 	}
-	const year = new Date(archived.lastSeenAt).getUTCFullYear();
-	const stem = `${handle}-${year}`;
+	const stem = `${handle}-${new Date(now).getUTCFullYear()}`;
 	const taken = await ctx.db
 		.query("products")
 		.withIndex("by_roaster_and_handle", (q) =>
@@ -523,13 +530,7 @@ const yieldHandle = async (
 				.lt("handle", `${stem}\uFFFF`)
 		)
 		.collect();
-	// The same coffee archived twice in one year (or a lot already named
-	// with the year) takes the first free number after the stem.
-	const candidate = nextFreeSuffix(
-		stem,
-		taken.map((doc) => doc.handle)
-	);
-	await ctx.db.patch(archived._id, { handle: candidate });
+	return nextFreeSuffix(stem, [...taken.map((doc) => doc.handle), ...claimed]);
 };
 
 /** Insert or refresh one product (by roaster + externalId) and its variants. */
@@ -537,16 +538,7 @@ const upsertProduct = async (
 	ctx: MutationCtx,
 	input: UpsertProductInput
 ): Promise<void> => {
-	const { fetchedAt: now, product, roasterId } = input;
-	const current = await ctx.db
-		.query("products")
-		.withIndex("by_roaster_and_external_id", (q) =>
-			q.eq("roasterId", roasterId).eq("externalId", product.externalId)
-		)
-		.unique();
-	if (current === null) {
-		await yieldHandle(ctx, roasterId, product.handle);
-	}
+	const { current, fetchedAt: now, product, roasterId } = input;
 	let productId: Id<"products">;
 	// The variant rollup comes from this crawl's fetched variants (the feed's
 	// own stock and price), not the stored ones: the feed is the truth.
@@ -555,7 +547,7 @@ const upsertProduct = async (
 		productId = await ctx.db.insert("products", {
 			externalId: product.externalId,
 			firstSeenAt: now,
-			handle: product.handle,
+			handle: input.handle,
 			lastSeenAt: now,
 			missedCrawls: 0,
 			name: product.name,
@@ -608,16 +600,42 @@ export const applyProductBatch = internalMutation({
 		if (source === null) {
 			return null;
 		}
-		await Promise.all(
-			args.products.map((product) =>
-				upsertProduct(ctx, {
-					eventsAllowed: args.eventsAllowed,
-					fetchedAt: args.fetchedAt,
-					product,
-					roasterId: source.roasterId,
-				})
-			)
-		);
+		// Handles are claimed one at a time so two first sightings in one
+		// batch cannot both take the same one; the upserts then run together.
+		const claimed = new Set<string>();
+		const prepared: UpsertProductInput[] = [];
+		for (const product of args.products) {
+			// eslint-disable-next-line no-await-in-loop
+			const current = await ctx.db
+				.query("products")
+				.withIndex("by_roaster_and_external_id", (q) =>
+					q
+						.eq("roasterId", source.roasterId)
+						.eq("externalId", product.externalId)
+				)
+				.unique();
+			const handle =
+				current === null
+					? // eslint-disable-next-line no-await-in-loop
+						await claimLotHandle(
+							ctx,
+							source.roasterId,
+							product.handle,
+							args.fetchedAt,
+							claimed
+						)
+					: current.handle;
+			claimed.add(handle);
+			prepared.push({
+				current,
+				eventsAllowed: args.eventsAllowed,
+				fetchedAt: args.fetchedAt,
+				handle,
+				product,
+				roasterId: source.roasterId,
+			});
+		}
+		await Promise.all(prepared.map((input) => upsertProduct(ctx, input)));
 		return null;
 	},
 	returns: v.null(),

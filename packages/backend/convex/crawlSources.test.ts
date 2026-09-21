@@ -1532,10 +1532,11 @@ describe("commit: market confirmation", () => {
 });
 
 describe("duplicate lot handles (ADR-0011)", () => {
-	test("an archived lot yields its handle with its last-seen year appended", async () => {
+	test("the archived lot keeps its handle; the new lot takes the year", async () => {
 		const fx = await setup();
-		// The shop sold this coffee in 2024 and archived it; the 2025 crawl
-		// brings a new lot with the same Shopify handle.
+		// The shop sold this coffee in 2024 and archived it; a later crawl
+		// brings a new lot with the same Shopify handle. Links to the old lot
+		// keep landing on it.
 		const lastSeenAt = Date.UTC(2024, 5, 1);
 		await fx.t.run(async (ctx) => {
 			await ctx.db.insert("products", {
@@ -1549,18 +1550,29 @@ describe("duplicate lot handles (ADR-0011)", () => {
 				status: "archived",
 			});
 		});
-		await crawl(fx, T0 + CADENCE_MS, [
+		const crawledAt = T0 + CADENCE_MS;
+		await crawl(fx, crawledAt, [
 			{ ...product("new-external"), handle: "ethiopia-guji" },
 		]);
 		const { products } = await readAll(fx);
 		const byHandle = Object.fromEntries(
 			products.map((doc) => [doc.handle, doc.status])
 		);
-		expect(byHandle["ethiopia-guji"]).toBe("current");
-		expect(byHandle["ethiopia-guji-2024"]).toBe("archived");
+		const year = new Date(crawledAt).getUTCFullYear();
+		expect(byHandle["ethiopia-guji"]).toBe("archived");
+		expect(byHandle[`ethiopia-guji-${year}`]).toBe("current");
+		// The next crawl matches the new lot by externalId and moves nothing.
+		await crawl(fx, crawledAt + CADENCE_MS, [
+			{ ...product("new-external"), handle: "ethiopia-guji" },
+		]);
+		const again = await readAll(fx);
+		expect(again.products.map((doc) => doc.handle)).toEqual(
+			expect.arrayContaining(["ethiopia-guji", `ethiopia-guji-${year}`])
+		);
+		expect(again.products).toHaveLength(2);
 	});
 
-	test("a handle collision with a current lot is left alone", async () => {
+	test("a collision with a current lot suffixes the new lot too (S4)", async () => {
 		const fx = await setup();
 		await fx.t.run(async (ctx) => {
 			await ctx.db.insert("products", {
@@ -1574,12 +1586,23 @@ describe("duplicate lot handles (ADR-0011)", () => {
 				status: "current",
 			});
 		});
-		await crawl(fx, T0 + CADENCE_MS, [
+		const crawledAt = T0 + CADENCE_MS;
+		const year = new Date(crawledAt).getUTCFullYear();
+		await crawl(fx, crawledAt, [
 			{ ...product("new-external"), handle: "ethiopia-guji" },
+			{ ...product("third-external"), handle: "ethiopia-guji" },
 		]);
 		const { products } = await readAll(fx);
 		expect(
 			products.filter((doc) => doc.handle === "ethiopia-guji")
-		).toHaveLength(2);
+		).toHaveLength(1);
+		expect(products.map((doc) => doc.handle)).toEqual(
+			expect.arrayContaining([
+				"ethiopia-guji",
+				`ethiopia-guji-${year}`,
+				`ethiopia-guji-${year}-2`,
+			])
+		);
+		expect(products).toHaveLength(3);
 	});
 });
