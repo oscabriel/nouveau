@@ -70,6 +70,6 @@ export const SavedCoffeeCard = ({ item }: { item: SavedCoffee }) => (
 		>
 			<ArrowUpRight aria-hidden className="size-4" />
 		</a>
-		<SaveButton lotId={item.lot.id} size="sm" />
+		<SaveButton lotId={item.lot.id} />
 	</article>
 );

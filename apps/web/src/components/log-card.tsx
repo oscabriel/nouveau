@@ -106,9 +106,7 @@ export const LogCard = ({
 					{log.lot.roasterNotes}
 				</p>
 			)}
-			{!isMine && (
-				<SaveButton className="mt-1 self-start" lotId={log.lot.id} size="sm" />
-			)}
+			{!isMine && <SaveButton className="self-start" lotId={log.lot.id} />}
 			{isMine && (
 				<div className="flex gap-1">
 					<Button

@@ -289,7 +289,7 @@ const LotComponent = () => {
 					</h2>
 					{isAuthenticated ? (
 						<div className="flex items-center gap-2">
-							<SaveButton lotId={lot.id} size="sm" />
+							<SaveButton lotId={lot.id} />
 							<Button
 								onClick={() => {
 									setLogging((value) => !value);

@@ -237,7 +237,7 @@ const PickCard = ({
 					</p>
 				)}
 				<div className="mt-1 flex flex-wrap items-center gap-x-4 text-sm">
-					<SaveButton fromRunId={runId} lotId={candidate.productId} size="sm" />
+					<SaveButton fromRunId={runId} lotId={candidate.productId} />
 					<a
 						className={`${navLinkClass} inline-flex items-center gap-0.5`}
 						href={candidate.url}
