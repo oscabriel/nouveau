@@ -53,11 +53,11 @@ const LandingComponent = () => {
 			<section className="flex flex-col items-center px-5 pt-14 text-center md:pt-20">
 				<img
 					alt="Coffea arabica: a flowering, fruiting branch, engraved and hand-colored for Robert Thornton in 1808"
-					className="h-56 w-auto md:h-[17rem]"
+					className="h-64 w-auto md:h-96"
 					fetchPriority="high"
-					height={900}
-					src="/coffea-arabica.png"
-					width={580}
+					height={1160}
+					src="/coffea-arabica.webp"
+					width={1112}
 				/>
 				<h1 className="mt-10 text-[1.75rem] leading-none font-semibold tracking-[0.01em] uppercase md:mt-12 md:text-[2.25rem]">
 					Nouveau
