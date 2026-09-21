@@ -49,3 +49,5 @@ The split is that the left names what the site is about (roasters, drops) and th
 - Implementation note (2026-09-20): the serving-size exports live at `apps/web/src/assets/coffea-arabica/*.webp` (seven files, imported by `site-footer.tsx` so Vite hashes them), not in `public/`. The hero stays at `apps/web/public/coffea-arabica.png`.
 - `navLinkClass` in `header.tsx`, `footerLink` in `site-footer.tsx` and `capsLink` in `roasters.index.tsx` are the same string three times; the footer mirroring the header is the moment to keep one.
 - `/about` needs copy. The hackathon log's "What it does" line and `PRODUCT.md`'s tone section are the sources.
+
+**2026-09-20 (owner feedback, second live check). The header label opens the menu; the profile is the menu's first item.** The label was the `/$user` link and the dropdown trigger at once, so one click navigated to the profile and the menu's theme pair and sign out could not be used in place. The label is now a button that only opens the menu, underlined while on the user's own profile, and PROFILE leads the menu above the theme pair, SETTINGS and SIGN OUT. The profile stays one click deep, through the menu.

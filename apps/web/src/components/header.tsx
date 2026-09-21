@@ -11,7 +11,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@nouveau/ui/components/dropdown-menu";
-import { Link } from "@tanstack/react-router";
+import { Link, useLocation } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect } from "react";
 
@@ -63,13 +63,19 @@ const SignInButton = () => {
 };
 
 /**
- * The label's dropdown: the LIGHT / DARK theme pair (ADR-0013), settings,
- * and sign out at the bottom (ADR-0012 amendment). The link target is
- * `/$user` by handle-or-id path (ADR-0011); the label is display only.
+ * The label's dropdown: profile first, the LIGHT / DARK theme pair
+ * (ADR-0013), settings, and sign out at the bottom (ADR-0012, amended). The
+ * label is a button, not a link: a link trigger navigated on the same click
+ * that opened the menu, so theme and sign out were unreachable in place. The
+ * profile item goes to `/$user` by handle-or-id path (ADR-0011); the label
+ * is display only.
  */
 const HandleMenu = ({ label, path }: { label: string; path: string }) => {
 	const { resolved, choose } = useThemeControls();
 	const { signOut } = useAuthActions();
+	const onOwnProfile = useLocation({
+		select: (location) => location.pathname === `/${path}`,
+	});
 	const themeItemClass = (active: boolean) =>
 		`${menuItemClass} text-muted-foreground hover:text-foreground ${
 			active ? "text-foreground" : ""
@@ -81,14 +87,20 @@ const HandleMenu = ({ label, path }: { label: string; path: string }) => {
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger
-				className={`${navLinkClass} max-w-40 truncate`}
-				render={
-					<Link activeProps={activeProps} params={{ user: path }} to="/$user" />
-				}
+				className={`${navLinkClass} max-w-40 truncate ${
+					onOwnProfile ? activeProps.className : ""
+				}`}
 			>
 				{label}
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end" className="min-w-40">
+				<DropdownMenuItem
+					className={menuItemClass}
+					render={<Link params={{ user: path }} to="/$user" />}
+				>
+					Profile
+				</DropdownMenuItem>
+				<DropdownMenuSeparator />
 				{sides.map(({ name, target }) => (
 					<DropdownMenuItem
 						className={themeItemClass(resolved === target)}

@@ -69,10 +69,13 @@ const DropTableRow = ({
 	index,
 	row,
 	showRoaster,
+	withUnderRow,
 }: {
 	index: number;
 	row: DropRow;
 	showRoaster: boolean;
+	/** The hairline moves to the under row so the pair reads as one entry. */
+	withUnderRow: boolean;
 }) => {
 	const eventPrice = displayPriceCents(row.newPriceCents);
 	const oldPrice = displayPriceCents(row.oldPriceCents);
@@ -92,7 +95,9 @@ const DropTableRow = ({
 	}
 	return (
 		<tr
-			className="group hover:bg-muted focus-within:bg-muted border-b transition-colors"
+			className={`group hover:bg-muted focus-within:bg-muted transition-colors ${
+				withUnderRow ? "" : "border-b"
+			}`}
 			data-image-url={row.imageUrl ?? undefined}
 		>
 			<td
@@ -236,7 +241,12 @@ export const DropTable = ({
 				<tbody>
 					{shown.map((row, index) => (
 						<Fragment key={row.eventId}>
-							<DropTableRow index={index} row={row} showRoaster={showRoaster} />
+							<DropTableRow
+								index={index}
+								row={row}
+								showRoaster={showRoaster}
+								withUnderRow={underRow !== undefined}
+							/>
 							{underRow?.(row)}
 						</Fragment>
 					))}

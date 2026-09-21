@@ -10,7 +10,6 @@ import Loader from "@/components/loader";
 import { PageTitle } from "@/components/page-title";
 import { DROP_TYPE_LABEL } from "@/lib/drops";
 import type { DropRow, DropType } from "@/lib/drops";
-import { bodyCell } from "@/lib/ui";
 
 type GlobalRow = FunctionReturnType<typeof api.feed.globalFeed>[number];
 type PersonalizedRow = FunctionReturnType<
@@ -34,13 +33,18 @@ const deliveryLine = (row: PersonalizedRow): string =>
 		? "No alert sent for this drop"
 		: DELIVERY_LABEL[row.deliveryStatus];
 
-/** The delivery line's row, full width, under its event row. */
+/**
+ * The delivery line's row: under its event row, aligned with the lot name,
+ * carrying the hairline the event row gave up so the pair reads as one entry.
+ */
 const DeliveryRow = ({ row }: { row: PersonalizedRow }) => (
-	<tr>
-		<td className="px-5 md:px-10" colSpan={10}>
-			<p className={`${bodyCell} text-muted-foreground text-xs md:pt-0`}>
-				{deliveryLine(row)}
-			</p>
+	<tr className="border-b">
+		{/* pl matches the number column (w-10 md:w-28) so the line sits under the lot name. */}
+		<td
+			className="text-muted-foreground pb-5 pl-10 text-xs md:pl-28"
+			colSpan={10}
+		>
+			{deliveryLine(row)}
 		</td>
 	</tr>
 );
