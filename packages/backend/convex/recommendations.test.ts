@@ -9,6 +9,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import {
+	buildAgent,
 	buildPrompt,
 	checkAvailability,
 	checkWhys,
@@ -397,6 +398,26 @@ test("the logs tool reads the owner's history and no one else's", async () => {
 		{ userId: run.userId }
 	);
 	expect(afterDelete).toEqual([]);
+});
+
+test("the consent flag decides whether the loop can read logs at all", () => {
+	// The gate is the tool's absence, not a check inside it: without consent
+	// the model has no readMyLogs to call.
+	const withConsent = buildAgent(null as never, true);
+	expect(Object.keys(withConsent.options.tools ?? {})).toContain("readMyLogs");
+	const withoutConsent = buildAgent(null as never, false);
+	expect(Object.keys(withoutConsent.options.tools ?? {})).not.toContain(
+		"readMyLogs"
+	);
+	expect(Object.keys(withoutConsent.options.tools ?? {})).toEqual(
+		expect.arrayContaining([
+			"checkAvailability",
+			"readLotFacts",
+			"searchCatalog",
+			"submitPicks",
+		])
+	);
+	expect(Object.keys(withoutConsent.options.tools ?? {})).toHaveLength(4);
 });
 
 test.each([{ preferences: "" }, { preferences: "x".repeat(501) }])(
