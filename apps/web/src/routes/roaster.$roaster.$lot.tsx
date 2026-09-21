@@ -1,19 +1,20 @@
 import { useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
-import { Button } from "@nouveau/ui/components/button";
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { ArrowUpRight } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import Loader from "@/components/loader";
 import { LogCard } from "@/components/log-card";
 import { LogForm } from "@/components/log-form";
+import { PageTitle } from "@/components/page-title";
 import { SaveButton } from "@/components/save-button";
 import { SignInCta } from "@/components/sign-in-cta";
 import { formatGrams, formatPrice } from "@/lib/format";
-import { bodyCell, headCell } from "@/lib/ui";
+import { bodyCell, headCell, navLinkClass } from "@/lib/ui";
 
 export type LotPageData = FunctionReturnType<typeof api.lots.get>;
 type LotData = NonNullable<LotPageData>["lot"];
@@ -24,7 +25,7 @@ type LotData = NonNullable<LotPageData>["lot"];
 const READING_WINDOW_MS = 90_000;
 const RETRY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-const FACT_CHIPS = [
+const FACTS = [
 	["origin", "Origin"],
 	["region", "Region"],
 	["process", "Process"],
@@ -34,11 +35,26 @@ const FACT_CHIPS = [
 	["roastLevel", "Roast"],
 ] as const;
 
-const LotAttribute = ({ label, value }: { label: string; value: string }) => (
-	<span className="rounded-full border px-3 py-1 text-sm">
-		<span className="text-muted-foreground mr-1.5 text-xs">{label}</span>
-		{value}
-	</span>
+/**
+ * The lot's facts as a two-column list in table type: caps label, value,
+ * a hairline under each row. Only the facts the roaster published appear.
+ */
+const FactList = ({ facts }: { facts: LotData["facts"] }) => (
+	<dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6">
+		{FACTS.map(([key, label]) => {
+			const value = facts[key];
+			return value === null ? null : (
+				<div className="contents" key={key}>
+					<dt className="label-caps text-foreground border-b py-3 pt-3.5">
+						{label}
+					</dt>
+					<dd className="border-b py-3 text-sm leading-snug md:text-[15px]">
+						{value}
+					</dd>
+				</div>
+			);
+		})}
+	</dl>
 );
 
 /** Whether this look should ask the roaster's page for the lot's facts. */
@@ -61,7 +77,7 @@ const VariantRow = ({
 	variant: NonNullable<LotData>["variants"][number];
 }) => (
 	<tr
-		className={`group hover:bg-muted focus-within:bg-muted border-b transition-colors ${variant.available ? "" : "opacity-50"}`}
+		className={`hover:bg-muted focus-within:bg-muted border-b transition-colors ${variant.available ? "" : "text-muted-foreground"}`}
 	>
 		<td className={`${bodyCell} tnum whitespace-nowrap`}>
 			{formatGrams(variant.grams) ?? "—"}
@@ -78,18 +94,18 @@ const VariantRow = ({
 			{variant.available ? (
 				<span className="label-caps text-muted-foreground">In stock</span>
 			) : (
-				<span className="label-caps opacity-70">Sold out</span>
+				<span className="label-caps">Sold out</span>
 			)}
 		</td>
-		<td className={`${bodyCell} w-6 text-right md:w-8`}>
+		<td className={`${bodyCell} w-8 text-right md:w-10`}>
 			<a
-				aria-label={`Open ${variant.name} at the roaster's shop`}
+				aria-label={`Buy ${variant.name} at the roaster's shop`}
 				className="inline-flex size-6 items-center justify-center"
 				href={variant.url}
-				rel="noreferrer"
+				rel="noopener noreferrer"
 				target="_blank"
 			>
-				<span className="size-2.5 rounded-full border border-current transition-colors group-hover:bg-current" />
+				<ArrowUpRight aria-hidden className="size-3.5" strokeWidth={1.5} />
 			</a>
 		</td>
 	</tr>
@@ -98,17 +114,20 @@ const VariantRow = ({
 /**
  * The size table: every purchasable option the roaster publishes, one row
  * per variant, same hairline table as the index. The grind option is its
- * own axis; the circle links to the exact size on the roaster's shop when
- * the source published a variant id.
+ * own axis. Rows end in the up-right arrow (ADR-0015 uses the right arrow
+ * for links into Nouveau; up-right leaves the site) to the exact size on
+ * the roaster's shop when the source published a variant id.
  */
 const SizeTable = ({
 	variants,
 }: {
 	variants: NonNullable<LotData>["variants"];
 }) => (
-	<section aria-label="Sizes and prices" className="mt-8">
-		<h2 className="label-caps mb-3 font-medium">Sizes</h2>
-		<table className="w-full border-collapse">
+	<section aria-labelledby="sizes-heading" className="mt-16 md:mt-24">
+		<h2 className="text-xl md:text-2xl" id="sizes-heading">
+			Sizes
+		</h2>
+		<table className="mt-6 w-full border-collapse">
 			<thead>
 				<tr className="border-b">
 					<th className={headCell} scope="col">
@@ -124,7 +143,7 @@ const SizeTable = ({
 						Stock
 					</th>
 					<th className={`${headCell} text-right`} scope="col">
-						Shop
+						<span className="sr-only">Buy</span>
 					</th>
 				</tr>
 			</thead>
@@ -137,87 +156,91 @@ const SizeTable = ({
 	</section>
 );
 
+/**
+ * The record above the tables: the title row with the page's controls, the
+ * roaster line, then the photo beside the fact list, the roaster's own
+ * descriptors and copy under it.
+ */
 const LotDetail = ({
+	controls,
 	lot,
 	reading,
 	roaster,
 }: {
+	controls: ReactNode;
 	lot: LotData;
 	reading: boolean;
 	roaster: { name: string; slug: string };
-}) => (
-	<>
-		<header className="mb-6 flex flex-wrap items-start justify-between gap-4">
-			<div className="min-w-0">
-				<h1 className="text-2xl font-semibold">{lot.name}</h1>
-				<p className="text-muted-foreground mt-1 text-sm">
-					at{" "}
-					<Link
-						className="font-medium hover:underline"
-						params={{ roaster: roaster.slug }}
-						to="/roaster/$roaster"
-					>
-						{roaster.name}
-					</Link>
-					{lot.status === "archived" && (
-						<span className="ml-2">· archived lot</span>
-					)}
-				</p>
-			</div>
-			<a
-				className="inline-flex items-center gap-0.5 text-sm hover:underline"
-				href={lot.url}
-				rel="noopener noreferrer"
-				target="_blank"
-			>
-				See at {roaster.name}
-				<ArrowUpRight aria-hidden className="size-3.5" />
-			</a>
-		</header>
-		<div className="flex flex-wrap items-start gap-6">
-			{lot.imageUrl !== null && (
-				<img
-					alt=""
-					className="h-40 w-40 shrink-0 rounded-md border object-cover"
-					src={lot.imageUrl}
-				/>
-			)}
-			<div className="min-w-0 flex-1">
-				{FACT_CHIPS.some(([key]) => lot.facts[key] !== null) && (
-					<div className="mb-3 flex flex-wrap gap-2">
-						{FACT_CHIPS.map(([key, label]) => {
-							const value = lot.facts[key];
-							return value === null ? null : (
-								<LotAttribute key={key} label={label} value={value} />
-							);
-						})}
-					</div>
+}) => {
+	const hasFacts = FACTS.some(([key]) => lot.facts[key] !== null);
+	return (
+		<>
+			<PageTitle title={lot.name}>{controls}</PageTitle>
+			<p className="text-muted-foreground mt-4 text-sm md:text-[15px]">
+				<Link
+					className="hover:underline"
+					params={{ roaster: roaster.slug }}
+					to="/roaster/$roaster"
+				>
+					{roaster.name}
+				</Link>
+				{lot.status === "archived" && (
+					<>
+						<span aria-hidden className="mx-2">
+							·
+						</span>
+						<span className="label-caps">Archived</span>
+					</>
 				)}
-				{lot.facts.notes.length > 0 && (
-					<p className="text-muted-foreground mb-3 text-sm">
-						<span className="text-foreground font-medium">Roaster notes:</span>{" "}
-						{lot.facts.notes.join(" · ")}
-					</p>
-				)}
-				{reading && (
-					<p className="text-muted-foreground mb-3 text-xs">
-						Reading the roaster&apos;s page for more…
-					</p>
-				)}
-				{lot.description !== null && (
-					<p className="text-sm">{lot.description}</p>
-				)}
-				{/* Unknown stock (available null, no rollup yet) shows nothing; known-sold-out states itself. */}
 				{lot.status === "current" && lot.available === false && (
-					<p className="label-caps mt-3 opacity-70">
-						Currently sold out at the roaster
-					</p>
+					<>
+						<span aria-hidden className="mx-2">
+							·
+						</span>
+						<span className="label-caps">Sold out</span>
+					</>
 				)}
+			</p>
+			<div className="mt-12 grid gap-8 md:mt-16 md:grid-cols-3 md:gap-6">
+				{lot.imageUrl !== null && (
+					<img
+						alt=""
+						className="bg-muted aspect-[3/2] w-full object-cover"
+						src={lot.imageUrl}
+					/>
+				)}
+				<div
+					className={lot.imageUrl === null ? "md:col-span-3" : "md:col-span-2"}
+				>
+					{hasFacts && <FactList facts={lot.facts} />}
+					{lot.facts.notes.length > 0 && (
+						<div className={hasFacts ? "mt-8" : ""}>
+							<p className="label-caps text-foreground">Roaster notes</p>
+							<p className="text-muted-foreground mt-2 text-sm leading-snug md:text-[15px]">
+								{lot.facts.notes.join(" · ")}
+							</p>
+						</div>
+					)}
+					{reading && (
+						<p className="text-muted-foreground mt-6 inline-flex items-center gap-2 text-sm">
+							<span
+								aria-hidden
+								className="inline-block size-2 rounded-full bg-current motion-safe:animate-pulse"
+							/>
+							Reading the roaster&apos;s page for more
+						</p>
+					)}
+					{lot.description !== null && (
+						<p className="mt-8 max-w-prose text-sm leading-snug md:text-[15px]">
+							{lot.description}
+						</p>
+					)}
+				</div>
 			</div>
-		</div>
-		{lot.variants.length > 0 && <SizeTable variants={lot.variants} />}
-	</>
-);
+			{lot.variants.length > 0 && <SizeTable variants={lot.variants} />}
+		</>
+	);
+};
 
 const LotComponent = () => {
 	const { roaster: roasterSlug, lot: handle } = useParams({
@@ -259,19 +282,23 @@ const LotComponent = () => {
 	}, [lotToAsk, requestPageFacts]);
 
 	if (page === undefined || me === undefined) {
-		return <Loader />;
+		return (
+			<main className="py-24">
+				<Loader />
+			</main>
+		);
 	}
 	if (page === null) {
 		return (
-			<div className="container mx-auto max-w-3xl px-4 py-8">
-				<p className="text-muted-foreground py-8 text-sm">
+			<main>
+				<p className="text-muted-foreground px-5 py-24 text-center text-[15px] md:px-10">
 					No lot at this address.{" "}
-					<Link className="underline" to="/roasters">
+					<Link className="text-foreground underline" to="/roasters">
 						Browse the roasters
 					</Link>
 					.
 				</p>
-			</div>
+			</main>
 		);
 	}
 
@@ -279,57 +306,89 @@ const LotComponent = () => {
 	const isMine = (logId: string) =>
 		page.logs.some((log) => log.logId === logId && log.user.id === me?.id);
 
+	const controls = (
+		<>
+			{isAuthenticated && <SaveButton lotId={lot.id} />}
+			{isAuthenticated && (
+				<button
+					aria-expanded={logging}
+					className={navLinkClass}
+					onClick={() => {
+						setLogging((value) => !value);
+					}}
+					type="button"
+				>
+					{logging ? "Close" : "Log this lot"}
+				</button>
+			)}
+			<a
+				className={`${navLinkClass} gap-0.5`}
+				href={lot.url}
+				rel="noopener noreferrer"
+				target="_blank"
+			>
+				Buy
+				<ArrowUpRight aria-hidden className="size-3.5" />
+			</a>
+		</>
+	);
+
 	return (
-		<div className="container mx-auto max-w-3xl px-4 py-8">
-			<LotDetail lot={lot} reading={reading} roaster={roaster} />
-			<section className="mt-8">
-				<div className="mb-2 flex items-center justify-between gap-3">
-					<h2 className="font-semibold">
+		<main>
+			<div className="px-5 pt-10 md:px-10 md:pt-14">
+				<LotDetail
+					controls={controls}
+					lot={lot}
+					reading={reading}
+					roaster={roaster}
+				/>
+				<section aria-labelledby="logs-heading" className="mt-16 md:mt-24">
+					<h2 className="text-xl md:text-2xl" id="logs-heading">
 						{page.logsTruncated ? "Recent logs" : "Logs"}
+						{page.logs.length > 0 && (
+							<span className="text-muted-foreground tnum ml-2 text-xs">
+								({page.logs.length})
+							</span>
+						)}
 					</h2>
-					{isAuthenticated ? (
-						<div className="flex items-center gap-2">
-							<SaveButton lotId={lot.id} />
-							<Button
-								onClick={() => {
-									setLogging((value) => !value);
-								}}
-								size="sm"
-								variant={logging ? "ghost" : "outline"}
-							>
-								{logging ? "Close" : "Log this lot"}
-							</Button>
-						</div>
-					) : (
-						<SignInCta />
+					{logging && isAuthenticated && (
+						<LogForm
+							lotId={lot.id}
+							onDone={() => {
+								setLogging(false);
+							}}
+							roasterNotes={
+								lot.facts.notes.length === 0 ? null : lot.facts.notes.join(", ")
+							}
+						/>
 					)}
-				</div>
-				{logging && isAuthenticated && (
-					<LogForm
-						lotId={lot.id}
-						onDone={() => {
-							setLogging(false);
-						}}
-						roasterNotes={
-							lot.facts.notes.length === 0 ? null : lot.facts.notes.join(", ")
-						}
-					/>
-				)}
-				{page.logs.length === 0 ? (
-					<p className="text-muted-foreground py-6 text-sm">
-						{isAuthenticated
-							? "Nobody has logged this lot yet — be the first."
-							: "No logs yet."}
-					</p>
-				) : (
-					<div>
-						{page.logs.map((log) => (
-							<LogCard isMine={isMine(log.logId)} key={log.logId} log={log} />
-						))}
-					</div>
-				)}
-			</section>
-		</div>
+					{page.logs.length === 0 && (
+						<p className="text-muted-foreground mt-4 max-w-prose text-sm">
+							{isAuthenticated
+								? "Nobody has logged this lot yet. You could be the first."
+								: "No logs yet."}
+						</p>
+					)}
+					{page.logs.length > 0 && (
+						<div className="mt-6">
+							{page.logs.map((log) => (
+								<LogCard
+									isMine={isMine(log.logId)}
+									key={log.logId}
+									log={log}
+									showLot={false}
+								/>
+							))}
+						</div>
+					)}
+					{!isAuthenticated && (
+						<div className="mt-8">
+							<SignInCta />
+						</div>
+					)}
+				</section>
+			</div>
+		</main>
 	);
 };
 

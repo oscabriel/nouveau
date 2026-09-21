@@ -20,18 +20,23 @@ export type LogCardData = FunctionReturnType<
  * One log row under a hairline: who tried what from whom and when on one
  * line, the stars, the review, then the taster's picks beside the roaster's
  * descriptors. The activity feed shows the taster (showUser); the profile
- * already belongs to them, so it passes showUser={false} and may pass isMine
- * to get EDIT and DELETE as caps actions. Someone else's log offers the Save
+ * already belongs to them, so it passes showUser={false} and may pass isMine;
+ * the lot page already names the lot, so it passes showLot={false}. Both
+ * false is never mounted (the line would be empty), and isMine
+ * gets EDIT and DELETE as caps actions. Someone else's log offers the Save
  * toggle on its lot instead: a log you read is the main way a lot gets onto
  * the try list.
  */
 export const LogCard = ({
 	log,
 	isMine = false,
+	showLot = true,
 	showUser = true,
 }: {
 	log: LogCardData;
 	isMine?: boolean;
+	/** The lot page already names the lot; it passes false. */
+	showLot?: boolean;
 	showUser?: boolean;
 }) => {
 	const [editing, setEditing] = useState(false);
@@ -64,26 +69,32 @@ export const LogCard = ({
 							>
 								{log.user.name ?? "A taster"}
 							</Link>
-							<span className="text-muted-foreground"> tried </span>
+							{showLot && (
+								<span className="text-muted-foreground"> tried </span>
+							)}
 						</>
 					)}
-					<Link
-						className="text-foreground font-semibold hover:underline"
-						params={{ lot: log.lot.handle, roaster: log.roaster.slug }}
-						to="/roaster/$roaster/$lot"
-					>
-						{log.lot.name}
-					</Link>
-					<span className="text-muted-foreground">
-						{" from "}
-						<Link
-							className="hover:underline"
-							params={{ roaster: log.roaster.slug }}
-							to="/roaster/$roaster"
-						>
-							{log.roaster.name}
-						</Link>
-					</span>
+					{showLot && (
+						<>
+							<Link
+								className="text-foreground font-semibold hover:underline"
+								params={{ lot: log.lot.handle, roaster: log.roaster.slug }}
+								to="/roaster/$roaster/$lot"
+							>
+								{log.lot.name}
+							</Link>
+							<span className="text-muted-foreground">
+								{" from "}
+								<Link
+									className="hover:underline"
+									params={{ roaster: log.roaster.slug }}
+									to="/roaster/$roaster"
+								>
+									{log.roaster.name}
+								</Link>
+							</span>
+						</>
+					)}
 				</p>
 				<time
 					className="text-muted-foreground tnum shrink-0 text-xs"
