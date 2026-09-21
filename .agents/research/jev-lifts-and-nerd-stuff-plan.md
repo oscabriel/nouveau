@@ -15,8 +15,6 @@ Six pieces, in the order they should land. The first three change production ext
 5. The `/nerd-stuff` route, ported from the demo and restyled to DESIGN.md.
 6. A labeled evaluation set (~40 lots) and a script that scores both pipelines.
 
-The hackathon deadline is 2026-09-22 noon Pacific. Piece 1 is a few hours and can ship today. Pieces 2 and 3 are each a half day with tests. Pieces 4 and 5 together are a day and a half at least. Plan on 1 landing before the deadline, 2 and 3 if the day allows, and the page after. The doc says what to build regardless of when.
-
 ## Decisions this plan assumes
 
 The handoff left five decisions open. This plan takes the proposed answer for each. If the owner picks differently, the affected section says what changes.
