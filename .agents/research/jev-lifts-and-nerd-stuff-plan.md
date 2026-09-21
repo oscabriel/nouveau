@@ -412,3 +412,23 @@ Each of 1 to 6 runs the full backend suite before commit. Commits 1 and 2 are th
 - The demo's `READ_HINT` mentions fields nouveau's state does not have. Do not copy question text verbatim; rewrite every question against `pageJevState`'s actual shape (`Coffee: <name>` then the page head).
 - Schema pushes go to dev on save. Adding two tables and four optional product fields is additive and safe; still, announce it.
 - `crons.ts` exists; add the prune job there with an `internal.nerdStuff.prune` reference rather than creating a second crons file.
+
+## Progress, session of 2026-09-21
+
+Pieces 1 to 3 are on `main` as five commits, `000889d` through `530ff53`. 602 backend tests pass, `check-types` and `ultracite check` are clean. The dev deployment (cool-giraffe-632) has the four new optional product fields from the watcher. Where the code departs from the plan text:
+
+- `pageFactConfidence.tastingNotes` (the index-aligned array) went in with piece 1's validator instead of waiting for piece 3, since it is optional either way. `store` clears a field's confidence when a read re-stores that field without one (`mergeConfidence` in `pageFacts.ts`), so a confidence never sits beside a value it did not pick.
+- `jev.ts` gained `pickProbability(chosen)` beside `runnerUp`: the distribution's value for the pick, else `confidence`, else undefined. `picksFromAnswers` uses it for both the line picks and the vocabulary Choices.
+- `storeArgs(read)` in `pageFacts.ts` is what both `scrape` and the recommendation worker spread into `internal.pageFacts.store`, so a new stored field needs one edit, not three.
+- `pageElements` caps `noteCandidates` at `MAX_NOTE_CANDIDATES` (40); the scan alone at `MAX_SCANNED_TERMS` (24). A hyphen counts as part of a word, so "cherry-picked" proposes nothing (tested).
+- The pageFacts test stub now takes `picks` and `noteYes` overrides and answers every Choice with a `{ pick: 0.9, none: 0.1 }` distribution.
+- Both ADR-0010 amendments are appended to that file, dated 2026-09-21.
+
+Piece 4 is started, not wired. `packages/backend/convex/pipelineTrace.ts` holds the trace validators (`traceFields` is the table shape less system fields, `traceDraftValidator` is what the read produces) and two additions to the plan's shape: an optional `feed` block (the regex pass replayed on the stored product: `isLot`, `rule`, `attributes`, `notes`) and an optional `gate` block (the shadow row's answer when one exists; current lots rarely have one, since the shadow only runs on rejected items). Nothing imports it yet.
+
+Next steps, in order:
+
+1. `schema.ts`: `pipelineTraces: defineTable(traceFields)` with the three indexes from the plan, and `pipelineRuns` as written.
+2. `pageFacts.ts`: `readPage` and `readPageWithinBudget` return `{ text, source }` so the trace knows firecrawl from plain. `picksFromAnswers` also returns the draft's `picks`, `canonical`, `notes`, `sentences` arrays (it already has every probability; add `runnerUp` per Choice). `readPageFacts` times the page and Jev stages and returns `trace: TraceDraft` on `PageRead`; the decision taken here is that the caller writes the trace, not the read, so the worker's path adds no mutation and no parameter. An optional sixth argument `onStage?: (stage: "jev" | "cut") => Promise<void>` lets the run loop patch `currentStage`; it defaults to nothing.
+3. `nerdStuff.ts` as the plan describes: `recordTrace`, `start`, `stop`, `runLot`, `expire`, `run`, `latestRun`, `traces`, `recentTraces`, `prune`; plus an `internalQuery` that loads run, product, roaster and shadow row for `runLot` in one call. `scrape` writes a trace with `outcome` set from its own catch branches. Register `prune` in `crons.ts`.
+4. `nerdStuff.test.ts`, ADR-0018, CONTEXT.md terms. Then pieces 5 and 6.
