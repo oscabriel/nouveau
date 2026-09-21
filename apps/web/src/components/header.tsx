@@ -2,18 +2,27 @@ import {
 	useOauth,
 	useSignInWithGoogle,
 } from "@convex-dev/auth/providers/oauth/react";
-import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
+import { useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@nouveau/ui/components/dropdown-menu";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect } from "react";
 
+import { useThemeControls } from "@/components/theme-switch";
 import { navLinkClass } from "@/lib/ui";
-
-import { ModeToggle } from "./mode-toggle";
 
 /** The current route stays underlined so the nav doubles as a "you are here". */
 const activeProps = { className: "underline" };
+
+/** Caps menu item, same shape as the header links it drops from. */
+const menuItemClass = `${navLinkClass} justify-start px-2 text-foreground`;
 
 const SignInButton = () => {
 	const { signInGoogle } = useSignInWithGoogle(api.auth);
@@ -26,7 +35,7 @@ const SignInButton = () => {
 		}
 	};
 	return (
-		<div className="flex items-center gap-4">
+		<>
 			{flowError !== null && (
 				<span className="text-destructive text-sm" role="alert">
 					{flowError.message ?? "Sign-in failed. Please try again."}
@@ -39,117 +48,99 @@ const SignInButton = () => {
 				}}
 				type="button"
 			>
-				Sign in
+				Log in
 			</button>
-		</div>
+		</>
 	);
 };
 
 /**
- * Signed-in utilities: the private destinations and the account controls.
- * Grey so the primary nav stays the loudest row; each link goes ink on hover.
+ * The handle's dropdown: settings, and the LIGHT / DARK theme pair (ADR-0012,
+ * ADR-0013). Sign out is not here; it lives in /settings/account.
  */
-const Utilities = () => {
-	const { signOut } = useAuthActions();
-	const user = useQuery(api.users.getCurrentUser);
-	const endSession = async () => {
-		try {
-			await signOut();
-		} catch {
-			// A failed sign-out leaves the session as-is; the UI stays truthful.
-		}
-	};
-	const utilityClass = `${navLinkClass} text-muted-foreground hover:text-foreground`;
-
+const HandleMenu = ({ handle, path }: { handle: string; path: string }) => {
+	const { resolved, choose } = useThemeControls();
+	const themeItemClass = (active: boolean) =>
+		`${menuItemClass} text-muted-foreground hover:text-foreground ${
+			active ? "text-foreground" : ""
+		}`;
+	const sides = [
+		{ label: "Light", target: "light" },
+		{ label: "Dark", target: "dark" },
+	] as const;
 	return (
-		<nav
-			aria-label="Your account"
-			className="flex flex-wrap items-center gap-x-4 md:gap-x-5"
-		>
-			<Link
-				activeProps={activeProps}
-				className={utilityClass}
-				to="/settings/alerts"
+		<DropdownMenu>
+			<DropdownMenuTrigger
+				className={`${navLinkClass} max-w-40 truncate`}
+				render={
+					<Link activeProps={activeProps} params={{ user: path }} to="/$user" />
+				}
 			>
-				Watches
-			</Link>
-			<Link activeProps={activeProps} className={utilityClass} to="/saved">
-				Saved
-			</Link>
-			{user !== undefined && user !== null && (
-				<Link
-					activeProps={activeProps}
-					className={`${utilityClass} max-w-40 truncate`}
-					params={{ user: user.handle ?? user.id }}
-					to="/$user"
+				{handle}
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end" className="min-w-40">
+				{sides.map(({ label, target }) => (
+					<DropdownMenuItem
+						className={themeItemClass(resolved === target)}
+						key={target}
+						onClick={() => {
+							choose(target);
+						}}
+					>
+						{label}
+					</DropdownMenuItem>
+				))}
+				<DropdownMenuSeparator />
+				<DropdownMenuItem
+					className={menuItemClass}
+					render={<Link to="/settings" />}
 				>
-					{user.name ?? "Profile"}
-				</Link>
-			)}
-			<button
-				className={utilityClass}
-				onClick={() => {
-					endSession();
-				}}
-				type="button"
-			>
-				Sign out
-			</button>
-		</nav>
+					Settings
+				</DropdownMenuItem>
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 };
 
-/** Right side of the row: utilities from `md` when signed in, else Sign in. */
-const AuthControls = ({
-	isAuthenticated,
-	isLoading,
-}: {
-	isAuthenticated: boolean;
-	isLoading: boolean;
-}) => {
-	if (isLoading) {
-		return null;
-	}
-	if (isAuthenticated) {
-		return (
-			<div className="hidden md:block">
-				<Utilities />
-			</div>
-		);
-	}
-	return <SignInButton />;
-};
-
 /**
- * Site header: tracked caps labels, wordmark first, no bar and no rule. The
- * public destinations sit beside the wordmark. Signed in, the private ones
- * (Watches, Saved, profile, sign out) join the right side from `md`; below
- * that they take a second row so nothing wraps mid-list at 390px.
+ * Site header: one row of caps labels, one nav, no bar and no rule. The left
+ * side names what the site is about (Nouveau, Roasters, Drops), the right
+ * names the people (Activity, then Log in or the handle). Below `md` the
+ * right group wraps under the left instead of mounting twice. The handle
+ * carries the dropdown, so settings and theme are one click deep.
  */
 const Header = () => {
 	const { isAuthenticated, isLoading } = useConvexAuth();
+	const me = useQuery(api.users.getCurrentUser, isAuthenticated ? {} : "skip");
 	// Lazily provisions the shared alert inbox on sign-in; the mutation is a
-	// no-op when the inbox already exists. Lives here, not in Utilities, which
-	// renders twice (one copy per breakpoint).
+	// no-op when the inbox already exists. Lives here because the nav renders
+	// exactly once.
 	const ensureAlertInbox = useMutation(api.notifications.ensureAlertInbox);
 	useEffect(() => {
 		if (isAuthenticated) {
 			void ensureAlertInbox();
 		}
 	}, [ensureAlertInbox, isAuthenticated]);
-	const links = [
-		{ label: "Roasters", to: "/roasters" },
-		{ label: "Activity", to: "/activity" },
-		...(isAuthenticated ? [{ label: "Feed", to: "/drops" }] : []),
-	];
 
+	const handle = me?.handle ?? me?.id ?? undefined;
+	let authControl: React.ReactNode;
+	if (isLoading) {
+		authControl = null;
+	} else if (isAuthenticated && handle !== undefined) {
+		authControl = <HandleMenu handle={handle} path={handle} />;
+	} else if (isAuthenticated) {
+		// Signed in but the user record has not arrived; render nothing yet.
+		authControl = null;
+	} else {
+		authControl = <SignInButton />;
+	}
 	return (
 		<header className="px-5 pt-3 md:px-10 md:pt-4">
-			<div className="flex w-full flex-row items-center justify-between gap-4">
-				<nav
-					aria-label="Primary"
-					className="flex flex-wrap items-center gap-x-4 md:gap-x-5"
-				>
+			<nav
+				aria-label="Primary"
+				className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-0 md:gap-x-5"
+			>
+				<div className="flex flex-wrap items-center gap-x-4 md:gap-x-5">
 					<Link
 						activeOptions={{ exact: true }}
 						activeProps={activeProps}
@@ -158,30 +149,28 @@ const Header = () => {
 					>
 						Nouveau
 					</Link>
-					{links.map(({ to, label }) => (
-						<Link
-							activeProps={activeProps}
-							className={navLinkClass}
-							key={to}
-							to={to}
-						>
-							{label}
-						</Link>
-					))}
-				</nav>
-				<div className="flex items-center gap-4 md:gap-5">
-					<AuthControls
-						isAuthenticated={isAuthenticated}
-						isLoading={isLoading}
-					/>
-					<ModeToggle />
+					<Link
+						activeProps={activeProps}
+						className={navLinkClass}
+						to="/roasters"
+					>
+						Roasters
+					</Link>
+					<Link activeProps={activeProps} className={navLinkClass} to="/drops">
+						Drops
+					</Link>
 				</div>
-			</div>
-			{isAuthenticated && (
-				<div className="md:hidden">
-					<Utilities />
+				<div className="flex flex-wrap items-center gap-x-4 md:gap-x-5">
+					<Link
+						activeProps={activeProps}
+						className={navLinkClass}
+						to="/activity"
+					>
+						Activity
+					</Link>
+					{authControl}
 				</div>
-			)}
+			</nav>
 		</header>
 	);
 };
