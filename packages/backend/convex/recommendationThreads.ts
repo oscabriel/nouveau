@@ -63,7 +63,7 @@ export const list = query({
 		const userId = await requireUserId(ctx);
 		const run = await ctx.db
 			.query("recommendationRuns")
-			.withIndex("by_user_id_and_thread", (q) =>
+			.withIndex("by_user_id_and_thread_id", (q) =>
 				q.eq("userId", userId).eq("threadId", args.threadId)
 			)
 			.first();

@@ -307,7 +307,7 @@ export default defineSchema({
 		.index("by_user_id_and_created_at", ["userId", "createdAt"])
 		.index("by_user_id_and_status", ["userId", "status"])
 		.index("by_user_id_and_request_key", ["userId", "requestKey"])
-		.index("by_user_id_and_thread", ["userId", "threadId"]),
+		.index("by_user_id_and_thread_id", ["userId", "threadId"]),
 
 	roasters: defineTable({
 		city: v.string(),
