@@ -11,7 +11,9 @@ const scrollToTop = () => {
  * Site footer. Every route ends in it (ADR-0012, amended 2026-09-21). One
  * row of caps links: NOUVEAU, ROASTERS, DROPS left, mirroring the header,
  * BACK TO THE TOP centered again (owner, 2026-09-21: out and back the same
- * day), ABOUT and GITHUB right; no user links. Under a hairline, the flower
+ * day), ABOUT and GITHUB right; no user links. Below `md` the row stacks
+ * as three left-aligned rows: the left links, BACK TO THE TOP, then ABOUT
+ * and GITHUB (owner, 2026-09-21), no flex-wrap. Under a hairline, the flower
  * (the plate's five-stamen detail) and beside it NOUVEAU.COFFEE set huge in
  * the Garamond italic of the landing wordmark. The webp is square with the
  * drawing at 448x361 inside a 540x540 canvas (margins 46 and 90, symmetric),
@@ -22,7 +24,7 @@ const scrollToTop = () => {
  */
 export const SiteFooter = () => (
 	<footer className="mt-32 md:mt-40">
-		<div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-5 pt-4 pb-5 md:px-10">
+		<div className="flex flex-col items-start gap-y-0 px-5 pt-4 pb-5 md:flex-row md:items-center md:justify-between md:gap-x-6 md:px-10">
 			<nav aria-label="Footer" className="flex gap-4 md:gap-5">
 				<Link className={navLinkClass} to="/">
 					Nouveau
