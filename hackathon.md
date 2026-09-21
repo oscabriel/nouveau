@@ -2,18 +2,18 @@
 
 - **Project:** nouveau
 - **Event:** Convex All Gas Hackathon
-- **What it does:** A coffee memory for home brewers. Log the lots you try, ask Find my next bag for a shortlist of in-stock coffees (OpenAI compares them to your logs using the roaster's own words, fetched with Firecrawl), save the ones you want to try, and watch roasters so AgentMail emails you on new lots, restocks, and price drops.
+- **What it does:** A live index of American specialty coffee and a place to remember what you tried. Log the lots you drink, ask Find my next bag in plain words and watch an OpenAI agent search the catalog, read pages and hand over up to five in-stock picks one card at a time, save the ones you want, and watch roasters so AgentMail emails you on new lots, restocks and price drops.
 - **Demo:** _video link to be added at submission (Task 6)_
 - **Live app:** https://nouveau.coffee (https://artful-chameleon-402.convex.site)
 - **Repo:** https://github.com/oscabriel/nouveau
 - **Frontend:** Convex static hosting
 - **Convex deployment:** https://api.nouveau.coffee (https://artful-chameleon-402.convex.cloud)
-- **Components:** @agentmail/convex, @convex-dev/aggregate, @convex-dev/auth (core + Google OAuth), @convex-dev/rate-limiter, @convex-dev/static-hosting, @convex-dev/workpool, @firecrawl/firecrawl-convex
+- **Components:** @agentmail/convex, @convex-dev/agent, @convex-dev/aggregate, @convex-dev/auth (core + Google OAuth), @convex-dev/rate-limiter, @convex-dev/static-hosting, @convex-dev/workpool, @firecrawl/firecrawl-convex
 - **Convex features:** schema, indexes, queries, mutations, actions, crons, scheduled functions, file storage, realtime queries, HTTP actions, workpool, full-text search
 - **Auth:** Convex Auth
-- **AI models:** OpenAI `gpt-5.6-luna` (Responses API, strict JSON schema) for Find my next bag; TypeSafe System One `jev-1.13.0` verifies extraction spans
+- **AI models:** OpenAI `gpt-5.6-luna` (Responses API, tool loop on @convex-dev/agent) for Find my next bag; TypeSafe System One `jev-1.13.0` picks and verifies spans in the page reader
 - **Started:** 2026-08-29T18:06:09Z
-- **Last updated:** 2026-09-19T23:11:23Z
+- **Last updated:** 2026-09-21T06:08:32Z
 
 ## Log
 
@@ -120,3 +120,35 @@ ADR-0008/0009: crawl-time page reads for thin lots. After each successful crawl,
 ### 2026-09-19 - bb30df1
 
 ADR-0010: the page reader is now two steps. Jev picks the line that locates a fact (colon-less spec blocks and lead-in notes became reachable), and the field's cutter takes the value from the picked line before verification gates it, so producer and region coverage rose on the 19-page end-to-end fixture. The read asks Firecrawl for the rendered page first with a shop-page fallback, and after prod logged fifteen 429s in three minutes, the credit budget holds a single token at nine a minute so any sixty seconds stays at ten requests. Deferred reads reschedule themselves instead of being dropped.
+
+### 2026-09-20 - 80479a2
+
+Addresses (ADR-0011). Every person has a handle derived at sign-in (reserved route names refused, a retired handle kept as a redirect row), every lot lives at `/roaster/$slug/$handle` through a `(roasterId, handle)` index, and roaster slugs are claimed once with a numeric suffix on collision. The route tree moved to the new map with redirects from every old path, and alert emails write the new links. Seven ADRs (0011 to 0017) settled the design pass first, and `@convex-dev/agent` was registered for the loop below.
+
+### 2026-09-20 - fc2974b
+
+Record backend (ADRs 0014, 0016). Logs carry up to four tasting notes from the SCA wheel beside the roaster's own notes and a review text; `logs.profile` splits what the owner sees (watches, try list) from what a visitor sees; logging a lot on the try list removes the save in the same transaction and returns it for an undo toast; the landing's rated-tiles query pads and dedupes by taster. Convex features: indexes, mutations, tests (`packages/backend/convex/logs.ts`, `tasting.ts`).
+
+### 2026-09-20 - 64b5548
+
+Find my next bag is an agent you watch work (ADR-0017). One text box and a consent toggle replaced the form. The run is `agent.streamText` on `@convex-dev/agent` in the existing workpool with a fresh thread per run and tools over the internal queries: search the catalog, read a lot's page through Firecrawl under the shared budget, check price and stock, read the user's logs (only when consented). The page streams each tool call as a step line through `useUIMessages` and renders cards from the validated run document. Live on dev the first run hit a 400: the model needs `/v1/responses` for tools with reasoning, and `store: false` rides as a provider option so nothing persists OpenAI-side.
+
+### 2026-09-20 - 4e35c51
+
+Chrome and tables (ADRs 0012, 0013, 0015). Every table shares `ArrowCell` (row ends in an arrow to the page) and `TableHoverImage` (one floating 3:2 photo per table, fine pointers only). The theme is a relation, system or inverted, applied before first paint and on OS change, switched from `/settings/appearance` or the header menu. Header: NOUVEAU, ROASTERS, DROPS left, ACTIVITY and the person right. Footer: the 1808 plate's six details with Caveat captions linking Wikipedia, in place of the marquee. `/about` rewritten.
+
+### 2026-09-20 - d6f1e63
+
+The pages (ADRs 0014 to 0016). One landing for both auth states, its primary slot SIGN IN or FIND MY NEXT BAG. `/drops` is a table with filter tabs, event prices with a strike on drops, and a signed-in Your roasters tab with delivery lines. `/$user` is the personal record: public logs with rating, review and notes; the owner also sees watches with health and mute, the try list, and edit and delete. `/settings/account` edits name and handle (`updateMe` keeps the old handle as a redirect). The header names the Google account's first name and legacy rows claim a handle on first load.
+
+### 2026-09-20 - baa5690
+
+Two design-pass reviews worked through, one fix per commit: the suffix claims read one bounded index range and throw at a cap instead of risking a duplicate; a colliding lot handle suffixes the new lot, never the old; the consent gate has a test; `DropTable` is generic over its row; the undo toast fires for every removed save; flavour buckets match roaster synonyms. 571 convex-test tests green after.
+
+### 2026-09-20 - a3841e6
+
+The loop is OpenAI only. Jev left the next-bag run (the request structuring before the loop and the why check after) so the sponsor showcase depends on one vendor; the model fills the search tool's typed arguments itself and its first search is the first step. The first signed-in OpenAI-only run on dev ("light roast Guatemalan coffee") ran to one pick in four searches; it also sent `MAX_SAFE_INTEGER` for the budget and bag size, so the tool now caps them. `jev.ts` stays for the page reader.
+
+### 2026-09-20 - 5d0dbcb
+
+Find my next bag is a pane that slides in from the right (`?bag=true`, `/next-bag` redirects), reachable from any page. `pickLot` replaced `submitPicks`: the model hands over one validated lot per call and its card lands live; the run settles when the model stops calling tools, and a shortlist ages out of the pane after an hour. The search tool has no word filters, only budget and size; words rank and never exclude. Live on dev signed in: "a lot from africa with blackberry or raspberry like notes" ran one search, three stock checks and three picks in about fifteen seconds, cards arriving one by one. After watching it: the step lines show only while working, a value at a filter's ceiling means no limit, and each card's actions are Save and Buy.
