@@ -52,8 +52,8 @@ const readRecord = (value: unknown): Record<string, unknown> =>
 const readArray = (value: unknown): unknown[] =>
 	Array.isArray(value) ? value : [];
 
-const searchDetail = (part: Record<string, unknown>): string => {
-	const input = readRecord(part.input);
+/** The typed filters as a short list: "floral, washed, under $20, 250 g up to 350 g". */
+const filtersDetail = (input: Record<string, unknown>): string[] => {
 	const parts: string[] = [];
 	for (const field of ["flavour", "origin", "process"] as const) {
 		const value = readString(input[field]);
@@ -72,6 +72,12 @@ const searchDetail = (part: Record<string, unknown>): string => {
 		const ceiling = max === undefined ? "" : ` up to ${max} g`;
 		parts.push(`${floor}${ceiling}`);
 	}
+	return parts;
+};
+
+const searchDetail = (part: Record<string, unknown>): string => {
+	const input = readRecord(part.input);
+	const parts = filtersDetail(input);
 	const query = readString(input.query);
 	if (typeof query === "string" && query.length > 0) {
 		parts.push(`“${query}”`);
@@ -150,9 +156,34 @@ const stepsFromMessages = (messages: ThreadPage): Step[] =>
 			.map(({ index, part }) => stepFromPart(part, index, message))
 	);
 
-const StepList = ({ messages }: { messages: ThreadPage }) => (
+/**
+ * Jev's typed reading of the request is not a tool call, so it has no
+ * thread part; it leads the step list from the run itself (ADR-0017: both
+ * Jev steps show in the step list like any tool call).
+ */
+const jevStep = (structured: Run["structured"]): Step[] => {
+	if (structured === null) {
+		return [];
+	}
+	const parts = filtersDetail(structured);
+	return [
+		{
+			detail: parts.length === 0 ? "no typed filters" : parts.join(", "),
+			key: "jev:structured",
+			label: "Jev read",
+		},
+	];
+};
+
+const StepList = ({
+	messages,
+	structured,
+}: {
+	messages: ThreadPage;
+	structured: Run["structured"];
+}) => (
 	<ul aria-live="polite" className="mt-3 space-y-1">
-		{stepsFromMessages(messages).map((step) => (
+		{[...jevStep(structured), ...stepsFromMessages(messages)].map((step) => (
 			<li className="text-muted-foreground flex gap-3 text-sm" key={step.key}>
 				<span className="label-caps shrink-0 pt-0.5">{step.label}</span>
 				<span className="tnum [overflow-wrap:anywhere]">{step.detail}</span>
@@ -266,6 +297,27 @@ const PickCard = ({ row, runId }: { row: PickRow; runId: Run["id"] }) => {
 	);
 };
 
+/** The finished run's step record, folded away; nothing when there is none. */
+const HowItLooked = ({
+	messages,
+	structured,
+}: {
+	messages: ThreadPage;
+	structured: Run["structured"];
+}) => {
+	if (structured === null && stepsFromMessages(messages).length === 0) {
+		return null;
+	}
+	return (
+		<details className="text-sm">
+			<summary className="label-caps min-h-11 cursor-pointer py-3">
+				How it looked
+			</summary>
+			<StepList messages={messages} structured={structured} />
+		</details>
+	);
+};
+
 export const RecommendationResults = ({ run }: { run: Run | null }) => {
 	const retry = useMutation(api.recommendations.retry);
 	const [retrying, setRetrying] = useState(false);
@@ -284,7 +336,6 @@ export const RecommendationResults = ({ run }: { run: Run | null }) => {
 	}
 	const working = run.status === "queued" || run.status === "running";
 	const messages: ThreadPage = thread.results ?? [];
-	const steps = stepsFromMessages(messages);
 	const retryRun = async () => {
 		setRetrying(true);
 		setFailure(null);
@@ -314,7 +365,7 @@ export const RecommendationResults = ({ run }: { run: Run | null }) => {
 				)}
 				{run.message}
 			</p>
-			{working && <StepList messages={messages} />}
+			{working && <StepList messages={messages} structured={run.structured} />}
 			{run.status === "ready" && run.picks.length === 0 && (
 				<p className="mt-4">
 					Nothing in the catalog fits the request yet. Describe it differently,
@@ -332,13 +383,8 @@ export const RecommendationResults = ({ run }: { run: Run | null }) => {
 					))}
 				</div>
 			)}
-			{!working && steps.length > 0 && (
-				<details className="text-sm">
-					<summary className="label-caps min-h-11 cursor-pointer py-3">
-						How it looked
-					</summary>
-					<StepList messages={messages} />
-				</details>
+			{!working && (
+				<HowItLooked messages={messages} structured={run.structured} />
 			)}
 			{run.canRetry && (
 				<div className="mt-4">
