@@ -158,17 +158,29 @@ describe("rated tiles", () => {
 		expect(tiles[0]?.handle).toBe("mullugeta");
 	});
 
-	test("one taster cannot fill all three tiles", async () => {
+	test("three or fewer rated logs all show, even from one taster (ADR-0014)", async () => {
 		const { photoLotBId, photoLotId, t, userA, userB } = await setup();
 		await log(t, userA, photoLotId, 1000, 3);
 		await log(t, userA, photoLotBId, 2000, 4);
 		await log(t, userB, photoLotId, 3000, 5);
 
 		const tiles = await t.query(api.tiles.ratedTiles, {});
+		expect(tiles.map((tile) => tile.rating)).toEqual([5, 4, 3]);
+	});
+
+	test("with more than three rated logs, one taster cannot fill all three tiles", async () => {
+		const { photoLotBId, photoLotId, t, userA, userB } = await setup();
+		await log(t, userA, photoLotId, 1000, 3);
+		await log(t, userA, photoLotBId, 2000, 4);
+		await log(t, userA, photoLotId, 3000, 3.5);
+		await log(t, userB, photoLotId, 4000, 5);
+
+		const tiles = await t.query(api.tiles.ratedTiles, {});
+		// Newest rating per taster; Taster One's older two are dropped and no
+		// drop exists to pad the third tile.
 		expect(tiles).toHaveLength(2);
-		// Newest ratings first; Taster One's older rating is dropped.
 		expect(tiles[0]).toMatchObject({ handle: "mullugeta", rating: 5 });
-		expect(tiles[1]).toMatchObject({ handle: "kenia", rating: 4 });
+		expect(tiles[1]).toMatchObject({ handle: "mullugeta", rating: 3.5 });
 	});
 
 	test("tiles order by log time, newest first", async () => {

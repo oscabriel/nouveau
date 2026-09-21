@@ -131,15 +131,20 @@ export const ratedTiles = query({
 	args: { shuffleSeed: v.optional(v.number()) },
 	handler: async (ctx, args) => {
 		const pool = await ratedPool(ctx);
-		// Newest log per taster: one taster cannot fill all three tiles.
+		// Newest log per taster once more than three rated logs exist
+		// (ADR-0014): one taster cannot fill all three tiles, but the first
+		// few ratings all show whoever made them.
 		const seenUsers = new Set<Id<"users">>();
-		const deduped = pool.filter((log) => {
-			if (seenUsers.has(log.userId)) {
-				return false;
-			}
-			seenUsers.add(log.userId);
-			return true;
-		});
+		const deduped =
+			pool.length > TILE_COUNT
+				? pool.filter((log) => {
+						if (seenUsers.has(log.userId)) {
+							return false;
+						}
+						seenUsers.add(log.userId);
+						return true;
+					})
+				: pool;
 		const picked =
 			args.shuffleSeed === undefined
 				? deduped.slice(0, TILE_COUNT)
