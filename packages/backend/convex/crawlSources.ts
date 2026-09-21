@@ -24,7 +24,12 @@ import { notifyWatchersOfEvent } from "./notifications";
 import schema from "./schema";
 import { shopMarketValidator } from "./shopMarket";
 import { sourceModeValidator } from "./sourceMode";
-import { nextFreeSuffix } from "./suffix";
+import {
+	assertSuffixScanBounded,
+	nextFreeSuffix,
+	SUFFIX_SCAN_LIMIT,
+	suffixRangeEnd,
+} from "./suffix";
 import { ensureWatch } from "./watches";
 
 /**
@@ -499,8 +504,9 @@ const lotCopyFields = (product: ExtractedProduct): Partial<Doc<"products">> => {
  * moves; a later lot arriving with the same handle in the same shop, whether
  * the earlier one is archived or still current, takes the year it was first
  * seen ("ethiopia-guji-2025") and a number after that if the year is taken
- * too. Detected through the by_roaster_and_handle index at upsert, no scan,
- * and every handle in a shop stays unique, so lots.get's .unique() holds.
+ * too. Detected through the by_roaster_and_handle index at upsert; the year
+ * stem's family is one bounded range scan (suffix.ts). Every handle in a
+ * shop stays unique, so lots.get's .unique() holds.
  * `claimed` carries the handles already given out in this batch, since the
  * batch's inserts have not happened when the claims run.
  */
@@ -527,9 +533,10 @@ const claimLotHandle = async (
 			q
 				.eq("roasterId", roasterId)
 				.gte("handle", stem)
-				.lt("handle", `${stem}\uFFFF`)
+				.lt("handle", suffixRangeEnd(stem))
 		)
-		.collect();
+		.take(SUFFIX_SCAN_LIMIT);
+	assertSuffixScanBounded(taken, stem);
 	return nextFreeSuffix(stem, [...taken.map((doc) => doc.handle), ...claimed]);
 };
 

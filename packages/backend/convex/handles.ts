@@ -8,7 +8,12 @@
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { RESERVED_ROUTES } from "./constants";
-import { nextFreeSuffix } from "./suffix";
+import {
+	assertSuffixScanBounded,
+	nextFreeSuffix,
+	SUFFIX_SCAN_LIMIT,
+	suffixRangeEnd,
+} from "./suffix";
 
 /** Handles are lowercase letters, digits and dashes, no dashes at the ends. */
 export const isValidHandle = (handle: string): boolean =>
@@ -50,7 +55,10 @@ export const dropRedirect = async (
 	}
 };
 
-/** The by_handle index answers what is taken with one range scan. */
+/**
+ * The by_handle index answers what is taken with one bounded range scan
+ * over `base` and its `base-<n>` family (suffix.ts).
+ */
 const nextFreeHandle = async (
 	ctx: MutationCtx,
 	base: string
@@ -58,9 +66,10 @@ const nextFreeHandle = async (
 	const nearby = await ctx.db
 		.query("users")
 		.withIndex("by_handle", (q) =>
-			q.gte("handle", base).lt("handle", `${base}\uFFFF`)
+			q.gte("handle", base).lt("handle", suffixRangeEnd(base))
 		)
-		.collect();
+		.take(SUFFIX_SCAN_LIMIT);
+	assertSuffixScanBounded(nearby, base);
 	return nextFreeSuffix(
 		base,
 		nearby.flatMap((user) => (user.handle === undefined ? [] : [user.handle])),

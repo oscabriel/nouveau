@@ -6,7 +6,12 @@
 
 import type { MutationCtx } from "./_generated/server";
 import { RESERVED_ROUTES } from "./constants";
-import { nextFreeSuffix } from "./suffix";
+import {
+	assertSuffixScanBounded,
+	nextFreeSuffix,
+	SUFFIX_SCAN_LIMIT,
+	suffixRangeEnd,
+} from "./suffix";
 
 /** Turn a registrable domain into a slug; the seed's and submission's one. */
 export const slugifyDomain = (domain: string): string =>
@@ -22,8 +27,9 @@ export const isReservedSlug = (slug: string): boolean =>
 
 /**
  * Claim a unique slug for a new roaster: the base when free, otherwise the
- * first free `base-2`, `base-3`, ... One range scan on the by_slug index
- * answers what is taken (the same shape as the user-handle claim).
+ * first free `base-2`, `base-3`, ... One bounded range scan on the by_slug
+ * index over `base` and its `base-<n>` family answers what is taken (the
+ * same shape as the user-handle claim).
  */
 export const claimRoasterSlug = async (
 	ctx: MutationCtx,
@@ -32,9 +38,10 @@ export const claimRoasterSlug = async (
 	const nearby = await ctx.db
 		.query("roasters")
 		.withIndex("by_slug", (q) =>
-			q.gte("slug", base).lt("slug", `${base}\uFFFF`)
+			q.gte("slug", base).lt("slug", suffixRangeEnd(base))
 		)
-		.collect();
+		.take(SUFFIX_SCAN_LIMIT);
+	assertSuffixScanBounded(nearby, base);
 	return nextFreeSuffix(
 		base,
 		nearby.map((roaster) => roaster.slug),

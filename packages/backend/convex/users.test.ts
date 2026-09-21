@@ -61,6 +61,15 @@ describe("user handles", () => {
 		expect(user?.handle).toBe("ada-lovelace-2");
 	});
 
+	test("a longer handle sharing the prefix is not a collision", async () => {
+		const { t } = await setup();
+		await createUser(t, "Ada Lovelace Jr", "google-ada-jr");
+		await createUser(t, "Ada Lovelace", "google-ada-1");
+		const second = await createUser(t, "Ada Lovelace", "google-ada-2");
+		const user = await t.run((ctx) => ctx.db.get("users", second));
+		expect(user?.handle).toBe("ada-lovelace-2");
+	});
+
 	test("a new sign-in may take a retired handle, and the dead redirect goes", async () => {
 		const { t } = await setup();
 		const ada = await createUser(t, "Ada Lovelace", "google-ada");
