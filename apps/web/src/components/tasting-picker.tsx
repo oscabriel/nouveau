@@ -5,26 +5,56 @@ import {
 import type { TastingNote } from "@nouveau/backend/convex/tasting";
 
 const BASE =
-	"inline-flex min-h-8 items-center text-sm leading-none transition-colors disabled:cursor-default";
+	"inline-flex min-h-8 items-center text-sm leading-none transition-colors aria-disabled:cursor-default";
 
 /**
  * A note is text, no box: picked in ink and underlined like an active nav
- * link, selectable in grey going ink on hover, capped out at half grey.
+ * link, selectable in grey going ink on hover, locked at half grey.
  */
-const noteClass = (picked: boolean, selectable: boolean): string => {
+const noteClass = (picked: boolean, locked: boolean): string => {
 	if (picked) {
 		return `${BASE} text-foreground underline decoration-1 underline-offset-4`;
 	}
-	if (selectable) {
-		return `${BASE} text-muted-foreground hover:text-foreground`;
+	if (locked) {
+		return `${BASE} text-muted-foreground/50`;
 	}
-	return `${BASE} text-muted-foreground/50`;
+	return `${BASE} text-muted-foreground hover:text-foreground`;
 };
+
+/**
+ * One note. Locked notes (the cap is reached and this one is not picked)
+ * carry `aria-disabled` rather than `disabled` so they stay in the tab
+ * order and a keyboard user hears why the click does nothing; `toggle`
+ * refuses the pick.
+ */
+const NoteButton = ({
+	locked,
+	note,
+	picked,
+	toggle,
+}: {
+	locked: boolean;
+	note: TastingNote;
+	picked: boolean;
+	toggle: (note: TastingNote) => void;
+}) => (
+	<button
+		aria-disabled={locked}
+		aria-pressed={picked}
+		className={noteClass(picked, locked)}
+		onClick={() => {
+			toggle(note);
+		}}
+		type="button"
+	>
+		{note}
+	</button>
+);
 
 /**
  * The tasting-note picker (ADR-0016): up to four picks from the SCA wheel's
  * top two levels, category and its terms side by side, never prefilled from
- * the roaster's notes. The four-pick cap disables further notes; an already
+ * the roaster's notes. At the four-pick cap the other notes lock; an already
  * picked note always unselects.
  */
 export const TastingNotesPicker = ({
@@ -36,11 +66,18 @@ export const TastingNotesPicker = ({
 }) => {
 	const full = value.length >= MAX_TASTING_NOTES;
 	const toggle = (note: TastingNote) => {
-		onChange(
-			value.includes(note)
-				? value.filter((picked) => picked !== note)
-				: [...value, note]
-		);
+		if (value.includes(note)) {
+			onChange(value.filter((picked) => picked !== note));
+			return;
+		}
+		if (full) {
+			return;
+		}
+		onChange([...value, note]);
+	};
+	const noteProps = (note: TastingNote) => {
+		const picked = value.includes(note);
+		return { locked: full && !picked, note, picked, toggle };
 	};
 	return (
 		<div>
@@ -49,36 +86,9 @@ export const TastingNotesPicker = ({
 					<div className="min-w-40" key={category}>
 						<p className="label-caps text-foreground">{category}</p>
 						<div className="mt-1 flex flex-wrap gap-x-4">
-							<button
-								aria-pressed={value.includes(category)}
-								className={noteClass(
-									value.includes(category),
-									!full || value.includes(category)
-								)}
-								disabled={full && !value.includes(category)}
-								onClick={() => {
-									toggle(category);
-								}}
-								type="button"
-							>
-								{category}
-							</button>
+							<NoteButton {...noteProps(category)} />
 							{notes.map((note) => (
-								<button
-									aria-pressed={value.includes(note)}
-									className={noteClass(
-										value.includes(note),
-										!full || value.includes(note)
-									)}
-									disabled={full && !value.includes(note)}
-									key={note}
-									onClick={() => {
-										toggle(note);
-									}}
-									type="button"
-								>
-									{note}
-								</button>
+								<NoteButton key={note} {...noteProps(note)} />
 							))}
 						</div>
 					</div>
