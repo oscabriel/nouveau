@@ -33,7 +33,7 @@ const sections = [
 	},
 	{
 		how: [
-			"The Drops table lists every new lot, restock and price drop as it lands, and Activity shows what people are tasting right now. The Roasters directory covers the American specialty roasters Nouveau watches around the clock.",
+			"The Drops table lists every new lot, restock and price drop as it lands, and Activity shows what people are tasting right now. The Roasters directory covers the specialty roasters Nouveau watches around the clock.",
 		],
 		title: "Drops and activity",
 	},
@@ -52,10 +52,10 @@ const AboutComponent = () => (
 				About
 			</h1>
 			<p className="text-muted-foreground mt-6 max-w-prose text-sm md:text-[15px]">
-				Nouveau is a live index of American specialty coffee and a place to
-				remember what you tried. The catalog updates around the clock from the
-				roasters&apos; own shops. Buying happens at the roaster: Nouveau links
-				out and is not a store.
+				Nouveau is a live index of specialty coffee and a place to remember what
+				you tried. The catalog updates around the clock from the roasters&apos;
+				own shops. Buying happens at the roaster: Nouveau links out and is not a
+				store.
 			</p>
 			<div className="mt-12 max-w-prose md:mt-16">
 				{sections.map((section) => (

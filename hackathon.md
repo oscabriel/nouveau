@@ -2,7 +2,7 @@
 
 - **Project:** nouveau
 - **Event:** Convex All Gas Hackathon
-- **What it does:** A live index of American specialty coffee and a place to remember what you tried. Log the lots you drink, ask Find my next bag in plain words and watch an OpenAI agent search the catalog, read pages and hand over up to five in-stock picks one card at a time, save the ones you want, and watch roasters so AgentMail emails you on new lots, restocks and price drops.
+- **What it does:** A live index of specialty coffee and a place to remember what you tried. Log the lots you drink, ask Find my next bag in plain words and watch an OpenAI agent search the catalog, read pages and hand over up to five in-stock picks one card at a time, save the ones you want, and watch roasters so AgentMail emails you on new lots, restocks and price drops.
 - **Demo:** _video link to be added at submission (Task 6)_
 - **Live app:** https://nouveau.coffee (https://artful-chameleon-402.convex.site)
 - **Repo:** https://github.com/oscabriel/nouveau

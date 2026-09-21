@@ -41,4 +41,4 @@ Two things made "just add a debug page" the wrong shape. The interesting reads a
 - A run of ten lots takes the whole Firecrawl minute; the sweep and the worker defer around it, as they already do around each other. The limiters keep that to four minutes an hour.
 - `products` gains nothing. The `pipelineTraces` row references the product and roaster by id; a lot that is deleted leaves its traces to the prune.
 - The page (piece 5) is only a viewer: everything it shows exists in the two tables, and `nerdStuff.test.ts` drives the loop end to end with the providers stubbed. A change to the page cannot change what a run does.
-- Two CONTEXT.md terms: *trace* and *pipeline run*, plus *workbench* for the page.
+- Two CONTEXT.md terms: _trace_ and _pipeline run_, plus _workbench_ for the page.

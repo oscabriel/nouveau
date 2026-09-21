@@ -1,19 +1,22 @@
 # Nouveau
 
-A live index of American specialty coffee and a place to remember what you tried.
+A live index of beans from specialty coffee roasters, and a place to remember what you've tried and get notified of new drops.
 
 Nouveau watches US specialty roasters' shops, catches new lots, restocks and price drops, and emails the people watching that roaster. Signed in, you log the lots you drink with a rating and your own tasting notes, save the ones you want to try, and ask "Find my next bag" in plain words and watch an agent search the catalog and hand over in-stock picks one card at a time.
 
 - Live app: https://nouveau.coffee
 - Convex static-hosting URL: https://artful-chameleon-402.convex.site
-- Convex deployment: `artful-chameleon-402`, reached by the app at https://api.nouveau.coffee (https://artful-chameleon-402.convex.cloud)
 - Build log: [hackathon.md](hackathon.md), written for the Convex All Gas Hackathon
 
 ## How it works
 
-Everything runs on Convex. A cron every five minutes claims the crawl sources that are due and reads each shop through the Shopify feed, the WooCommerce Store API, or product pages one at a time (ADR-0006). A roaster's first crawl fills its catalog and fires nothing; from the second crawl on, a new lot, a back-in-stock or a downward price move becomes a drop event. Drop events feed the landing index, `/drops`, and the alert emails, which go out through AgentMail to each watcher's own inbox. Lot pages that the feed left thin get read by Firecrawl, with TypeSafe's Jev picking the facts out of the page text.
+Everything runs on Convex, which is the backend, the database and the host in one. A cron every five minutes claims the crawl sources that are due; realtime queries drive the landing index, `/drops` and the panes; file storage keeps each crawl's raw capture; full-text search finds a lot by name inside a roaster's catalog; and Google sign-in runs through Convex Auth. The `@convex-dev/workpool` component serializes alert sends and drives the agent runs, `@convex-dev/aggregate` updates follower counts in the same transaction as a watch, and `@convex-dev/rate-limiter` paces Check now and next-bag quotas. The web app itself is served by `@convex-dev/static-hosting` at nouveau.coffee, with the deployment's realtime API at api.nouveau.coffee as a Convex custom domain.
 
-Find my next bag is an OpenAI tool loop on `@convex-dev/agent`. The model searches the catalog with typed filters, checks stock, and hands over one validated lot per `pickLot` call; each card lands live in the pane while the run continues.
+Firecrawl reads what the feeds don't carry. Shops with no feed are read through Firecrawl's product format page by page, gated by change tracking on the collection page, and Firecrawl also picks up any feed URL that fails. The same client makes the page read for thin lots, of which there are many, since a roaster's tasting notes usually live in a Shopify metafield the feed never carries: after each crawl a sweep reads the product pages of lots still missing facts, Firecrawl's rendered HTML first and the shop's own page as the fallback, and a viewer who reaches a thin lot first gets the read on view. Every read asks TypeSafe's Jev which line of the page holds each fact; code cutters take the value from the picked line and verifiers gate what gets stored. Jev also shadows the lot classifier's ambiguous tail, recording without acting.
+
+A roaster's first crawl fills its catalog and fires nothing; from the second crawl on, a new lot, a back-in-stock or a downward price move becomes a drop event, and events feed the landing index and `/drops`. Every alert-worthy event fans out to the roaster's unmuted watchers inside the transaction that emitted it: one notifications-ledger row per (user, event) doubles as the one-email-per-event dedupe guard, the send goes through the workpool, and AgentMail delivers from one shared product inbox to each watcher's own email, replies landing in that inbox threaded per conversation.
+
+Find my next bag is an OpenAI agent loop on `@convex-dev/agent`. `gpt-5.6-luna` works through the Responses API with `store: false` and effort low, one fresh thread per run, with tools over the internal queries: search the catalog, read a lot's page facts through the same Firecrawl budget, check price and stock, and read the user's logs only when they consent. It hands over one validated lot per `pickLot` call; the server re-checks ids, stock and price at handoff and again on read; each card streams into the pane while the run continues.
 
 The design is one column, black type on a white ground, hairline tables, and Thornton's 1808 Coffea arabica plate for the only color. [DESIGN.md](DESIGN.md) is the record; the decisions behind the product are in `.agents/docs/adr/`.
 
@@ -29,7 +32,7 @@ CONTEXT.md            The domain vocabulary
 DESIGN.md             The design record
 ```
 
-Convex components in use: `@convex-dev/auth` (Google OAuth), `@convex-dev/agent`, `@convex-dev/aggregate`, `@convex-dev/rate-limiter`, `@convex-dev/static-hosting`, `@convex-dev/workpool`, `@convex-dev/migrations`, `@agentmail/convex`, `@firecrawl/firecrawl-convex`.
+Convex components in use: `@convex-dev/auth` (Google OAuth), `@convex-dev/agent`, `@convex-dev/aggregate`, `@convex-dev/rate-limiter`, `@convex-dev/static-hosting`, `@convex-dev/workpool`, `@agentmail/convex`, `@firecrawl/firecrawl-convex`.
 
 ## Running it
 
@@ -50,7 +53,7 @@ The backend reads these from the Convex deployment's environment (set them in th
 | `SITE_URL` | The browsed origin, allowed as an auth redirect target |
 | `AUTH_GOOGLE_CLIENT_ID`, `AUTH_GOOGLE_CLIENT_SECRET` | Google OAuth through Convex Auth |
 | `AUTH_PRIVATE_KEY`, `AUTH_JWKS` | Convex Auth's signing keys |
-| `AGENTMAIL_API_KEY` | Per-user alert inboxes and outgoing alert emails |
+| `AGENTMAIL_API_KEY` | The shared alert inbox and outgoing alert emails |
 | `FIRECRAWL_API_KEY`, `FIRECRAWL_WEBHOOK_SECRET` | Reading product pages the feed left thin |
 | `OPENAI_API_KEY` | Find my next bag |
 | `TYPESAFE_API_KEY` | Jev, the page reader's span picker |

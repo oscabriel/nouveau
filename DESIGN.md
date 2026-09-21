@@ -1,6 +1,6 @@
 ---
 name: Nouveau
-description: A live index of American specialty coffee. Black type on a white ground, hairline tables, one botanical plate for color.
+description: A live index of specialty coffee. Black type on a white ground, hairline tables, one botanical plate for color.
 colors:
   ground: "oklch(0.995 0 0)"
   ink: "oklch(0.13 0 0)"
