@@ -1,8 +1,7 @@
 "use node";
 
 // The workpool entry for one next-bag run (ADR-0017). It claims the run,
-// reads the request with one Jev batch, creates a fresh thread, and drives
-// the agent loop over it; the thread's tool-call parts are the run's steps
+// creates a fresh thread, and drives the agent loop over it; the thread's tool-call parts are the run's steps
 // and the submitPicks tool writes the result. Quotas, the watchdog, the
 // one-active-run rule and the retry rule are unchanged: they live in
 // recommendations.ts and fire from the workpool and the scheduler exactly as
@@ -18,9 +17,7 @@ import type { ReadLotResult } from "./recommendationAgent";
 import {
 	buildAgent,
 	buildPrompt,
-	checkWhys,
 	readLotResultValidator,
-	structureRequest,
 } from "./recommendationAgent";
 import {
 	MAX_STEPS,
@@ -137,30 +134,6 @@ export const run = internalAction({
 				});
 				return null;
 			}
-			// One Typesafe batch turns the request into typed search filters;
-			// the first search runs with them and the loop sees the results.
-			const filters = await structureRequest(ctx, claimed.input.preferences);
-			await ctx.runMutation(internal.recommendations.setStructured, {
-				...args,
-				filters,
-			});
-			const initial = await ctx.runQuery(
-				internal.recommendationAgent.searchCatalogQuery,
-				{
-					flavour: filters?.flavour,
-					maxGrams: filters?.maxGrams,
-					maxPriceCents: filters?.maxPriceCents,
-					minGrams: filters?.minGrams,
-					now: Date.now(),
-					origin: filters?.origin,
-					process: filters?.process,
-					query: claimed.input.preferences,
-				}
-			);
-			await ctx.runMutation(internal.recommendations.recordCandidates, {
-				...args,
-				candidates: initial.candidates,
-			});
 			// One fresh thread per run, never reused (ADR-0017): the thread is
 			// the run's HOW IT LOOKED record.
 			const threadId = await createThread(ctx, components.agent, {
@@ -181,7 +154,7 @@ export const run = internalAction({
 				loopCtx,
 				{ threadId },
 				{
-					prompt: buildPrompt(claimed.input.preferences, filters, initial.rows),
+					prompt: buildPrompt(claimed.input.preferences),
 					// The reasoning effort the Responses pipeline pinned, and the
 					// no-persistence rule that pipeline kept (store: false, the
 					// user's request and logs must not outlive the run OpenAI-side).
@@ -215,15 +188,10 @@ export const run = internalAction({
 				});
 				return null;
 			}
-			// One Jev Noul per card checks the why against the run's facts;
-			// a failed check blanks the sentence and summarize writes the
-			// blanked list back (ADR-0017).
-			const checked = await checkWhys(ctx, settled);
 			const text = await result.text;
 			const summary = text.trim().slice(0, SUMMARY_MAX_CHARS);
 			await ctx.runMutation(internal.recommendations.summarize, {
 				...args,
-				selections: checked.selections,
 				summary,
 			});
 		} catch (error) {

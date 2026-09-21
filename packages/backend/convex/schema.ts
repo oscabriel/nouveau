@@ -297,7 +297,9 @@ export default defineSchema({
 			v.literal("ready"),
 			v.literal("failed")
 		),
-		// Jev's typed search filters from the request text.
+		// Jev's typed search filters from the request text. Unwritten since
+		// the loop went OpenAI only (ADR-0017 amendment, 2026-09-20); kept
+		// optional so older runs still read.
 		structured: v.optional(structuredFilters),
 		// The agent thread this run drives; one fresh thread per run.
 		threadId: v.optional(v.string()),

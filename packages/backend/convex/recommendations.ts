@@ -25,7 +25,6 @@ import {
 	recommendationInput,
 	RUN_TIMEOUT_MS,
 	pickValidator,
-	structuredFilters,
 	validateInput,
 	WHY_MAX_CHARS,
 } from "./recommendationRules";
@@ -335,22 +334,6 @@ export const purgeEvidence = internalMutation({
 });
 
 /**
- * Records the Jev reading of the request text (ADR-0017). One call per run,
- * before the loop; absent when Jev was unavailable.
- */
-export const setStructured = internalMutation({
-	args: { ...attemptArgs, filters: v.union(structuredFilters, v.null()) },
-	handler: async (ctx, { attempt, filters, runId }) => {
-		if (!activeAttempt(await ctx.db.get(runId), attempt)) {
-			return null;
-		}
-		await ctx.db.patch(runId, { structured: filters ?? undefined });
-		return null;
-	},
-	returns: v.null(),
-});
-
-/**
  * Stores the thread id once the worker created it, so the client can watch
  * the steps and the thread query can authorize through run ownership.
  */
@@ -549,47 +532,20 @@ export const checkCandidate = internalQuery({
 
 /**
  * The loop's last touch: the model's final prose becomes the summary line
- * (ADR-0017), and the why check's selections replace the stored ones so a
- * blanked sentence disappears from the card. The check may only blank; a
- * list that renames or reorders the picks is ignored and the stored
- * selections stand.
+ * (ADR-0017). The picks themselves were validated and stored by submitPicks.
  */
 export const summarize = internalMutation({
-	args: {
-		...attemptArgs,
-		selections: v.array(pickValidator),
-		summary: v.string(),
-	},
-	handler: async (ctx, { attempt, runId, selections, summary }) => {
+	args: { ...attemptArgs, summary: v.string() },
+	handler: async (ctx, { attempt, runId, summary }) => {
 		const run = await ctx.db.get(runId);
 		if (!run || run.attempt !== attempt || run.status !== "ready") {
 			return null;
 		}
-		const checked =
-			selections.length === run.selections.length &&
-			selections.every((pick, index) => {
-				const stored = run.selections[index];
-				return (
-					stored !== undefined &&
-					pick.productId === stored.productId &&
-					(pick.why === stored.why || pick.why === "")
-				);
-			})
-				? selections
-				: run.selections;
-		const blanked = checked.filter(
-			(pick, index) => pick.why === "" && run.selections[index]?.why !== ""
-		).length;
-		const note =
-			blanked > 0
-				? " A why sentence was dropped because it did not match the facts."
-				: "";
 		await ctx.db.patch(runId, {
 			message:
 				summary.length > 0
-					? `${summary}${note}`
-					: `Compared the lots the tools found.${note} Fewer than five matches is a valid result.`,
-			selections: checked,
+					? summary
+					: "Compared the lots the tools found. Fewer than five matches is a valid result.",
 			updatedAt: Date.now(),
 		});
 		return null;
@@ -690,7 +646,6 @@ export const latest = query({
 			status: run.status,
 			// The client watches the run's thread for the loop's steps; absent
 			// until the worker created it, and on runs from before the field.
-			structured: run.structured ?? null,
 			threadId: run.threadId ?? null,
 		};
 	},
@@ -713,7 +668,6 @@ export const latest = query({
 				})
 			),
 			status: schema.doc("recommendationRuns").fields.status,
-			structured: v.union(structuredFilters, v.null()),
 			threadId: v.union(v.string(), v.null()),
 		})
 	),
