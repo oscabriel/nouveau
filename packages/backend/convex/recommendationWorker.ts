@@ -1,8 +1,9 @@
 "use node";
 
 // The workpool entry for one next-bag run (ADR-0017). It claims the run,
-// creates a fresh thread, and drives the agent loop over it; the thread's tool-call parts are the run's steps
-// and the submitPicks tool writes the result. Quotas, the watchdog, the
+// creates a fresh thread, and drives the agent loop over it; the thread's
+// tool-call parts are the run's steps and the pickLot tool writes the result
+// one card at a time. Quotas, the watchdog, the
 // one-active-run rule and the retry rule are unchanged: they live in
 // recommendations.ts and fire from the workpool and the scheduler exactly as
 // they did for the single-call pipeline.
@@ -180,17 +181,14 @@ export const run = internalAction({
 				// this attempt's work is done either way.
 				return null;
 			}
-			if (settled.status !== "ready") {
-				// The loop ended without the submitPicks handoff.
-				await ctx.runMutation(internal.recommendations.expire, {
-					...args,
-					providerFailed: false,
-				});
+			if (settled.status !== "running") {
 				return null;
 			}
+			// The model stopped calling tools: the picks pickLot stored are the
+			// list, and the closing prose is the summary line.
 			const text = await result.text;
 			const summary = text.trim().slice(0, SUMMARY_MAX_CHARS);
-			await ctx.runMutation(internal.recommendations.summarize, {
+			await ctx.runMutation(internal.recommendations.finish, {
 				...args,
 				summary,
 			});

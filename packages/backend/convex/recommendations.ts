@@ -381,78 +381,62 @@ export const recordCandidates = internalMutation({
 	returns: v.union(recordedValidator, v.null()),
 });
 
-const submitArgs = {
-	...attemptArgs,
-	picks: v.array(
-		v.object({
-			productId: v.id("products"),
-			why: v.string(),
-		})
-	),
-};
-
 /**
- * The submitPicks tool's write (ADR-0017): validates every id against the
- * lots the tools found this run, re-checks stock and price, and stores the
- * ranked list. Throws the error the model must fix; availability is not the
- * model's fault, so unavailable lots are dropped rather than failed.
+ * The pickLot tool's write (ADR-0017, amendment of 2026-09-20): one pick per
+ * call, appended in call order, so the client shows each card the moment it
+ * validates. Rank is call order. The id must come from this run's searches,
+ * the why must fit, the list is capped, and stock and price are re-checked.
+ * Throws the error the model must fix; a lot that is no longer available is
+ * not the model's fault, so that comes back as a refusal it can act on.
  */
-export const submitPicks = internalMutation({
-	args: submitArgs,
-	handler: async (ctx, { attempt, picks, runId }) => {
+export const pickLot = internalMutation({
+	args: { ...attemptArgs, productId: v.id("products"), why: v.string() },
+	handler: async (ctx, { attempt, productId, runId, why }) => {
 		const run = await ctx.db.get(runId);
 		if (!run || !activeAttempt(run, attempt)) {
 			throw new Error("This request is no longer active.");
 		}
-		const seen = new Set<string>();
-		for (const pick of picks) {
-			if (seen.has(pick.productId)) {
-				throw new Error(
-					`Pick ${pick.productId} appears twice; submit each coffee once.`
-				);
-			}
-			seen.add(pick.productId);
-			if (pick.why.length > WHY_MAX_CHARS) {
-				throw new Error(
-					`Pick ${pick.productId}: the why sentence is over ${WHY_MAX_CHARS} characters.`
-				);
-			}
-			if (!run.candidates.some((item) => item.productId === pick.productId)) {
-				throw new Error(
-					`Pick ${pick.productId} is not a coffee the tools found. Search the catalog first and pick only from search results.`
-				);
-			}
-		}
-		if (picks.length > MAX_PICKS) {
-			throw new Error(`Submit at most ${MAX_PICKS} picks.`);
-		}
-		const now = Date.now();
-		const available = await Promise.all(
-			picks.map(async (pick) => {
-				const candidate = run.candidates.find(
-					(item) => item.productId === pick.productId
-				);
-				return candidate && (await candidateStillAvailable(ctx, candidate, now))
-					? { productId: pick.productId, why: pick.why.trim() }
-					: null;
-			})
-		);
-		const kept = available.filter((item) => item !== null);
-		if (picks.length > 0 && kept.length === 0) {
+		if (run.selections.length >= MAX_PICKS) {
 			throw new Error(
-				"None of the picks is currently in stock at the recorded price. Search again and pick different coffees."
+				`The list already holds ${MAX_PICKS} picks; stop picking and write your closing sentence.`
 			);
 		}
+		if (run.selections.some((item) => item.productId === productId)) {
+			throw new Error(`Pick ${productId} is already on the list.`);
+		}
+		if (why.trim().length === 0 || why.length > WHY_MAX_CHARS) {
+			throw new Error(
+				`Pick ${productId}: the why must be one or two sentences, at most ${WHY_MAX_CHARS} characters.`
+			);
+		}
+		const candidate = run.candidates.find(
+			(item) => item.productId === productId
+		);
+		if (!candidate) {
+			throw new Error(
+				`Pick ${productId} is not a coffee the tools found. Search the catalog first and pick only from search results.`
+			);
+		}
+		const now = Date.now();
+		if (!(await candidateStillAvailable(ctx, candidate, now))) {
+			return {
+				accepted: false as const,
+				reason:
+					"This lot is no longer in stock at the recorded price. Pick a different coffee.",
+			};
+		}
+		const rank = run.selections.length + 1;
 		await ctx.db.patch(runId, {
 			model: OPENAI_MODEL,
-			selections: kept,
-			status: "ready",
+			selections: [...run.selections, { productId, why: why.trim() }],
 			updatedAt: now,
 		});
-		await cancelWatchdog(ctx, run);
-		return { kept: kept.length, offered: picks.length };
+		return { accepted: true as const, rank };
 	},
-	returns: v.object({ kept: v.number(), offered: v.number() }),
+	returns: v.union(
+		v.object({ accepted: v.literal(true), rank: v.number() }),
+		v.object({ accepted: v.literal(false), reason: v.string() })
+	),
 });
 
 /**
@@ -484,8 +468,7 @@ export const getRun = internalQuery({
 
 /**
  * The worker tail's read: this attempt's run in whatever state it is in; the
- * caller branches on status. A ready run must still be visible here so the
- * loop can write the summary line and run the why check after submitPicks.
+ * caller branches on status.
  */
 export const readRun = internalQuery({
 	args: attemptArgs,
@@ -531,14 +514,16 @@ export const checkCandidate = internalQuery({
 });
 
 /**
- * The loop's last touch: the model's final prose becomes the summary line
- * (ADR-0017). The picks themselves were validated and stored by submitPicks.
+ * The loop's last touch (ADR-0017, amendment of 2026-09-20): the model
+ * stopped calling tools, so the run is ready with whatever pickLot stored,
+ * and the model's final prose becomes the summary line. An empty list is a
+ * valid result. A run the watchdog or a retry already moved on is left alone.
  */
-export const summarize = internalMutation({
+export const finish = internalMutation({
 	args: { ...attemptArgs, summary: v.string() },
 	handler: async (ctx, { attempt, runId, summary }) => {
 		const run = await ctx.db.get(runId);
-		if (!run || run.attempt !== attempt || run.status !== "ready") {
+		if (!run || !activeAttempt(run, attempt)) {
 			return null;
 		}
 		await ctx.db.patch(runId, {
@@ -546,8 +531,11 @@ export const summarize = internalMutation({
 				summary.length > 0
 					? summary
 					: "Compared the lots the tools found. Fewer than five matches is a valid result.",
+			model: run.model ?? OPENAI_MODEL,
+			status: "ready",
 			updatedAt: Date.now(),
 		});
+		await cancelWatchdog(ctx, run);
 		return null;
 	},
 	returns: v.null(),

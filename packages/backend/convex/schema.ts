@@ -289,7 +289,7 @@ export default defineSchema({
 		model: v.optional(v.string()),
 		// Idempotency key the client mints per form submit.
 		requestKey: v.string(),
-		// The validated ranked list the submitPicks tool wrote (ADR-0017).
+		// The validated ranked list, one pickLot call per entry, in call order (ADR-0017).
 		selections: v.array(pickValidator),
 		status: v.union(
 			v.literal("queued"),

@@ -1,7 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 // The next-bag agent loop's pieces (ADR-0017): the catalog search the tools
-// run, the tool wrappers the model calls, and the terminal submitPicks
-// handoff. The loop is OpenAI only (ADR-0017, amendment of 2026-09-20). The run-document lifecycle
+// run, the tool wrappers the model calls, and the per-pick pickLot handoff. The loop is OpenAI only (ADR-0017, amendment of 2026-09-20). The run-document lifecycle
 // (quotas, watchdog, retries) stays in recommendations.ts; this file owns
 // what the model sees and does.
 //
@@ -300,59 +299,46 @@ export const readMyLogs: Tool = createTool({
 	title: "readMyLogs",
 });
 
-const picksInput = z.object({
-	picks: z
-		.array(
-			z.object({
-				productId: z
-					.string()
-					.describe("A productId from searchCatalog results"),
-				why: z
-					.string()
-					.min(1)
-					.max(WHY_MAX_CHARS)
-					.describe(
-						"One or two sentences tying this lot to the request, using only what the tools returned this run"
-					),
-			})
-		)
-		.max(MAX_PICKS)
-		.describe(
-			"The ranked picks, best fit first. Fewer than five is fine; an empty list means nothing fit."
-		),
-});
-
-export const submitPicks: Tool = createTool({
+export const pickLot: Tool = createTool({
 	description:
-		"Hand off the final ranked list. You must call this to finish. It validates every id and the current stock and price; fix the reported error and call it again if it fails.",
+		"Add one lot to the ranked list, best fit first; the order you call this in is the ranking the user sees. It validates the id and the current stock and price; fix the reported error and call again if it fails, or pick a different lot when told this one is unavailable. At most five picks. When you are done picking, stop calling tools and write your closing sentence.",
 	execute: async (ctx: LoopContext, args) => {
-		const result = await ctx.runMutation(internal.recommendations.submitPicks, {
+		const result = await ctx.runMutation(internal.recommendations.pickLot, {
 			attempt: ctx.attempt,
-			picks: args.picks.map((pick) => ({
-				productId: pick.productId as Id<"products">,
-				why: pick.why,
-			})),
+			productId: args.productId as Id<"products">,
 			runId: ctx.runId,
+			why: args.why,
 		});
-		return `Submitted ${result.kept} of ${result.offered} picks; the run is done. Answer with one short sentence describing what you chose.`;
+		return result.accepted
+			? `Pick ${result.rank} of ${MAX_PICKS} is on the list.`
+			: result.reason;
 	},
-	inputSchema: picksInput,
-	title: "submitPicks",
+	inputSchema: z.object({
+		productId: z.string().describe("A productId from searchCatalog results"),
+		why: z
+			.string()
+			.min(1)
+			.max(WHY_MAX_CHARS)
+			.describe(
+				"One or two sentences tying this lot to the request, using only what the tools returned this run"
+			),
+	}),
+	title: "pickLot",
 });
 
 const CONSENT_TOOLS = { readMyLogs };
 const LOOP_TOOLS = {
 	checkAvailability,
+	pickLot,
 	readLotFacts,
 	searchCatalog,
-	submitPicks,
 };
 
 // ---------------------------------------------------------------------------
 // The agent definition and the loop's prompt.
 // ---------------------------------------------------------------------------
 
-const INSTRUCTIONS = `You choose coffee for one person's request in a small catalog of US-roasted lots, and you must finish by handing off a ranked list with the submitPicks tool.
+const INSTRUCTIONS = `You choose coffee for one person's request in a small catalog of US-roasted lots. You hand the list over one lot at a time with the pickLot tool, best fit first, and finish with one closing sentence.
 
 Facts rule. Everything you know about a lot comes from tool results: searchCatalog rows, readLotFacts passages, checkAvailability answers, and the user's logs when readMyLogs is available. Never invent a productId, a price, a process, a tasting note or a stock state. Prices and bag sizes are shown from the database, so the why sentences must not restate them. Never promise an outcome ("you will love") and never state availability or shipping.
 
@@ -364,9 +350,9 @@ Work like this:
 3. readLotFacts when a lot's details are too thin to judge, at most twice per run. If a read is unavailable, proceed with what the search returned.
 4. checkAvailability before picking a lot you are unsure about.
 5. readMyLogs, when present, grounds the request in what the user logged. Use it once.
-6. Choose up to five lots, fewer when fewer fit, ranked by fit with the request, best first. Rank by how specifically the lot's own details answer the request.
-7. Call submitPicks with the ranked list and one why per pick: one or two sentences (at most 480 characters) that say how this lot fits what was asked, citing only what the tools returned this run. An empty picks list is valid when nothing fits; say so instead of forcing matches.
-8. After submitPicks succeeds, your final message is one short sentence (under 200 characters) describing what you chose. The user sees it as the summary line.`;
+6. Decide the whole ranking before you pick: up to five lots, fewer when fewer fit, ordered by how specifically each lot's own details answer the request, best first.
+7. Call pickLot once per lot in that order, with one why each: one or two sentences (at most 480 characters) that say how this lot fits what was asked, citing only what the tools returned this run. The user sees each card as soon as its pick is accepted. Picking nothing is valid when nothing fits; do not force matches.
+8. When the list is complete, stop calling tools. Your final message is one short sentence (under 200 characters) describing what you chose, or why nothing fit. The user sees it as the summary line.`;
 
 // Function tools with reasoning are unsupported for gpt-5.6-luna over
 // /v1/chat/completions, so the loop talks to /v1/responses (the endpoint the

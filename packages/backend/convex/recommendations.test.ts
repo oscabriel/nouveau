@@ -13,6 +13,7 @@ import {
 	buildAgent,
 	buildPrompt,
 	checkAvailability,
+	pickLot,
 	searchCatalog,
 } from "./recommendationAgent";
 import {
@@ -176,7 +177,7 @@ const claim = async (f: Fixture) => {
 
 /**
  * A claimed run with the fixture lot recorded as a candidate, as the search
- * tool would leave it. The loop's tools and submitPicks run against this.
+ * tool would leave it. The loop's tools and pickLot run against this.
  */
 const claimWithCandidates = async (f: Fixture) => {
 	const run = await claim(f);
@@ -195,6 +196,15 @@ const claimWithCandidates = async (f: Fixture) => {
 	}
 	return { candidates, run: recorded };
 };
+
+/** One accepted pick through the mutation the tool wraps. */
+const pick = (f: Fixture, runId: Id<"recommendationRuns">, why: string) =>
+	f.t.mutation(internal.recommendations.pickLot, {
+		attempt: 1,
+		productId: f.productId,
+		runId,
+		why,
+	});
 
 /** Runs one tool handler against a claimed run, inside a test transaction. */
 const runTool = (
@@ -412,9 +422,9 @@ test("the consent flag decides whether the loop can read logs at all", () => {
 	expect(Object.keys(withoutConsent.options.tools ?? {})).toEqual(
 		expect.arrayContaining([
 			"checkAvailability",
+			"pickLot",
 			"readLotFacts",
 			"searchCatalog",
-			"submitPicks",
 		])
 	);
 	expect(Object.keys(withoutConsent.options.tools ?? {})).toHaveLength(4);
@@ -832,7 +842,7 @@ test("checkAvailability reports the variant's current state", async () => {
 	expect(gone.available).toBe(false);
 });
 
-test("submitPicks validates ids, dedupes and length before storing", async () => {
+test("pickLot validates the id and the why, refuses repeats, and appends in call order", async () => {
 	const f = await setup();
 	const { run } = await claimWithCandidates(f);
 	// A lot that exists in the catalog but was never found by this run's search.
@@ -847,63 +857,89 @@ test("submitPicks validates ids, dedupes and length before storing", async () =>
 			status: "current",
 		})
 	);
+	await expect(pick(f, run._id, "x".repeat(481))).rejects.toThrow(
+		"at most 480"
+	);
+	await expect(pick(f, run._id, "   ")).rejects.toThrow("one or two");
 	await expect(
-		f.t.mutation(internal.recommendations.submitPicks, {
+		f.t.mutation(internal.recommendations.pickLot, {
 			attempt: 1,
-			picks: [{ productId: f.productId, why: "x".repeat(481) }],
+			productId: strayProductId,
 			runId: run._id,
-		})
-	).rejects.toThrow("over 480");
-	await expect(
-		f.t.mutation(internal.recommendations.submitPicks, {
-			attempt: 1,
-			picks: [{ productId: strayProductId, why: "invented" }],
-			runId: run._id,
+			why: "invented",
 		})
 	).rejects.toThrow("not a coffee the tools found");
-	await expect(
-		f.t.mutation(internal.recommendations.submitPicks, {
-			attempt: 1,
-			picks: [
-				{ productId: f.productId, why: "One" },
-				{ productId: f.productId, why: "Two" },
-			],
-			runId: run._id,
-		})
-	).rejects.toThrow("twice");
-	// A valid handoff trims the why and settles the run.
-	const result = await f.t.mutation(internal.recommendations.submitPicks, {
-		attempt: 1,
-		picks: [{ productId: f.productId, why: "  Jasmine echoes the request.  " }],
-		runId: run._id,
+	// A valid pick trims the why, lands at once, and the run keeps running
+	// so the next pick can follow.
+	expect(await pick(f, run._id, "  Jasmine echoes the request.  ")).toEqual({
+		accepted: true,
+		rank: 1,
 	});
-	expect(result).toEqual({ kept: 1, offered: 1 });
 	expect(await readRun(f, run._id)).toMatchObject({
 		model: OPENAI_MODEL,
 		selections: [
 			{ productId: f.productId, why: "Jasmine echoes the request." },
 		],
-		status: "ready",
+		status: "running",
+	});
+	await expect(pick(f, run._id, "Again")).rejects.toThrow(
+		"already on the list"
+	);
+	// The cap is per list, not per call.
+	await f.t.run(async (ctx) => {
+		const doc = await ctx.db.get(run._id);
+		await ctx.db.patch(run._id, {
+			selections: Array.from({ length: 5 }, (_, index) => ({
+				productId: (doc?.selections[0]?.productId ??
+					f.productId) as Id<"products">,
+				why: `Pick ${index}`,
+			})),
+		});
+	});
+	await expect(pick(f, run._id, "Sixth")).rejects.toThrow("already holds 5");
+});
+
+test("the pickLot tool turns a refusal into text the model can act on", async () => {
+	const f = await setup();
+	const { run } = await claimWithCandidates(f);
+	const accepted = await runTool(f, pickLot, run._id, {
+		productId: f.productId,
+		why: "Jasmine echoes the request.",
+	});
+	expect(accepted).toBe("Pick 1 of 5 is on the list.");
+});
+
+test("a price change before the pick refuses it without failing the run", async () => {
+	const f = await setup();
+	const { run } = await claimWithCandidates(f);
+	await f.t.run((ctx) => ctx.db.patch(f.variantId, { priceCents: 2100 }));
+	expect(await pick(f, run._id, "Jasmine echoes the request.")).toEqual({
+		accepted: false,
+		reason: expect.stringContaining("no longer in stock"),
+	});
+	expect(await readRun(f, run._id)).toMatchObject({
+		selections: [],
+		status: "running",
 	});
 });
 
-test("a settled run stays readable to the worker tail but not to the running-only guard", async () => {
+test("finish with no picks means nothing fit, and still settles the run", async () => {
 	const f = await setup();
 	const { run } = await claimWithCandidates(f);
-	await f.t.mutation(internal.recommendations.submitPicks, {
+	await f.t.mutation(internal.recommendations.finish, {
 		attempt: 1,
-		picks: [{ productId: f.productId, why: "Jasmine echoes the request." }],
 		runId: run._id,
+		summary: "Nothing in the catalog is a decaf.",
 	});
-	// The worker tail must see the ready run to write the summary line.
-	expect(
-		await f.t.query(internal.recommendations.readRun, {
-			attempt: 1,
-			runId: run._id,
-		})
-	).toMatchObject({ status: "ready" });
-	// A running-only read correctly stops seeing it, and a stale attempt
-	// sees neither.
+	expect(await readRun(f, run._id)).toMatchObject({
+		message: "Nothing in the catalog is a decaf.",
+		model: OPENAI_MODEL,
+		selections: [],
+		status: "ready",
+	});
+	// A settled run is out of reach for a late pick and for the
+	// running-only guard; the worker tail still reads it.
+	await expect(pick(f, run._id, "Late")).rejects.toThrow("no longer active");
 	expect(
 		await f.t.query(internal.recommendations.getRun, {
 			attempt: 1,
@@ -912,39 +948,10 @@ test("a settled run stays readable to the worker tail but not to the running-onl
 	).toBeNull();
 	expect(
 		await f.t.query(internal.recommendations.readRun, {
-			attempt: 2,
-			runId: run._id,
-		})
-	).toBeNull();
-});
-
-test("a price change before the handoff removes the pick", async () => {
-	const f = await setup();
-	const { run } = await claimWithCandidates(f);
-	await f.t.run((ctx) => ctx.db.patch(f.variantId, { priceCents: 2100 }));
-	await expect(
-		f.t.mutation(internal.recommendations.submitPicks, {
 			attempt: 1,
-			picks: [{ productId: f.productId, why: "Jasmine echoes the request." }],
 			runId: run._id,
 		})
-	).rejects.toThrow("currently in stock");
-	expect(await readRun(f, run._id)).toMatchObject({ status: "running" });
-});
-
-test("submitPicks with no picks means nothing fit, and still settles the run", async () => {
-	const f = await setup();
-	const { run } = await claimWithCandidates(f);
-	const result = await f.t.mutation(internal.recommendations.submitPicks, {
-		attempt: 1,
-		picks: [],
-		runId: run._id,
-	});
-	expect(result).toEqual({ kept: 0, offered: 0 });
-	expect(await readRun(f, run._id)).toMatchObject({
-		selections: [],
-		status: "ready",
-	});
+	).toMatchObject({ status: "ready" });
 });
 
 test("a settled run cancels its watchdog", async () => {
@@ -955,10 +962,10 @@ test("a settled run cancels its watchdog", async () => {
 		return doc?.expireId ? ctx.db.system.get(doc.expireId) : null;
 	});
 	expect(pending?.state.kind).toBe("pending");
-	await f.t.mutation(internal.recommendations.submitPicks, {
+	await f.t.mutation(internal.recommendations.finish, {
 		attempt: 1,
-		picks: [],
 		runId: run._id,
+		summary: "",
 	});
 	const settled = await f.t.run(async (ctx) => {
 		const doc = await ctx.db.get(run._id);
@@ -970,11 +977,7 @@ test("a settled run cancels its watchdog", async () => {
 test("latest hydrates the ranked picks with availability and image", async () => {
 	const f = await setup();
 	const { run } = await claimWithCandidates(f);
-	await f.t.mutation(internal.recommendations.submitPicks, {
-		attempt: 1,
-		picks: [{ productId: f.productId, why: "Jasmine echoes the request." }],
-		runId: run._id,
-	});
+	await pick(f, run._id, "Jasmine echoes the request.");
 	await f.t.run((ctx) => ctx.db.patch(f.productId, { imageUrl: "img" }));
 	const fresh = await f.user.query(api.recommendations.latest, { now: NOW });
 	expect(fresh?.picks).toHaveLength(1);
@@ -1011,13 +1014,12 @@ test("requests expire, retries restart clean, and a late handoff cannot overwrit
 		runId: run._id,
 	});
 	await f.user.mutation(api.recommendations.retry, { runId: run._id });
-	await expect(
-		f.t.mutation(internal.recommendations.submitPicks, {
-			attempt: 1,
-			picks: [],
-			runId: run._id,
-		})
-	).rejects.toThrow("no longer active");
+	await expect(pick(f, run._id, "Late")).rejects.toThrow("no longer active");
+	await f.t.mutation(internal.recommendations.finish, {
+		attempt: 1,
+		runId: run._id,
+		summary: "Late finish.",
+	});
 	expect(await readRun(f, run._id)).toMatchObject({
 		attempt: 2,
 		status: "queued",
@@ -1068,17 +1070,11 @@ test("enrichment reservations are shared and capped across a request's retries",
 	).toBeNull();
 });
 
-test("summarize writes the model's closing sentence and leaves the picks alone", async () => {
+test("finish writes the model's closing sentence and leaves the picks alone", async () => {
 	const f = await setup();
 	const { run } = await claimWithCandidates(f);
-	await f.t.mutation(internal.recommendations.submitPicks, {
-		attempt: 1,
-		picks: [
-			{ productId: f.productId, why: "Jasmine echoes the floral request." },
-		],
-		runId: run._id,
-	});
-	await f.t.mutation(internal.recommendations.summarize, {
+	await pick(f, run._id, "Jasmine echoes the floral request.");
+	await f.t.mutation(internal.recommendations.finish, {
 		attempt: 1,
 		runId: run._id,
 		summary: "Picked one washed lot.",
@@ -1088,22 +1084,31 @@ test("summarize writes the model's closing sentence and leaves the picks alone",
 		selections: [
 			{ productId: f.productId, why: "Jasmine echoes the floral request." },
 		],
+		status: "ready",
 	});
-	// An empty closing sentence falls back to the fixed line; a stale
-	// attempt writes nothing.
-	await f.t.mutation(internal.recommendations.summarize, {
+	// A second finish, or a stale attempt, writes nothing.
+	await f.t.mutation(internal.recommendations.finish, {
 		attempt: 1,
 		runId: run._id,
-		summary: "",
+		summary: "Twice.",
 	});
-	expect(await readRun(f, run._id)).toMatchObject({
-		message:
-			"Compared the lots the tools found. Fewer than five matches is a valid result.",
-	});
-	await f.t.mutation(internal.recommendations.summarize, {
+	await f.t.mutation(internal.recommendations.finish, {
 		attempt: 2,
 		runId: run._id,
 		summary: "Stale attempt.",
+	});
+	expect(await readRun(f, run._id)).toMatchObject({
+		message: "Picked one washed lot.",
+	});
+});
+
+test("finish with an empty closing sentence falls back to the fixed line", async () => {
+	const f = await setup();
+	const { run } = await claimWithCandidates(f);
+	await f.t.mutation(internal.recommendations.finish, {
+		attempt: 1,
+		runId: run._id,
+		summary: "",
 	});
 	expect(await readRun(f, run._id)).toMatchObject({
 		message:

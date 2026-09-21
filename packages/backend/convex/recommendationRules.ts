@@ -17,8 +17,10 @@ export const MAX_ATTEMPTS = 2;
 // Page reads one run may reserve, shared with the crawler's budget (ADR-0010).
 export const MAX_ENRICHMENTS = 2;
 export const RUN_TIMEOUT_MS = 5 * 60 * 1000;
-// Model steps (tool rounds) per run, so a confused loop ends before the watchdog.
-export const MAX_STEPS = 12;
+// Model steps (tool rounds) per run, so a confused loop ends before the
+// watchdog. Up to five of them are pickLot calls when the model picks one at
+// a time in separate steps.
+export const MAX_STEPS = 16;
 // Lots the tools may contribute to a run's candidate set across searches.
 export const MAX_RUN_CANDIDATES = 40;
 export const MAX_PICKS = 5;
