@@ -120,6 +120,17 @@ export const emptyTraceDraft = (): TraceDraft => ({
 /** Note candidates one trace keeps; past this, the top by probability. */
 export const MAX_TRACE_NOTES = 60;
 
+/** Why the read ended the way it did, from readPageFacts's point of view. */
+export const jevStatusValidator = v.union(
+	/** Jev answered; the picks are its. */
+	v.literal("answered"),
+	/** No TYPESAFE_API_KEY on the deployment: the page was read, nothing was asked. */
+	v.literal("no_key"),
+	/** Jev did not answer (unreachable, a non-2xx, or an unexpected body). */
+	v.literal("unreachable")
+);
+export type JevStatus = Infer<typeof jevStatusValidator>;
+
 /** The trace row less the system fields: what recordTrace takes and the table stores. */
 export const traceFields = {
 	...traceDraftValidator.fields,
@@ -136,4 +147,61 @@ export const traceFields = {
 	runId: v.optional(v.id("pipelineRuns")),
 	startedAt: v.number(),
 	url: v.string(),
+};
+
+export const runStatusValidator = v.union(
+	v.literal("queued"),
+	v.literal("running"),
+	v.literal("done"),
+	v.literal("stopped"),
+	v.literal("failed")
+);
+export type RunStatus = Infer<typeof runStatusValidator>;
+
+/** The six cells of the workbench's stage track, in order. */
+export const runStageValidator = v.union(
+	v.literal("feed"),
+	v.literal("gate"),
+	v.literal("page"),
+	v.literal("jev"),
+	v.literal("cut"),
+	v.literal("store")
+);
+export type RunStage = Infer<typeof runStageValidator>;
+
+/** Lots one workbench run reads: a run takes at most this much of the Firecrawl minute. */
+export const MAX_RUN_LOTS = 10;
+
+/**
+ * A workbench run (ADR-0018): a bounded sequence of traced reads a signed-in
+ * person started from /nerd-stuff, through the same Firecrawl budget as the
+ * sweep. The lot list is fixed at start, so `index` names the lot in flight.
+ */
+export const runFields = {
+	/** Write the read's facts to the product? Off by default: a run is a viewer. */
+	commit: v.boolean(),
+	createdAt: v.number(),
+	currentProductId: v.optional(v.id("products")),
+	currentStage: v.optional(runStageValidator),
+	/** Reads the budget put off, across the run. */
+	deferred: v.number(),
+	/** The watchdog that fails a run still going at RUN_TIMEOUT_MS. */
+	expireId: v.optional(v.id("_scheduled_functions")),
+	failed: v.number(),
+	/** 0-based position of the lot in flight; equals `total` when done. */
+	index: v.number(),
+	jevMs: v.number(),
+	jevQuestions: v.number(),
+	jevRequests: v.number(),
+	message: v.optional(v.string()),
+	pageMs: v.number(),
+	/** The lots picked at start, in read order; at most MAX_RUN_LOTS. */
+	productIds: v.array(v.id("products")),
+	read: v.number(),
+	roasterId: v.id("roasters"),
+	stageStartedAt: v.optional(v.number()),
+	status: runStatusValidator,
+	total: v.number(),
+	updatedAt: v.number(),
+	userId: v.id("users"),
 };

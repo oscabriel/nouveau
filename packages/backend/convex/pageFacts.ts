@@ -8,6 +8,8 @@
 // value from the picked line with the field's own cutter and the shared
 // per-field shape gates it (extraction.pageFactsFromPicks), then it is
 // stored in `products.pageFacts`, which the feed write never touches.
+// Every scheduled read also leaves one trace row (ADR-0018): the read
+// returns the draft, `scrape` records it with the outcome.
 
 import { HOUR, MINUTE, RateLimiter } from "@convex-dev/rate-limiter";
 import { FirecrawlClient } from "@firecrawl/firecrawl-convex";
@@ -30,7 +32,14 @@ import {
 import type { PageElements } from "./extraction";
 import { NOT_STATED, VOCABULARY_CHOICES } from "./factVocabulary";
 import type { CanonicalField } from "./factVocabulary";
-import { askJev, JEV_MODEL, jevChoice, jevNoul, pickProbability } from "./jev";
+import {
+	askJev,
+	JEV_MODEL,
+	jevChoice,
+	jevNoul,
+	pickProbability,
+	runnerUp,
+} from "./jev";
 import type { JevQuestion } from "./jev";
 import {
 	canonicalFactConfidenceValidator,
@@ -47,6 +56,14 @@ import type {
 	PageFacts,
 } from "./lotFacts";
 import { lotShopUrl } from "./lotUrl";
+import { emptyTraceDraft, MAX_TRACE_NOTES } from "./pipelineTrace";
+import type {
+	JevStatus,
+	RunStage,
+	TraceDraft,
+	TraceOutcome,
+	TraceSource,
+} from "./pipelineTrace";
 import { sentenceCandidates } from "./recommendationRules";
 
 /** Anyone can open a lot page, so the spend is capped deployment-wide. */
@@ -107,7 +124,7 @@ const limiter = new RateLimiter(components.rateLimiter, {
  * can run again after `retryAfter` ms. `reserved` says the budget already
  * holds a slot for it then, so the rerun must not take another.
  */
-class ReadDeferredError extends Error {
+export class ReadDeferredError extends Error {
 	override name = "ReadDeferredError";
 	readonly retryAfter: number;
 	readonly reserved: boolean;
@@ -292,13 +309,15 @@ export const pageJevQuestions = (
 	return questions;
 };
 
-/** What one answer map yields: the verified facts, Jev's probability per kept fact, the canonical enums, the approved sentences. */
+/** What one answer map yields: the verified facts, Jev's probability per kept fact, the canonical enums, the approved sentences, and the trace's view of all of it. */
 interface Picks {
 	canonical: CanonicalFacts;
 	canonicalConfidence: CanonicalFactConfidence;
 	confidence: PageFactConfidence;
 	facts: PageFacts;
 	sentences: string[];
+	/** Every candidate with its probability and verdict (ADR-0018), from the same answers. */
+	trace: Pick<TraceDraft, "canonical" | "notes" | "picks" | "sentences">;
 }
 
 /**
@@ -309,25 +328,63 @@ interface Picks {
  */
 const canonicalFromAnswers = (
 	answers: Record<string, unknown>
-): Pick<Picks, "canonical" | "canonicalConfidence"> => {
+): Pick<Picks, "canonical" | "canonicalConfidence"> & {
+	trace: TraceDraft["canonical"];
+} => {
 	const canonical: Record<string, string> = {};
 	const canonicalConfidence: CanonicalFactConfidence = {};
+	const trace: TraceDraft["canonical"] = [];
 	for (const choice of VOCABULARY_CHOICES) {
 		const chosen = jevChoice(answers[canonicalKey(choice.id)], [
 			...choice.options,
 			NOT_STATED,
 		]);
-		if (chosen === null || chosen.choice === NOT_STATED) {
+		if (chosen === null) {
+			continue;
+		}
+		const probability = pickProbability(chosen);
+		const second = runnerUp(chosen.probabilities, chosen.choice);
+		trace.push({
+			choice: chosen.choice,
+			field: choice.id,
+			...(probability === undefined ? {} : { probability }),
+			...(second === null ? {} : { runnerUp: second }),
+		});
+		if (chosen.choice === NOT_STATED) {
 			continue;
 		}
 		canonical[choice.id] = chosen.choice;
-		const probability = pickProbability(chosen);
 		if (probability !== undefined) {
 			canonicalConfidence[choice.id] = probability;
 		}
 	}
 	// Every stored key was checked against its field's own option list above.
-	return { canonical: canonical as CanonicalFacts, canonicalConfidence };
+	return { canonical: canonical as CanonicalFacts, canonicalConfidence, trace };
+};
+
+/** The trace's view of the note Nouls: every candidate Jev answered, capped at MAX_TRACE_NOTES by probability. */
+const traceNotes = (
+	answers: Record<string, unknown>,
+	elements: PageElements,
+	stored: readonly string[]
+): TraceDraft["notes"] => {
+	const kept = new Set(stored.map((note) => note.toLowerCase()));
+	const notes: TraceDraft["notes"] = [];
+	for (const [index, note] of elements.noteCandidates.entries()) {
+		const probability = jevNoul(answers[`note_${index}`]);
+		if (probability !== null) {
+			notes.push({ kept: kept.has(note.toLowerCase()), note, probability });
+		}
+	}
+	if (notes.length <= MAX_TRACE_NOTES) {
+		return notes;
+	}
+	const ranked = notes.map((item, index) => ({ index, item }));
+	// oxlint-disable-next-line unicorn/no-array-sort -- ES2021 backend; ranked is this function's own array
+	ranked.sort(
+		(a, b) => b.item.probability - a.item.probability || a.index - b.index
+	);
+	return ranked.slice(0, MAX_TRACE_NOTES).map(({ item }) => item);
 };
 
 /**
@@ -345,10 +402,14 @@ const picksFromAnswers = (
 ): Picks => {
 	const picks: PageFacts = {};
 	const picked: Partial<Record<ChoiceField, number>> = {};
+	const chosenByField: Partial<
+		Record<ChoiceField, ReturnType<typeof jevChoice>>
+	> = {};
 	const options = choiceOptions(elements);
 	for (const [field] of CHOICE_FIELDS) {
 		const chosen =
 			options.length === 1 ? null : jevChoice(answers[field], options);
+		chosenByField[field] = chosen;
 		if (chosen === null || chosen.choice === NONE_OPTION) {
 			continue;
 		}
@@ -377,12 +438,18 @@ const picksFromAnswers = (
 		picks.tastingNotes = topNotes.map((item) => item.note);
 	}
 	const approved: string[] = [];
+	const sentenceNouls: { probability: number; sentence: string }[] = [];
 	for (const [index, sentence] of sentences.entries()) {
 		const yes = jevNoul(answers[`sentence_${index}`]);
-		if (yes !== null && yes >= YES) {
+		if (yes === null) {
+			continue;
+		}
+		sentenceNouls.push({ probability: yes, sentence });
+		if (yes >= YES) {
 			approved.push(sentence);
 		}
 	}
+	const keptSentences = approved.slice(0, MAX_PAGE_SENTENCES);
 	const facts = pageFactsFromPicks(picks);
 	const confidence: PageFactConfidence = {};
 	for (const [field] of CHOICE_FIELDS) {
@@ -405,11 +472,42 @@ const picksFromAnswers = (
 			confidence.tastingNotes = aligned;
 		}
 	}
+	// The trace's view of the line picks: every field, whether Jev picked a
+	// line, the hatch, or answered out of protocol (no line, not kept).
+	const tracePicks: TraceDraft["picks"] = CHOICE_FIELDS.map(([field]) => {
+		const chosen = chosenByField[field] ?? null;
+		const cut = facts[field];
+		if (chosen === null) {
+			return { field, kept: false };
+		}
+		const probability = pickProbability(chosen);
+		const second = runnerUp(chosen.probabilities, chosen.choice);
+		return {
+			field,
+			kept: cut !== undefined,
+			...(cut === undefined ? {} : { cut }),
+			...(chosen.choice === NONE_OPTION ? {} : { line: chosen.choice }),
+			...(probability === undefined ? {} : { probability }),
+			...(second === null ? {} : { runnerUp: second }),
+		};
+	});
+	const canonicalRead = canonicalFromAnswers(answers);
 	return {
-		...canonicalFromAnswers(answers),
+		canonical: canonicalRead.canonical,
+		canonicalConfidence: canonicalRead.canonicalConfidence,
 		confidence,
 		facts,
-		sentences: approved.slice(0, MAX_PAGE_SENTENCES),
+		sentences: keptSentences,
+		trace: {
+			canonical: canonicalRead.trace,
+			notes: traceNotes(answers, elements, facts.tastingNotes ?? []),
+			picks: tracePicks,
+			sentences: sentenceNouls.map(({ probability, sentence }) => ({
+				kept: keptSentences.includes(sentence),
+				probability,
+				sentence,
+			})),
+		},
 	};
 };
 
@@ -581,10 +679,20 @@ export interface PageRead {
 	/** Jev's probability for the picked line, per stored fact. */
 	confidence: PageFactConfidence;
 	facts: PageFacts;
+	/** Whether Jev answered, was never asked for want of a key, or did not answer. */
+	jev: JevStatus;
 	/** The page as block text: the rendered or the served HTML, reduced. */
 	pageText: string;
 	/** Description sentences Jev approved, in page order. */
 	sentences: string[];
+	/** The read's evidence and verdicts (ADR-0018); the caller writes it. */
+	trace: TraceDraft;
+}
+
+/** The page text and where it came from. */
+interface PageSource {
+	source: TraceSource;
+	text: string;
 }
 
 const TRAILING_SLASHES = /\/+$/u;
@@ -678,14 +786,14 @@ const scrapePageText = async (
  * cover is a deferral, retried after Firecrawl's minute: the page was never
  * asked. Throws when the page is unavailable both ways.
  */
-const readPage = async (ctx: ActionCtx, url: string): Promise<string> => {
+const readPage = async (ctx: ActionCtx, url: string): Promise<PageSource> => {
 	let rendered: string | null;
 	try {
 		rendered = await scrapePageText(ctx, url);
 	} catch (error) {
 		const plain = await fetchPageText(url);
 		if (plain !== null) {
-			return plain;
+			return { source: "plain", text: plain };
 		}
 		if (isRateLimited(error)) {
 			throw new ReadDeferredError(MINUTE);
@@ -693,13 +801,13 @@ const readPage = async (ctx: ActionCtx, url: string): Promise<string> => {
 		throw error;
 	}
 	if (rendered !== null) {
-		return rendered;
+		return { source: "firecrawl", text: rendered };
 	}
 	const plain = await fetchPageText(url);
 	if (plain === null) {
 		throw new Error("Source page unavailable");
 	}
-	return plain;
+	return { source: "plain", text: plain };
 };
 
 /** How a read takes its slot in the deployment's Firecrawl budget. */
@@ -723,7 +831,7 @@ const readPageWithinBudget = async (
 	ctx: ActionCtx,
 	url: string,
 	{ reserve = false, reserved = false }: BudgetOptions
-): Promise<string> => {
+): Promise<PageSource> => {
 	if (reserved) {
 		try {
 			return await readPage(ctx, url);
@@ -739,7 +847,7 @@ const readPageWithinBudget = async (
 	}
 	const plain = await fetchPageText(url);
 	if (plain !== null) {
-		return plain;
+		return { source: "plain", text: plain };
 	}
 	if (!reserve) {
 		throw new ReadDeferredError(budget.retryAfter);
@@ -757,52 +865,95 @@ const readPageWithinBudget = async (
  * the lot-page ask). Throws when the page is unavailable both ways, and a
  * ReadDeferredError when it was never asked; the caller decides what each
  * means for it. `name` is the lot's name as the catalog has it; every Jev
- * question names the coffee with it.
+ * question names the coffee with it. `onStage` is told when the Jev request
+ * starts and when the cut starts, so a workbench run can show the stage in
+ * flight; the production callers pass nothing and pay nothing.
+ *
+ * The read times its page and Jev stages and returns the trace draft
+ * (ADR-0018) beside the facts. It writes nothing itself: the caller
+ * records the trace with the outcome only it knows.
  */
 export const readPageFacts = async (
 	ctx: ActionCtx,
 	url: string,
 	known = "",
 	name = "",
-	budget: BudgetOptions = {}
+	budget: BudgetOptions = {},
+	onStage?: (stage: RunStage) => Promise<void>
 ): Promise<PageRead> => {
-	const pageText = await readPageWithinBudget(ctx, url, budget);
-	const empty: PageRead = {
+	const pageStart = Date.now();
+	const page = await readPageWithinBudget(ctx, url, budget);
+	const pageText = page.text;
+	const trace: TraceDraft = {
+		...emptyTraceDraft(),
+		pageChars: pageText.length,
+		source: page.source,
+		stages: { page: Date.now() - pageStart },
+	};
+	const empty = (jev: JevStatus): PageRead => ({
 		canonical: {},
 		canonicalConfidence: {},
 		confidence: {},
 		facts: {},
+		jev,
 		pageText,
 		sentences: [],
-	};
+		trace,
+	});
 	const apiKey = env.TYPESAFE_API_KEY;
 	// Without the key the read still succeeds: the lot keeps its attempt
 	// stamp, the passages fall back to the regex path, and the next read
 	// after the retry window picks the Jev path up once the key is set.
-	if (apiKey === undefined || apiKey === "" || pageText === "") {
-		return empty;
+	if (apiKey === undefined || apiKey === "") {
+		return empty("no_key");
+	}
+	if (pageText === "") {
+		return empty("unreachable");
 	}
 	const elements = pageElements(pageHead(pageText, name));
 	const sentenceSpans = sentenceCandidates(pageText, known);
+	const questions = pageJevQuestions(elements, sentenceSpans, name);
+	trace.questionCount = Object.keys(questions).length;
+	trace.optionCount = choiceOptions(elements).length;
+	await onStage?.("jev");
+	const jevStart = Date.now();
 	const answer = await askJev(
 		apiKey,
 		`pageFacts ${url}`,
 		pageJevState(pageText, name),
-		pageJevQuestions(elements, sentenceSpans, name)
+		questions
 	);
+	trace.stages.jev = Date.now() - jevStart;
 	if (answer === null) {
-		return empty;
+		return empty("unreachable");
 	}
+	trace.model = answer.model;
 	if (answer.model !== JEV_MODEL) {
 		console.warn(
 			`jev pageFacts ${url}: answered by ${answer.model}, pinned ${JEV_MODEL}`
 		);
 	}
+	await onStage?.("cut");
+	const { trace: verdicts, ...picks } = picksFromAnswers(
+		answer.answers,
+		elements,
+		sentenceSpans
+	);
 	return {
+		...picks,
+		jev: "answered",
 		pageText,
-		...picksFromAnswers(answer.answers, elements, sentenceSpans),
+		trace: { ...trace, ...verdicts },
 	};
 };
+
+/** What a read that reached its end says about itself, for the trace row. */
+export const readOutcome = (read: PageRead): TraceOutcome =>
+	read.jev === "no_key" ? "no_key" : "read";
+
+/** One line for the trace's `error` field. */
+export const errorText = (error: unknown): string =>
+	error instanceof Error ? error.message : String(error);
 
 /** The read's stored half: what `store` takes, less the product id. */
 export const storeArgs = (
@@ -858,6 +1009,17 @@ export const scrape = internalAction({
 		const deferrals = args.deferrals ?? 0;
 		// A read at the cap must not hold a slot it will never run in.
 		const mayDefer = deferrals < MAX_READ_DEFERRALS;
+		const startedAt = Date.now();
+		// The trace is written once per read, when the read ends (ADR-0018):
+		// a deferral that runs again is not an end, so the tail is not five
+		// rows of waiting per lot.
+		const traceBase = {
+			...(deferrals === 0 ? {} : { deferrals }),
+			name: args.name ?? "",
+			productId: args.productId,
+			startedAt,
+			url: args.url,
+		};
 		try {
 			read = await readPageFacts(ctx, args.url, "", args.name ?? "", {
 				reserve: mayDefer,
@@ -875,7 +1037,14 @@ export const scrape = internalAction({
 						internal.pageFacts.scrape,
 						{ ...args, deferrals: deferrals + 1, reserved: error.reserved }
 					);
+					return null;
 				}
+				await ctx.runMutation(internal.nerdStuff.recordTrace, {
+					...emptyTraceDraft(),
+					...traceBase,
+					finishedAt: Date.now(),
+					outcome: "deferred",
+				});
 				return null;
 			}
 			// Nothing is stored for a page that could not be read, but the
@@ -884,11 +1053,26 @@ export const scrape = internalAction({
 			await ctx.runMutation(internal.pageFacts.recordFailedRead, {
 				productId: args.productId,
 			});
+			await ctx.runMutation(internal.nerdStuff.recordTrace, {
+				...emptyTraceDraft(),
+				...traceBase,
+				error: errorText(error),
+				finishedAt: Date.now(),
+				outcome: "failed",
+			});
 			return null;
 		}
 		await ctx.runMutation(internal.pageFacts.store, {
 			...storeArgs(read),
 			productId: args.productId,
+		});
+		// After the store, so a trace never claims a store that did not happen.
+		await ctx.runMutation(internal.nerdStuff.recordTrace, {
+			...read.trace,
+			...traceBase,
+			...(read.jev === "unreachable" ? { error: "Jev did not answer" } : {}),
+			finishedAt: Date.now(),
+			outcome: readOutcome(read),
 		});
 		return null;
 	},

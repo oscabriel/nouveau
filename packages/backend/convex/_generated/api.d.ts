@@ -31,6 +31,7 @@ import type * as lotFacts from "../lotFacts.js";
 import type * as lotStock from "../lotStock.js";
 import type * as lotUrl from "../lotUrl.js";
 import type * as lots from "../lots.js";
+import type * as nerdStuff from "../nerdStuff.js";
 import type * as notifications from "../notifications.js";
 import type * as pageFacts from "../pageFacts.js";
 import type * as pipelineTrace from "../pipelineTrace.js";
@@ -86,6 +87,7 @@ declare const fullApi: ApiFromModules<{
   lotStock: typeof lotStock;
   lotUrl: typeof lotUrl;
   lots: typeof lots;
+  nerdStuff: typeof nerdStuff;
   notifications: typeof notifications;
   pageFacts: typeof pageFacts;
   pipelineTrace: typeof pipelineTrace;

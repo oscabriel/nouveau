@@ -33,4 +33,13 @@ crons.interval(
 	{}
 );
 
+// Daily: drop pipeline traces past three days and workbench runs past
+// seven (ADR-0018). The tail is a window onto recent reads, not a log.
+crons.interval(
+	"prune pipeline traces",
+	{ hours: 24 },
+	internal.nerdStuff.prune,
+	{}
+);
+
 export default crons;

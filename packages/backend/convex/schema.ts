@@ -8,6 +8,7 @@ import {
 	pageFactConfidenceValidator,
 	pageFactsValidator,
 } from "./lotFacts";
+import { runFields, traceFields } from "./pipelineTrace";
 import {
 	candidateValidator,
 	pickValidator,
@@ -165,6 +166,22 @@ export default defineSchema({
 		// Event purges (§16 non-lot purge, purgeRoasterEvents) delete the ledger
 		// rows of each event they remove.
 		.index("by_drop_event_id", ["dropEventId"]),
+
+	// A workbench run (ADR-0018): up to MAX_RUN_LOTS traced reads of one
+	// roaster's lots, started from /nerd-stuff. Pruned after seven days.
+	pipelineRuns: defineTable(runFields)
+		.index("by_user_id_and_created_at", ["userId", "createdAt"])
+		.index("by_created_at", ["createdAt"])
+		.index("by_status", ["status"]),
+
+	// One page read's evidence and verdicts (ADR-0018), written by every
+	// scheduled read (pageFacts.scrape) and every workbench read; the
+	// recommendation worker's reads are not traced. Under a few KB each:
+	// one line per field, no page text. Pruned after three days.
+	pipelineTraces: defineTable(traceFields)
+		.index("by_started_at", ["startedAt"])
+		.index("by_run_id_and_started_at", ["runId", "startedAt"])
+		.index("by_product_id_and_started_at", ["productId", "startedAt"]),
 
 	productVariants: defineTable({
 		available: v.boolean(),

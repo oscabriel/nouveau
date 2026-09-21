@@ -432,3 +432,18 @@ Next steps, in order:
 2. `pageFacts.ts`: `readPage` and `readPageWithinBudget` return `{ text, source }` so the trace knows firecrawl from plain. `picksFromAnswers` also returns the draft's `picks`, `canonical`, `notes`, `sentences` arrays (it already has every probability; add `runnerUp` per Choice). `readPageFacts` times the page and Jev stages and returns `trace: TraceDraft` on `PageRead`; the decision taken here is that the caller writes the trace, not the read, so the worker's path adds no mutation and no parameter. An optional sixth argument `onStage?: (stage: "jev" | "cut") => Promise<void>` lets the run loop patch `currentStage`; it defaults to nothing.
 3. `nerdStuff.ts` as the plan describes: `recordTrace`, `start`, `stop`, `runLot`, `expire`, `run`, `latestRun`, `traces`, `recentTraces`, `prune`; plus an `internalQuery` that loads run, product, roaster and shadow row for `runLot` in one call. `scrape` writes a trace with `outcome` set from its own catch branches. Register `prune` in `crons.ts`.
 4. `nerdStuff.test.ts`, ADR-0018, CONTEXT.md terms. Then pieces 5 and 6.
+
+## Progress, session of 2026-09-21 (later): piece 4 landed
+
+Piece 4 is on `main` as one backend commit plus ADR-0018 and three CONTEXT.md terms (trace, pipeline run, workbench). 616 backend tests pass. Both tables are on dev (cool-giraffe-632). Where the code departs from the plan text above:
+
+- The run document carries `productIds` (the lots picked at start, in read order). The plan's shape had only `total` and `index`, which left `runLot` no way to know which lot was at `index`.
+- `runLot` takes `{ runId, index, deferrals?, reserved? }`, not `attempt`; the index is the attempt. The run's per-lot bookkeeping is four small internal mutations (`setStage`, `noteDeferral`, `recordTrace`, `advance`) plus one internal query (`lotContext`) that loads run, product, roaster and shadow row together.
+- `recordTrace` derives `roasterId` from the product when the caller has none, so `scheduleRead` and the `scrape` args are unchanged.
+- A trace is written only when a read ends. A deferral that reschedules leaves no row; the row it eventually leaves carries `deferrals`. Otherwise the sweep's tail would be five rows of waiting per lot.
+- `readPageFacts` returns `jev: "answered" | "no_key" | "unreachable"` beside the draft; `readOutcome(read)` maps it to the trace outcome. `pageText === ""` counts as unreachable rather than no_key.
+- `readPageFacts`'s sixth argument is `onStage?: (stage: RunStage) => Promise<void>`, told at `jev` and `cut`; `runLot` patches `feed`, `gate`, `page` and `store` itself.
+- No `appConfig` gate on `start`; sign-in plus the two limiters, as the plan's default.
+- Test traps: `finishAllScheduledFunctions(vi.runAllTimers)` fires the fifteen-minute watchdog before the first `runLot` action has returned, so `nerdStuff.test.ts` drives the loop with a `drive()` helper that advances the clock to the next scheduled step. The Firecrawl budget's one token means the second lot of a run in a test comes from the shop's own page (`source: "plain"`); a "failed" case needs a fresh fixture with both providers down.
+
+Next: piece 5, the route. `api.nerdStuff.latestRun`, `run`, `traces`, `recentTraces`, `start`, `stop` are the whole client API. Then DESIGN.md's workbench entry and the hackathon log row.
