@@ -83,7 +83,7 @@ The biggest item. Dependent on nothing else in this plan except batch 0, but gat
 
 - [ ] **`DESIGN.md` amendments.** Drop table loses Process and the year; header entry reflects the new right side and loses ModeToggle; the type scale gains Caveat; the no-cards rule gains its one exception; the Directory, Lot catalog and Index table entries follow ADR-0015; the marquee entry becomes the plate; the theme default becomes system-or-inverted (ADR-0013, line 127 says light); the filled ink block is shared with FIND MY NEXT BAG and the account Save (ADR-0014, line 198 says sign-in only).
 - [ ] **`/activity` and the scaffold-era controls.** `/activity` has not had its design pass; `SaveButton`, the rounded chips and the amber stars predate the pass. Owner's call (2026-09-20): a batch 7 item, not shipped as is.
-- [ ] **`hackathon.md`** updated once the loop ships (the "What it does" line and the OpenAI entry describe the single-call design today).
+- [x] **`hackathon.md`** updated once the loop ships (the "What it does" line and the OpenAI entry describe the single-call design today). (`d6b1fc5`: header refreshed, eight entries for bb30df1 to 5d0dbcb; `.agents/docs/recommendations.md` rewritten for the loop in the same pass)
 - [ ] **Redirect verification.** Old paths resolve; sent alert emails' links land; `/$user` for a changed handle lands on the old-handle redirect.
 - [ ] **Both themes reviewed on every rebuilt page**, the standing rule of the design pass.
 
