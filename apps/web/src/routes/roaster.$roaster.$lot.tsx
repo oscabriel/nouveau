@@ -281,7 +281,9 @@ const LotComponent = () => {
 		void ask();
 	}, [lotToAsk, requestPageFacts]);
 
-	if (page === undefined || me === undefined) {
+	// The viewer query decides only EDIT and DELETE on log rows; the page
+	// does not wait for it.
+	if (page === undefined) {
 		return (
 			<main className="py-24">
 				<Loader />
@@ -303,8 +305,6 @@ const LotComponent = () => {
 	}
 
 	const { lot, roaster } = page;
-	const isMine = (logId: string) =>
-		page.logs.some((log) => log.logId === logId && log.user.id === me?.id);
 
 	const controls = (
 		<>
@@ -373,7 +373,7 @@ const LotComponent = () => {
 						<div className="mt-6">
 							{page.logs.map((log) => (
 								<LogCard
-									isMine={isMine(log.logId)}
+									isMine={log.user.id === me?.id}
 									key={log.logId}
 									log={log}
 									showLot={false}
