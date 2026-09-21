@@ -12,7 +12,7 @@ import { navLinkClass } from "@/lib/ui";
 import type { Run } from "./stat-strip";
 
 const selectClass =
-	"text-foreground focus-visible:border-foreground h-11 max-w-64 border-b bg-transparent text-sm outline-none";
+	"text-foreground focus-visible:border-foreground h-8 min-w-0 flex-1 border-b bg-transparent text-[13px] outline-none";
 
 /**
  * The run controls: a hairline select over the active roasters, the COMMIT
@@ -45,10 +45,10 @@ export const RoasterPicker = ({
 	}
 	if (!isAuthenticated) {
 		return (
-			<div className="flex flex-wrap items-center gap-4">
+			<div className="flex flex-col gap-2">
 				<SignInCta />
-				<span className="text-muted-foreground text-sm">
-					to start a run. Watching needs no account.
+				<span className="text-muted-foreground text-xs">
+					Sign in to start a run. Watching needs no account.
 				</span>
 			</div>
 		);
@@ -91,7 +91,7 @@ export const RoasterPicker = ({
 	};
 
 	return (
-		<div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+		<div className="flex flex-wrap items-center gap-x-4 gap-y-1">
 			<select
 				aria-label="Roaster"
 				className={selectClass}
@@ -138,7 +138,7 @@ export const RoasterPicker = ({
 				</button>
 			)}
 			{failure !== null && (
-				<span className="text-muted-foreground text-sm" role="alert">
+				<span className="text-muted-foreground w-full text-xs" role="alert">
 					{failure}
 				</span>
 			)}

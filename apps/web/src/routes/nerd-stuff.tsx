@@ -6,19 +6,21 @@ import {
 	useSearch,
 } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import Loader from "@/components/loader";
-import { LiveRow } from "@/components/nerd/live-row";
+import {
+	LiveRow,
+	STAGES,
+	StageTrack,
+	statusWord,
+} from "@/components/nerd/live-row";
 import { RoasterPicker } from "@/components/nerd/roaster-picker";
 import { StatStrip } from "@/components/nerd/stat-strip";
 import type { Run } from "@/components/nerd/stat-strip";
 import { TraceDetail } from "@/components/nerd/trace-detail";
 import { TraceRow } from "@/components/nerd/trace-row";
 import type { Trace } from "@/components/nerd/trace-row";
-
-/** Rows the live tail shows; the query caps it at 50 anyway. */
-const TAIL_LIMIT = 30;
 
 /*
  * Direction contract (ADR-0018, 2026-09-21):
@@ -27,127 +29,144 @@ const TAIL_LIMIT = 30;
  *   the sweep's own Firecrawl budget). The page shows what Jev was asked
  *   and what it answered; it invents nothing and, unless COMMIT is on,
  *   writes no facts.
- * OWN-WORLD: the index's system as it stands. No accent hue; the demo's
- *   "jev" tone becomes the one inverted strip. No chips: facts are text in
- *   hairline lists. Probability bars are ink on a hairline track, 2px.
- * STORY: a visitor lands on the latest run (or `?run=`), sees its totals
- *   and the stage in flight, then the traces under it; signed in, they
- *   pick a roaster and start one.
+ * OWN-WORLD: the index's tokens, at workbench density. This route alone
+ *   departs from the table-scale spacing of the rest of the app (owner,
+ *   2026-09-21): 13px rows, 12px padding, everything on screen at once.
+ *   Still no accent hue and no chips: the totals are the one ink block,
+ *   facts are text, probability bars are ink on a 2px hairline.
+ * STORY: two columns from lg. Left, the rows: the lot in flight with its
+ *   stage track, then every finished lot of the run, then the live tail
+ *   of recent reads. Right, sticky: the controls, the totals, the track,
+ *   and the selected row's answers (or, with nothing selected, what each
+ *   stage does). Pressing a row swaps the right column to its answers.
  * UNLISTED: no nav link, no footer link, no sitemap entry. Reachable by URL
  *   on purpose; it is a workbench, not a feature.
  */
 
-const RunView = ({ run }: { run: Run | null | undefined }) => {
+/*
+ * Below lg the right column comes first (controls and totals above the
+ * rows) and a selected row's answers open inline under it; the column's
+ * own detail slot is hidden there so the trace never renders twice.
+ */
+
+/** Rows the live tail shows; the query caps it at 50 anyway. */
+const TAIL_LIMIT = 30;
+
+const TraceList = ({
+	children,
+	empty,
+	onSelect,
+	selectedId,
+	title,
+	traces,
+}: {
+	/** A row rendered ahead of the traces: the lot in flight. */
+	children?: React.ReactNode;
+	empty: string;
+	onSelect: (id: Trace["_id"]) => void;
+	selectedId: Trace["_id"] | null;
+	title: string;
+	traces: Trace[] | undefined;
+}) => (
+	<section>
+		<h2 className="label-caps flex items-baseline gap-2 border-b pb-2">
+			{title}
+			{traces !== undefined && (
+				<span className="tnum text-muted-foreground">{traces.length}</span>
+			)}
+		</h2>
+		{traces === undefined ? (
+			<div className="py-8">
+				<Loader />
+			</div>
+		) : (
+			<ul>
+				{children}
+				{traces.length === 0 && children === undefined && (
+					<li className="text-muted-foreground py-3 text-xs leading-snug">
+						{empty}
+					</li>
+				)}
+				{traces.map((trace) => (
+					<Fragment key={trace._id}>
+						<TraceRow
+							onSelect={() => {
+								onSelect(trace._id);
+							}}
+							selected={trace._id === selectedId}
+							trace={trace}
+						/>
+						{trace._id === selectedId && (
+							<li className="border-b py-4 lg:hidden">
+								<TraceDetail trace={trace} />
+							</li>
+						)}
+					</Fragment>
+				))}
+			</ul>
+		)}
+	</section>
+);
+
+/** What each stage does, for the right column while no row is selected. */
+const StageGuide = () => (
+	<section>
+		<h3 className="label-caps">Per lot</h3>
+		<dl className="mt-1">
+			{STAGES.map((stage) => (
+				<div
+					className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-x-2 border-b py-1.5 text-xs leading-snug"
+					key={stage.key}
+				>
+					<dt className="label-caps text-muted-foreground text-[10px]">
+						{stage.label}
+					</dt>
+					<dd>{stage.what}</dd>
+				</div>
+			))}
+		</dl>
+		<p className="text-muted-foreground mt-3 text-xs leading-snug">
+			Press a row to see every answer for it: the line Jev picked per field, the
+			vocabulary Choice, each note&apos;s Noul, what the cut kept.
+		</p>
+	</section>
+);
+
+const RunPanel = ({ run }: { run: Run | null | undefined }) => {
 	if (run === undefined) {
 		return (
-			<div className="py-24">
+			<div className="py-8">
 				<Loader />
 			</div>
 		);
 	}
 	if (run === null) {
 		return (
-			<p className="text-muted-foreground mt-12 text-sm leading-snug md:mt-16 md:text-[15px]">
-				No run yet. Pick a roaster and start one; the traces from the
-				sweep&apos;s own reads will show under it as they land.
+			<p className="text-muted-foreground text-xs leading-snug">
+				No run yet. The sweep&apos;s own reads still land below as traces.
 			</p>
 		);
 	}
 	return (
-		<div className="mt-12 flex flex-col gap-12 md:mt-16 md:gap-16">
+		<div className="flex flex-col gap-3">
 			<StatStrip run={run} />
-			<LiveRow run={run} />
-		</div>
-	);
-};
-
-const TraceBody = ({
-	empty,
-	onSelect,
-	selected,
-	traces,
-}: {
-	empty: string;
-	onSelect: (id: Trace["_id"]) => void;
-	selected: Trace | null;
-	traces: Trace[] | undefined;
-}) => {
-	if (traces === undefined) {
-		return (
-			<div className="py-12">
-				<Loader />
-			</div>
-		);
-	}
-	if (traces.length === 0) {
-		return (
-			<p className="text-muted-foreground mt-6 text-sm leading-snug md:text-[15px]">
-				{empty}
-			</p>
-		);
-	}
-	return (
-		<div
-			className={`mt-6 grid gap-10 ${selected === null ? "" : "md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:gap-12"}`}
-		>
-			<ul className="border-t">
-				{traces.map((trace) => (
-					<TraceRow
-						key={trace._id}
-						onSelect={() => {
-							onSelect(trace._id);
-						}}
-						selected={trace._id === selected?._id}
-						trace={trace}
-					/>
-				))}
-			</ul>
-			{selected !== null && <TraceDetail trace={selected} />}
-		</div>
-	);
-};
-
-/**
- * A list of traces beside the selected one's detail: two columns from `md`,
- * stacked below it with the detail under the list. Selecting a row that is
- * already open closes it.
- */
-const TraceList = ({
-	empty,
-	title,
-	traces,
-}: {
-	empty: string;
-	title: string;
-	traces: Trace[] | undefined;
-}) => {
-	const [selectedId, setSelectedId] = useState<Trace["_id"] | null>(null);
-	const selected = traces?.find((trace) => trace._id === selectedId) ?? null;
-	return (
-		<section>
-			<h2 className="text-xl leading-tight md:text-2xl">
-				{title}
-				{traces !== undefined && traces.length > 0 && (
-					<span className="text-muted-foreground tnum ml-2 text-xs">
-						({traces.length})
+			<div>
+				<div className="flex items-baseline justify-between gap-3 text-xs">
+					<span>{statusWord(run)}</span>
+					<span className="label-caps text-muted-foreground text-[10px]">
+						{run.commit ? "Commit on" : "Commit off"}
 					</span>
-				)}
-			</h2>
-			<TraceBody
-				empty={empty}
-				onSelect={(id) => {
-					setSelectedId((current) => (current === id ? null : id));
-				}}
-				selected={selected}
-				traces={traces}
-			/>
-		</section>
+				</div>
+				<div className="mt-1">
+					<StageTrack run={run} />
+				</div>
+			</div>
+		</div>
 	);
 };
 
-const NerdStuffComponent = () => {
-	const { run: runParam } = useSearch({ from: "/nerd-stuff" });
-	const navigate = useNavigate({ from: "/nerd-stuff" });
+/** The run the URL names, else the newest; undefined while loading. */
+const useRun = (runParam: Id<"pipelineRuns"> | undefined) => {
 	const picked = useQuery(
 		api.nerdStuff.run,
 		runParam === undefined ? "skip" : { runId: runParam }
@@ -156,58 +175,98 @@ const NerdStuffComponent = () => {
 		api.nerdStuff.latestRun,
 		runParam === undefined ? {} : "skip"
 	);
-	const run = runParam === undefined ? latest : picked;
-	const roasters = useQuery(api.roasters.listActive);
+	return runParam === undefined ? latest : picked;
+};
+
+/** The run's traces and the tail less those same rows, so a lot appears once. */
+const useTraces = (run: Run | null | undefined) => {
 	const runTraces = useQuery(
 		api.nerdStuff.traces,
 		run === undefined || run === null ? "skip" : { runId: run._id }
 	);
 	const recent = useQuery(api.nerdStuff.recentTraces, { limit: TAIL_LIMIT });
-	const roasterName =
-		run === undefined || run === null
-			? undefined
-			: roasters?.find((roaster) => roaster.id === run.roasterId)?.name;
+	const runIds = new Set(runTraces?.map((trace) => trace._id));
+	const tail = recent?.filter((trace) => !runIds.has(trace._id));
+	return { runTraces, tail };
+};
+
+const Title = ({ roasterName }: { roasterName: string | undefined }) => (
+	<div>
+		<h1 className="font-serif text-[2rem] leading-none font-normal md:text-[2.25rem]">
+			Nerd stuff
+			{roasterName !== undefined && (
+				<span className="text-muted-foreground ml-2 font-sans text-sm font-normal">
+					{roasterName}
+				</span>
+			)}
+		</h1>
+		<p className="text-muted-foreground mt-2 max-w-prose text-xs leading-snug">
+			Every page read leaves a trace: what Jev was asked, what it answered, what
+			the cut kept.
+		</p>
+	</div>
+);
+
+const NerdStuffComponent = () => {
+	const { run: runParam } = useSearch({ from: "/nerd-stuff" });
+	const navigate = useNavigate({ from: "/nerd-stuff" });
+	const run = useRun(runParam);
+	const { runTraces, tail } = useTraces(run);
+	const roasters = useQuery(api.roasters.listActive);
+	const [selectedId, setSelectedId] = useState<Trace["_id"] | null>(null);
+	const selected =
+		runTraces?.find((trace) => trace._id === selectedId) ??
+		tail?.find((trace) => trace._id === selectedId) ??
+		null;
+	const roasterName = run
+		? roasters?.find((roaster) => roaster.id === run.roasterId)?.name
+		: undefined;
+	const toggle = (id: Trace["_id"]) => {
+		setSelectedId((current) => (current === id ? null : id));
+	};
 
 	return (
 		<main>
-			<div className="px-5 pt-10 md:px-10 md:pt-14">
-				<div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-					<h1 className="font-serif text-[2rem] leading-none font-normal md:text-[2.75rem]">
-						Nerd stuff
-						{roasterName !== undefined && (
-							<span className="text-muted-foreground ml-2 font-sans text-sm font-normal">
-								{roasterName}
-							</span>
+			<div className="px-5 pt-6 md:px-10 md:pt-8">
+				<Title roasterName={roasterName} />
+				<div className="mt-6 grid gap-10 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:gap-12">
+					<div className="flex flex-col gap-8 lg:order-none">
+						{run && (
+							<TraceList
+								empty="No lot has finished yet. A trace lands when a read ends."
+								onSelect={toggle}
+								selectedId={selectedId}
+								title="This run"
+								traces={runTraces}
+							>
+								{run.status === "running" ? <LiveRow run={run} /> : undefined}
+							</TraceList>
 						)}
-					</h1>
-				</div>
-				<p className="text-muted-foreground mt-3 max-w-prose text-sm leading-snug md:text-[15px]">
-					Every page read leaves a trace: what Jev was asked, what it answered,
-					what the cut kept. A run reads up to ten of one roaster&apos;s lots
-					and writes nothing unless you say so.
-				</p>
-				<div className="mt-10 md:mt-12">
-					<RoasterPicker
-						onStarted={(runId) => {
-							void navigate({ search: { run: runId } });
-						}}
-						run={run ?? null}
-					/>
-				</div>
-				<RunView run={run} />
-				<div className="mt-16 flex flex-col gap-16 md:mt-24 md:gap-24">
-					{run !== undefined && run !== null && (
 						<TraceList
-							empty="No lot has finished yet. A trace lands when a read ends."
-							title="This run"
-							traces={runTraces}
+							empty="No other reads in the last three days."
+							onSelect={toggle}
+							selectedId={selectedId}
+							title="Recent reads"
+							traces={tail}
 						/>
-					)}
-					<TraceList
-						empty="No reads in the last three days."
-						title="Recent reads"
-						traces={recent}
-					/>
+					</div>
+					<aside className="order-first flex flex-col gap-6 self-start lg:sticky lg:top-6 lg:order-none lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-3">
+						<RoasterPicker
+							onStarted={(runId) => {
+								setSelectedId(null);
+								void navigate({ search: { run: runId } });
+							}}
+							run={run ?? null}
+						/>
+						<RunPanel run={run} />
+						<div className="hidden lg:block">
+							{selected === null ? (
+								<StageGuide />
+							) : (
+								<TraceDetail trace={selected} />
+							)}
+						</div>
+					</aside>
 				</div>
 			</div>
 		</main>

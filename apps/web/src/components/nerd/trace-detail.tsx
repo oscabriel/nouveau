@@ -18,6 +18,13 @@ const Bar = ({ probability }: { probability: number | undefined }) => (
 	</span>
 );
 
+const keptWord = (kept: boolean | undefined): string => {
+	if (kept === undefined) {
+		return "";
+	}
+	return kept ? "Kept" : "Dropped";
+};
+
 /**
  * One judgment: caps label, the value (grey and struck through when the
  * verifier dropped it), the runner-up in grey after it, the bar, the
@@ -36,12 +43,12 @@ const Judgment = ({
 	probability: number | undefined;
 	value: string;
 }) => (
-	<div className="grid grid-cols-[minmax(0,1fr)_3rem] items-center gap-x-4 gap-y-1 border-b py-3 sm:grid-cols-[7rem_minmax(0,1fr)_5rem_3rem_4rem]">
-		<span className="label-caps text-muted-foreground col-span-2 sm:col-span-1">
+	<div className="grid grid-cols-[5.5rem_minmax(0,1fr)_3.5rem_2.5rem_3.5rem] items-center gap-x-2 border-b py-1.5 text-xs">
+		<span className="label-caps text-muted-foreground truncate text-[10px]">
 			{label}
 		</span>
 		<span
-			className={`min-w-0 text-sm leading-snug ${
+			className={`min-w-0 leading-snug ${
 				kept === false
 					? "text-muted-foreground line-through decoration-current/60"
 					: ""
@@ -49,24 +56,22 @@ const Judgment = ({
 		>
 			{value}
 			{aside !== undefined && (
-				<span className="text-muted-foreground ml-2 no-underline">{aside}</span>
+				<span className="text-muted-foreground ml-1.5 no-underline">
+					{aside}
+				</span>
 			)}
 		</span>
-		<span className="hidden sm:block">
-			<Bar probability={probability} />
-		</span>
+		<Bar probability={probability} />
 		<span className="tnum text-muted-foreground text-right text-xs">
 			{pct(probability)}
 		</span>
-		{kept !== undefined && (
-			<span
-				className={`label-caps col-span-2 text-right sm:col-span-1 ${
-					kept ? "" : "text-muted-foreground"
-				}`}
-			>
-				{kept ? "Kept" : "Dropped"}
-			</span>
-		)}
+		<span
+			className={`label-caps text-right text-[10px] ${
+				kept === true ? "" : "text-muted-foreground"
+			}`}
+		>
+			{keptWord(kept)}
+		</span>
 	</div>
 );
 
@@ -81,17 +86,17 @@ const Section = ({
 }) => (
 	<section>
 		<div className="flex items-baseline justify-between gap-4">
-			<h3 className="text-lg leading-tight md:text-xl">{title}</h3>
+			<h3 className="label-caps">{title}</h3>
 			{detail !== undefined && detail !== null && (
 				<span className="tnum text-muted-foreground text-xs">{detail}</span>
 			)}
 		</div>
-		<div className="mt-3">{children}</div>
+		<div className="mt-1">{children}</div>
 	</section>
 );
 
 const Empty = ({ children }: { children: ReactNode }) => (
-	<p className="text-muted-foreground border-b py-3 text-sm leading-snug">
+	<p className="text-muted-foreground border-b py-1.5 text-xs leading-snug">
 		{children}
 	</p>
 );
@@ -126,10 +131,10 @@ export const TraceDetail = ({ trace }: { trace: Trace }) => {
 	const notesKept = trace.notes.filter((note) => note.kept).length;
 	const sentencesKept = trace.sentences.filter((s) => s.kept).length;
 	return (
-		<div className="flex flex-col gap-10">
+		<div className="flex flex-col gap-5">
 			<div>
-				<h2 className="text-xl leading-tight md:text-2xl">{trace.name}</h2>
-				<p className="text-muted-foreground tnum mt-2 text-xs">
+				<h2 className="text-[15px] leading-snug">{trace.name}</h2>
+				<p className="text-muted-foreground tnum mt-1 text-xs">
 					{[
 						trace.source !== undefined && `${trace.source} page`,
 						trace.pageChars !== undefined &&
@@ -144,7 +149,7 @@ export const TraceDetail = ({ trace }: { trace: Trace }) => {
 						.join(" · ")}
 				</p>
 				{trace.error !== undefined && (
-					<p className="mt-3 text-sm leading-snug">{trace.error}</p>
+					<p className="mt-2 text-xs leading-snug">{trace.error}</p>
 				)}
 			</div>
 
@@ -279,7 +284,7 @@ export const TraceDetail = ({ trace }: { trace: Trace }) => {
 				{merged.length === 0 ? (
 					<Empty>Nothing stored from this read.</Empty>
 				) : (
-					<p className="border-b py-3 text-sm leading-snug md:text-[15px]">
+					<p className="border-b py-1.5 text-xs leading-snug">
 						{merged.join(" · ")}
 					</p>
 				)}
