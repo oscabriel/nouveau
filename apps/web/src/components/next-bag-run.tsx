@@ -3,6 +3,7 @@ import { api } from "@nouveau/backend/convex/_generated/api";
 import { Link } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
+import { ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 
 import { SaveButton } from "@/components/save-button";
@@ -27,7 +28,9 @@ interface Step {
 
 // ---------------------------------------------------------------------------
 // Steps: one line per tool call (ADR-0017), a fact the app produced, in
-// tabular figures. The user's prompt and the model's prose are not steps.
+// tabular figures. The user's prompt and the model's prose are not steps,
+// and neither is a pickLot call: the card it produced is its line. The
+// steps show while the loop works and go when it settles.
 // ---------------------------------------------------------------------------
 
 /** Tool-call parts carry `type: "tool-${name}"` (AI SDK wire shape). */
@@ -97,10 +100,6 @@ const readLotDetail = (part: Record<string, unknown>): string =>
 const readLogsDetail = (part: Record<string, unknown>): string =>
 	`${readArray(readRecord(part.output).logs).length} logs`;
 
-/** The tool's own sentence: "Pick 2 of 5 is on the list." or the refusal. */
-const pickDetail = (part: Record<string, unknown>): string =>
-	readString(part.output) ?? "";
-
 const stepFromPart = (
 	part: Record<string, unknown>,
 	index: number,
@@ -130,19 +129,19 @@ const stepFromPart = (
 	} else if (name === "readMyLogs") {
 		label = "Your logs";
 		detail = readLogsDetail(part);
-	} else if (name === "pickLot") {
-		label = "Pick";
-		detail = pickDetail(part);
 	}
 	return { detail, key, label };
 };
 
 /** Tool-call parts across the thread, in message order. */
+const isPickPart = (part: Record<string, unknown>): boolean =>
+	part.type === "tool-pickLot" || part.toolName === "pickLot";
+
 const stepsFromMessages = (messages: ThreadPage): Step[] =>
 	messages.flatMap((message) =>
 		message.parts
 			.map((part, index) => ({ index, message, part }))
-			.filter(({ part }) => isToolPart(part))
+			.filter(({ part }) => isToolPart(part) && !isPickPart(part))
 			.map(({ index, part }) => stepFromPart(part, index, message))
 	);
 
@@ -167,40 +166,31 @@ const StepList = ({ steps }: { steps: Step[] }) => (
 // ---------------------------------------------------------------------------
 
 /**
- * The candidate's page on Nouveau, addressed by the (roaster, lot) pair
+ * The lot's name, linking its page on Nouveau by the (roaster, lot) pair
  * (ADR-0011). Runs stored before the field carry no handle or roaster slug,
- * so those fall back to the roaster's own product page.
+ * so those link the roaster's own product page instead.
  */
-const CandidateLink = ({
-	className,
-	owner,
-	row,
-}: {
-	className: string;
-	/** "name" links the lot name; "page" links the actions row. */
-	owner: "name" | "page";
-	row: PickRow;
-}) => {
+const CandidateName = ({ row }: { row: PickRow }) => {
 	const { candidate } = row;
 	if (candidate.handle === undefined || candidate.roasterSlug === undefined) {
 		return (
 			<a
-				className={className}
+				className="hover:underline"
 				href={candidate.url}
 				rel="noopener noreferrer"
 				target="_blank"
 			>
-				{owner === "name" ? candidate.name : "Source page"}
+				{candidate.name}
 			</a>
 		);
 	}
 	return (
 		<Link
-			className={className}
+			className="hover:underline"
 			params={{ lot: candidate.handle, roaster: candidate.roasterSlug }}
 			to="/roaster/$roaster/$lot"
 		>
-			{owner === "name" ? candidate.name : "Coffee page"}
+			{candidate.name}
 		</Link>
 	);
 };
@@ -230,7 +220,7 @@ const PickCard = ({
 			<div className="min-w-0">
 				<p className="text-muted-foreground tnum text-xs">{rank}</p>
 				<h3 className="mt-1 min-w-0 text-[15px] leading-snug font-semibold [overflow-wrap:anywhere]">
-					<CandidateLink className="hover:underline" owner="name" row={row} />
+					<CandidateName row={row} />
 				</h3>
 				<p className="text-muted-foreground mt-0.5 text-sm">
 					{candidate.roasterName}
@@ -248,14 +238,14 @@ const PickCard = ({
 				)}
 				<div className="mt-1 flex flex-wrap items-center gap-x-4 text-sm">
 					<SaveButton fromRunId={runId} lotId={candidate.productId} size="sm" />
-					<CandidateLink className={navLinkClass} owner="page" row={row} />
 					<a
-						className={navLinkClass}
+						className={`${navLinkClass} inline-flex items-center gap-0.5`}
 						href={candidate.url}
 						rel="noopener noreferrer"
 						target="_blank"
 					>
-						Roaster
+						Buy
+						<ArrowUpRight aria-hidden className="size-3.5" />
 					</a>
 				</div>
 			</div>
@@ -301,17 +291,17 @@ const RetryAction = ({ run }: { run: Run }) => {
 /**
  * The run under the box: the request as the user typed it, the status line,
  * the steps while the loop works, and the cards as they land. Finished, the
- * steps fold under HOW IT LOOKED.
+ * steps go and the cards and summary line stay.
  */
 export const NextBagRun = ({ run }: { run: Run }) => {
-	// The thread is the run's HOW IT LOOKED record (ADR-0017); steps stream
-	// in while the loop works.
+	const working = run.status === "queued" || run.status === "running";
+	// The thread is where the steps stream from while the loop works
+	// (ADR-0017); a settled run does not read it.
 	const thread = useUIMessages(
 		api.recommendationThreads.list,
-		run.threadId === null ? "skip" : { threadId: run.threadId },
+		working && run.threadId !== null ? { threadId: run.threadId } : "skip",
 		{ initialNumItems: 24, stream: true }
 	);
-	const working = run.status === "queued" || run.status === "running";
 	const steps = stepsFromMessages(thread.results ?? []);
 	return (
 		<section aria-label="Your shortlist" className="mt-8">
@@ -357,16 +347,6 @@ export const NextBagRun = ({ run }: { run: Run }) => {
 				<div className="mt-3">
 					<RetryAction run={run} />
 				</div>
-			)}
-			{!working && steps.length > 0 && (
-				<details className="mt-4">
-					<summary className={`${navLinkClass} cursor-pointer list-none`}>
-						How it looked
-					</summary>
-					<div className="mt-2">
-						<StepList steps={steps} />
-					</div>
-				</details>
 			)}
 		</section>
 	);
