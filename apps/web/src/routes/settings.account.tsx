@@ -37,7 +37,7 @@ const AccountForm = ({ me }: { me: Me }) => {
 		setSaving(false);
 	};
 
-	const signOutConfirmed = async () => {
+	const signOutAndToast = async () => {
 		try {
 			await signOut();
 			toast.success("Signed out.");
@@ -78,8 +78,9 @@ const AccountForm = ({ me }: { me: Me }) => {
 						Handle
 					</label>
 					<div className="mt-2 flex items-center gap-1">
+						{/* The host the page is served from, so a preview or local build shows its own address. */}
 						<span className="text-muted-foreground text-sm md:text-[15px]">
-							nouveau.coffee/
+							{window.location.host}/
 						</span>
 						<input
 							autoCapitalize="off"
@@ -115,7 +116,7 @@ const AccountForm = ({ me }: { me: Me }) => {
 				<button
 					className="label-caps text-muted-foreground hover:text-foreground inline-flex min-h-11 items-center hover:underline"
 					onClick={() => {
-						void signOutConfirmed();
+						void signOutAndToast();
 					}}
 					type="button"
 				>
