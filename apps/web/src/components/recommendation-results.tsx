@@ -156,34 +156,9 @@ const stepsFromMessages = (messages: ThreadPage): Step[] =>
 			.map(({ index, part }) => stepFromPart(part, index, message))
 	);
 
-/**
- * Jev's typed reading of the request is not a tool call, so it has no
- * thread part; it leads the step list from the run itself (ADR-0017: both
- * Jev steps show in the step list like any tool call).
- */
-const jevStep = (structured: Run["structured"]): Step[] => {
-	if (structured === null) {
-		return [];
-	}
-	const parts = filtersDetail(structured);
-	return [
-		{
-			detail: parts.length === 0 ? "no typed filters" : parts.join(", "),
-			key: "jev:structured",
-			label: "Jev read",
-		},
-	];
-};
-
-const StepList = ({
-	messages,
-	structured,
-}: {
-	messages: ThreadPage;
-	structured: Run["structured"];
-}) => (
+const StepList = ({ messages }: { messages: ThreadPage }) => (
 	<ul aria-live="polite" className="mt-3 space-y-1">
-		{[...jevStep(structured), ...stepsFromMessages(messages)].map((step) => (
+		{stepsFromMessages(messages).map((step) => (
 			<li className="text-muted-foreground flex gap-3 text-sm" key={step.key}>
 				<span className="label-caps shrink-0 pt-0.5">{step.label}</span>
 				<span className="tnum [overflow-wrap:anywhere]">{step.detail}</span>
@@ -257,19 +232,10 @@ const PickCard = ({ row, runId }: { row: PickRow; runId: Run["id"] }) => {
 				<p className="text-muted-foreground mt-1 text-sm">
 					{candidate.roasterName}
 				</p>
-				{pick.why === "" ? (
-					<p className="text-muted-foreground mt-3 text-sm">
-						A why sentence was dropped because it did not match the facts the
-						tools returned.
-					</p>
-				) : (
-					<p className="mt-3 text-sm [overflow-wrap:anywhere]">
-						<span className="label-caps text-muted-foreground mr-2">
-							OpenAI
-						</span>
-						{pick.why}
-					</p>
-				)}
+				<p className="mt-3 text-sm [overflow-wrap:anywhere]">
+					<span className="label-caps text-muted-foreground mr-2">OpenAI</span>
+					{pick.why}
+				</p>
 				{!canBuy && (
 					<p className="text-muted-foreground mt-2 text-sm">
 						This size, price or availability can no longer be confirmed. Check
@@ -298,14 +264,8 @@ const PickCard = ({ row, runId }: { row: PickRow; runId: Run["id"] }) => {
 };
 
 /** The finished run's step record, folded away; nothing when there is none. */
-const HowItLooked = ({
-	messages,
-	structured,
-}: {
-	messages: ThreadPage;
-	structured: Run["structured"];
-}) => {
-	if (structured === null && stepsFromMessages(messages).length === 0) {
+const HowItLooked = ({ messages }: { messages: ThreadPage }) => {
+	if (stepsFromMessages(messages).length === 0) {
 		return null;
 	}
 	return (
@@ -313,7 +273,7 @@ const HowItLooked = ({
 			<summary className="label-caps min-h-11 cursor-pointer py-3">
 				How it looked
 			</summary>
-			<StepList messages={messages} structured={structured} />
+			<StepList messages={messages} />
 		</details>
 	);
 };
@@ -365,7 +325,7 @@ export const RecommendationResults = ({ run }: { run: Run | null }) => {
 				)}
 				{run.message}
 			</p>
-			{working && <StepList messages={messages} structured={run.structured} />}
+			{working && <StepList messages={messages} />}
 			{run.status === "ready" && run.picks.length === 0 && (
 				<p className="mt-4">
 					Nothing in the catalog fits the request yet. Describe it differently,
@@ -383,9 +343,7 @@ export const RecommendationResults = ({ run }: { run: Run | null }) => {
 					))}
 				</div>
 			)}
-			{!working && (
-				<HowItLooked messages={messages} structured={run.structured} />
-			)}
+			{!working && <HowItLooked messages={messages} />}
 			{run.canRetry && (
 				<div className="mt-4">
 					<p className="text-sm">
