@@ -56,12 +56,6 @@ typography:
     fontWeight: 400
     lineHeight: 1.2
     letterSpacing: "normal"
-  caption:
-    fontFamily: "Caveat Variable, cursive"
-    fontSize: "clamp(1.5rem, 2vw, 1.875rem)"
-    fontWeight: 400
-    lineHeight: 1
-    letterSpacing: "normal"
 rounded:
   none: "0px"
   dot: "9999px"
@@ -146,8 +140,8 @@ Strategy: restrained to the point of monochrome. Ink on ground, one grey for sec
 ## Typography
 
 - **Schibsted Grotesk Variable** (self-hosted via `@fontsource-variable/schibsted-grotesk`) for labels, tabs, section heads, cells and every control. Stand-in for LL Unica77; the owner will refine.
-- **EB Garamond Variable** (`@fontsource-variable/eb-garamond`, self-hosted, upright and italic files) for the wordmark, the inner-page titles and the lede. Regular weight everywhere; italic for the wordmark only. Replaced Source Serif 4 on 2026-09-21.
-- **Caveat Variable** (`@fontsource-variable/caveat`, self-hosted) for the footer plate's captions only: a handwritten face for the botanist's labels under the engraved details (ADR-0012). It appears nowhere else.
+- **EB Garamond Variable** (`@fontsource-variable/eb-garamond`, self-hosted, upright and italic files) for the wordmark, the inner-page titles and the lede. Regular weight everywhere; italic for the two wordmarks (landing, footer) only. Replaced Source Serif 4 on 2026-09-21.
+- Caveat left with the footer captions on 2026-09-21 (ADR-0012 amendment); two families remain.
 - The ramp, as used:
   - Label: 11px, weight 500, uppercase, tracking 0.06em, line-height 1. Nav, table headers, footer links, toggles, the sign-in block. The `.label-caps` utility in `globals.css`.
   - Wordmark: Garamond italic, weight 400, uppercase, 17.5vw (about 252px at 1440, 68px at 390), tracking -0.01em, line-height 1. Landing only; the header's NOUVEAU stays a label.
@@ -156,7 +150,7 @@ Strategy: restrained to the point of monochrome. Ink on ground, one grey for sec
   - Section: 20px to 24px, weight 400. Inner-page h2 ("Drop history", "Lots"), counts in 12px tabular.
   - Tabs: 18px to 24px, weight 400; counts in 12px tabular figures in parentheses.
   - Cells: 14px on mobile, 15px from `md`, line-height snug. Row numbers 12px tabular.
-  - Caption: 24px to 30px Caveat, weight 400, line-height 1, ink. The `.font-caveat` utility. Footer plate captions only.
+  - Footer wordmark: Garamond italic, weight 400, uppercase, 8.5vw from `md` (about 122px at 1440), 10.5vw below (about 41px at 390), tracking -0.01em, line-height 1. NOUVEAU.COFFEE, `site-footer.tsx`.
   - The marquee (22vw wordmark) is gone with the footer that carried it (ADR-0012).
 - Tabular figures (`.tnum`) on dates, prices, counts, and row numbers. Drop dates render `09.16` (month and day; the table is a live index, the year is noise, ADR-0014). Full dates elsewhere render `2026.09.16`.
 - The grotesk never goes above weight 600, and it carries no display sizes; the Garamond does that work. The one italic in the app is the wordmark.
@@ -207,7 +201,7 @@ None. No shadows anywhere. Depth is photograph over ground, and the chip over th
 - **Index table** (`drop-index.tsx`): the landing's drop table collapsed to one row per lot (newest event wins) under the filter tabs. Row numbers in grey, lot name in ink linking to the lot page, roaster in grey linking to the roaster page, everything else grey. Row hover: tint ground and the floating hover image. The in-cell slide, the fading number and the circle are gone.
 - **Cards** (`next-bag-run.tsx`, ADR-0017): the one place cards are allowed. Each is a fixed component over validated fields from the run document, in a hairline-divided list, appearing with a 300ms fade as its `pickLot` call lands: rank in grey tabular, 88px 3:2 photo, lot name in ink (15px, weight 600) linking its page, roaster · price · grams in grey, the model's why in cell type, then the Save toggle and BUY with an up-right arrow. Step lines above them while the run works: a 64px caps label column (SEARCH, CHECKED, PAGE READ, YOUR LOGS) and grey tabular detail. The steps go when the run settles.
 - **Lot page** (`roaster.$roaster.$lot.tsx`, ADR-0016): the inner-page shell. Title row with the lot name and, on the right, the Save toggle, LOG THIS LOT and BUY with an up-right arrow (the one outbound link in the title row); under it a grey line with the roaster (link) and ARCHIVED or SOLD OUT as a caps word after a middle dot. Then a three-column grid: the photo at 3:2 on tint in the first column, the fact list in the other two (caps label, value, hairline per row; only published facts), ROASTER NOTES under a caps label, a pulsing grey dot with "Reading the roaster's page for more" while a page read is pending, the roaster's copy at `max-w-prose`. Sizes is a section-scale h2 over the hairline table (Size, Grind from `sm`, Price, Stock, and an up-right arrow to the exact size on the shop; sold-out rows go grey). Logs is the same h2 with the count, the log form under it while logging, rows with `showLot={false}`, and SIGN IN WITH GOOGLE under the rows signed out.
-- **Footer** (`site-footer.tsx`, ADR-0012): one link row mirroring the header (NOUVEAU, ROASTERS, DROPS left; BACK TO THE TOP centered; ABOUT, GITHUB right; no user links), then under a hairline the plate's six engraved details with Caveat captions naming each part and linking its Wikipedia article, the branch largest at the right. Images fade to 0.8 on hover and load lazily. Mounted once in the root layout.
+- **Footer** (`site-footer.tsx`, ADR-0012, amended 2026-09-21): one link row mirroring the header (NOUVEAU, ROASTERS, DROPS left; ABOUT, GITHUB right; no user links), then under a hairline the flower (`02-five-stamina.webp`, 160px/208px tall, linking the Coffea arabica article, fading to 0.8 on hover) with BACK TO THE TOP under it, and NOUVEAU.COFFEE beside them in the landing wordmark's Garamond italic, right-aligned from `md`, centered and full-width below. The other five details and their Caveat captions are gone. Mounted once in the root layout.
 - **Wordmark** (`Wordmark` in `routes/index.tsx`): one `h1` with `aria-label="Nouveau"`, three layers deep. NOU and EAU sit at the back; the branch (`/coffea-arabica.webp`, transparent, `fetchPriority="high"`) is absolutely centered on the V's box at 2.05em tall, shifted up 4%, and paints over them; the V sits in front of the branch. Anchoring the image to the V's own span keeps it threaded through the word at every width. Owner's mock, 2026-09-21; overrides the earlier grotesk caps wordmark and the standalone plate above it.
 - **Plate assets** (`apps/web/src/assets/coffea-arabica/*.webp`, ADR-0012): serving-size exports of the six details and the branch, cream fringe fixed. `apps/web/public/coffea-arabica.webp` is the trimmed branch (1112×1160, from the defringed `01-branch.webp`) that the wordmark carries; there is no standalone hero image anymore.
 - **Favicon** (`apps/web/public/favicon.ico`, `favicon-32.png`, `apple-touch-icon.png`; linked from `index.html`): the seed drawing (`06-seed.webp`) trimmed and squared. The two favicons are 32px on a transparent ground; the 180px Apple touch icon sits on white because iOS fills transparency with black. No manifest, so no larger sizes.

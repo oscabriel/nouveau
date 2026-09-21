@@ -1,86 +1,20 @@
 import { Link } from "@tanstack/react-router";
 
-import branch from "@/assets/coffea-arabica/01-branch.webp";
 import stamens from "@/assets/coffea-arabica/02-five-stamina.webp";
-import pistil from "@/assets/coffea-arabica/03-pistillium.webp";
-import berry from "@/assets/coffea-arabica/04-berry.webp";
-import berryHalves from "@/assets/coffea-arabica/05-berry-halves.webp";
-import seed from "@/assets/coffea-arabica/06-seed.webp";
-import arilCup from "@/assets/coffea-arabica/07-arillus-cup.webp";
 import { navLinkClass } from "@/lib/ui";
 
 const scrollToTop = () => {
 	window.scrollTo({ behavior: "smooth", top: 0 });
 };
 
-/** One engraved detail with its Caveat caption naming the part and its Wikipedia article. */
-const PlateDetail = ({
-	alt,
-	caption,
-	height,
-	src,
-	wiki,
-}: {
-	alt: string;
-	caption: string;
-	/* Rendered height in px; inline, because preflight's height:auto beats the attribute. */
-	height: number;
-	src: string;
-	wiki: string;
-}) => (
-	<a
-		className="group inline-flex flex-col items-center gap-3"
-		href={`https://en.wikipedia.org/wiki/${wiki}`}
-	>
-		<img
-			alt={alt}
-			className="transition-opacity group-hover:opacity-80"
-			loading="lazy"
-			src={src}
-			style={{ height, width: "auto" }}
-		/>
-		<span className="font-caveat text-foreground text-2xl leading-none md:text-3xl">
-			{caption}
-		</span>
-	</a>
-);
-
-/** The two berry details share the one caption; Drupe is the fruit's name. */
-const DrupePair = () => (
-	<figure className="inline-flex flex-col items-center gap-3">
-		<div className="flex items-center gap-5 md:gap-6">
-			<a href="https://en.wikipedia.org/wiki/Drupe" className="group">
-				<img
-					alt="A ripe Coffea arabica cherry, whole, engraved and hand-colored for Thornton in 1808"
-					className="h-16 w-auto transition-opacity group-hover:opacity-80 md:h-20"
-					loading="lazy"
-					src={berry}
-				/>
-			</a>
-			<a href="https://en.wikipedia.org/wiki/Drupe" className="group">
-				<img
-					alt="A Coffea arabica cherry cut in half, showing the two seeds in the pulp, engraved and hand-colored for Thornton in 1808"
-					className="h-16 w-auto transition-opacity group-hover:opacity-80 md:h-20"
-					loading="lazy"
-					src={berryHalves}
-				/>
-			</a>
-		</div>
-		<a href="https://en.wikipedia.org/wiki/Drupe">
-			<figcaption className="font-caveat text-foreground text-2xl leading-none md:text-3xl">
-				Drupe
-			</figcaption>
-		</a>
-	</figure>
-);
-
 /**
- * Site footer. Every route ends in it (ADR-0012). One row of caps links
- * mirroring the header on the left, BACK TO THE TOP centered, ABOUT and
- * GITHUB right, no user links. Below the links, the plate's parts with
- * Caveat captions naming each part and linking its Wikipedia article, and
- * the branch, much larger, linking Coffea arabica. The captions are
- * content: every image carries alt text and nothing here is aria-hidden.
+ * Site footer. Every route ends in it (ADR-0012, amended 2026-09-21). One
+ * row of caps links: NOUVEAU, ROASTERS, DROPS left, mirroring the header;
+ * ABOUT and GITHUB right; no user links. Under a hairline, the flower (the
+ * plate's five-stamen detail) with BACK TO THE TOP beneath it, and beside
+ * them NOUVEAU.COFFEE set huge in the Garamond italic of the landing
+ * wordmark. The other plate details left with the captions; the flower
+ * keeps its alt text and its Wikipedia link, so nothing here is aria-hidden.
  */
 export const SiteFooter = () => (
 	<footer className="mt-32 md:mt-40">
@@ -96,9 +30,6 @@ export const SiteFooter = () => (
 					Drops
 				</Link>
 			</nav>
-			<button className={navLinkClass} onClick={scrollToTop} type="button">
-				Back to the top
-			</button>
 			<nav className="flex gap-4 md:gap-5">
 				<Link className={navLinkClass} to="/about">
 					About
@@ -113,50 +44,33 @@ export const SiteFooter = () => (
 				</a>
 			</nav>
 		</div>
-		<div className="border-t px-5 pt-12 pb-14 md:px-10 md:pt-16">
-			<div className="flex flex-wrap items-end justify-between gap-x-12 gap-y-12">
-				<div className="flex flex-wrap items-end gap-x-10 gap-y-10 md:gap-x-12">
-					<PlateDetail
-						alt="Five stamens of Coffea arabica, the flower's pollen-bearing organs, engraved and hand-colored for Thornton in 1808"
-						caption="Stamen"
-						height={112}
-						src={stamens}
-						wiki="Stamen"
-					/>
-					<PlateDetail
-						alt="The gynoecium of Coffea arabica, the flower's pistil, engraved and hand-colored for Thornton in 1808"
-						caption="Gynoecium"
-						height={128}
-						src={pistil}
-						wiki="Gynoecium"
-					/>
-					<DrupePair />
-					<PlateDetail
-						alt="A seed of Coffea arabica, a coffee bean, engraved and hand-colored for Thornton in 1808"
-						caption="Seed"
-						height={96}
-						src={seed}
-						wiki="Seed"
-					/>
-					<PlateDetail
-						alt="A Coffea arabica seed sitting in its aril cup, engraved and hand-colored for Thornton in 1808"
-						caption="Aril"
-						height={96}
-						src={arilCup}
-						wiki="Aril"
-					/>
+		<div className="border-t px-5 pt-12 pb-10 md:px-10 md:pt-16 md:pb-12">
+			<div className="flex flex-col items-center gap-y-10 md:flex-row md:items-end md:justify-between md:gap-x-12">
+				<div className="flex flex-col items-center">
+					<a
+						className="group"
+						href="https://en.wikipedia.org/wiki/Coffea_arabica"
+					>
+						<img
+							alt="The flower of Coffea arabica, five white petals with the stamens showing, engraved and hand-colored for Robert Thornton in 1808"
+							className="h-40 w-auto transition-opacity group-hover:opacity-80 md:h-52"
+							height={540}
+							loading="lazy"
+							src={stamens}
+							width={540}
+						/>
+					</a>
+					<button
+						className={`${navLinkClass} -mt-2`}
+						onClick={scrollToTop}
+						type="button"
+					>
+						Back to the top
+					</button>
 				</div>
-				<a
-					className="group"
-					href="https://en.wikipedia.org/wiki/Coffea_arabica"
-				>
-					<img
-						alt="The full Coffea arabica plate: a flowering and fruiting branch, engraved and hand-colored for Robert Thornton in 1808"
-						className="h-44 w-auto transition-opacity group-hover:opacity-80 md:h-64"
-						loading="lazy"
-						src={branch}
-					/>
-				</a>
+				<p className="w-full text-center font-serif text-[10.5vw] leading-none tracking-[-0.01em] uppercase italic md:w-auto md:text-right md:text-[8.5vw]">
+					Nouveau.coffee
+				</p>
 			</div>
 		</div>
 	</footer>
