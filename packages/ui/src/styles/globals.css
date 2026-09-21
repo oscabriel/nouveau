@@ -169,13 +169,3 @@
 		font-variant-numeric: tabular-nums;
 	}
 }
-
-/* Footer wordmark marquee: one continuous run, two copies, translate half. */
-@keyframes marquee {
-	from {
-		transform: translateX(0);
-	}
-	to {
-		transform: translateX(-50%);
-	}
-}
