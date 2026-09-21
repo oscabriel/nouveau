@@ -77,6 +77,36 @@ export const askJev = async (
 	};
 };
 
+/** One narrowed Choice answer: the pick, and the distribution when Jev sent a clean one. */
+export interface JevChoice {
+	choice: string;
+	confidence?: number;
+	/** Jev's probability per option, only when every key was sent and every value is a number. */
+	probabilities?: Record<string, number>;
+}
+
+/**
+ * The probabilities map, kept only when it is well formed: every key is an
+ * option the caller sent and every value is a number. Anything else drops
+ * the map rather than throwing; the choice itself still stands.
+ */
+const narrowProbabilities = (
+	value: unknown,
+	allowed: readonly string[]
+): Record<string, number> | undefined => {
+	if (typeof value !== "object" || value === null) {
+		return undefined;
+	}
+	const probabilities: Record<string, number> = {};
+	for (const [key, probability] of Object.entries(value)) {
+		if (typeof probability !== "number" || !allowed.includes(key)) {
+			return undefined;
+		}
+		probabilities[key] = probability;
+	}
+	return probabilities;
+};
+
 /**
  * Narrow one Choice answer. The choice must be in the set the caller sent;
  * anything else is a protocol error, never a fallback.
@@ -84,7 +114,7 @@ export const askJev = async (
 export const jevChoice = (
 	answer: unknown,
 	allowed: readonly string[]
-): { choice: string; confidence?: number } | null => {
+): JevChoice | null => {
 	if (typeof answer !== "object" || answer === null) {
 		return null;
 	}
@@ -93,13 +123,53 @@ export const jevChoice = (
 	if (typeof choice !== "string" || !allowed.includes(choice)) {
 		return null;
 	}
+	const probabilities = narrowProbabilities(fields.probabilities, allowed);
 	return {
 		...(typeof fields.confidence === "number"
 			? { confidence: fields.confidence }
 			: {}),
+		...(probabilities === undefined ? {} : { probabilities }),
 		choice,
 	};
 };
+
+/** The option Jev would have picked second: the highest probability other than the pick. */
+export interface RunnerUp {
+	option: string;
+	probability: number;
+}
+
+/**
+ * The runner-up in a Choice distribution: the highest-probability option
+ * other than the chosen one. Null when the map is missing, has no other
+ * option, or every other option is at zero. Pure.
+ */
+export const runnerUp = (
+	probabilities: Record<string, number> | undefined,
+	choice: string
+): RunnerUp | null => {
+	if (probabilities === undefined) {
+		return null;
+	}
+	let best: RunnerUp | null = null;
+	for (const [option, probability] of Object.entries(probabilities)) {
+		if (
+			option !== choice &&
+			probability > 0 &&
+			(best === null || probability > best.probability)
+		) {
+			best = { option, probability };
+		}
+	}
+	return best;
+};
+
+/**
+ * The probability Jev gave the pick itself: from the distribution when it
+ * has one, else the answer's own confidence, else undefined.
+ */
+export const pickProbability = (chosen: JevChoice): number | undefined =>
+	chosen.probabilities?.[chosen.choice] ?? chosen.confidence;
 
 /** Narrow one Noul answer to its yes probability. */
 export const jevNoul = (answer: unknown): number | null => {
