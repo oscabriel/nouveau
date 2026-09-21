@@ -1,7 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 
-import { SiteFooter } from "@/components/site-footer";
-
 /**
  * The about page's shell; the copy itself is the batch 4 footer task
  * (work plan, batch 4). The one sentence is the site's own description.
@@ -23,7 +21,6 @@ const AboutComponent = () => (
 				right now.
 			</p>
 		</div>
-		<SiteFooter />
 	</main>
 );
 

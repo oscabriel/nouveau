@@ -8,7 +8,6 @@ import { useState } from "react";
 import Loader from "@/components/loader";
 import { PageTitle } from "@/components/page-title";
 import { SearchField } from "@/components/search-field";
-import { SiteFooter } from "@/components/site-footer";
 import { StatusChip } from "@/components/status-chip";
 import { ArrowCell } from "@/components/table";
 import { WatchButton } from "@/components/watch-button";
@@ -175,7 +174,6 @@ const RoastersComponent = () => {
 				</div>
 				<Directory canWatch={isAuthenticated} visible={visible} />
 			</div>
-			<SiteFooter />
 		</main>
 	);
 };

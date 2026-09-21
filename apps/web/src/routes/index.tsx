@@ -9,7 +9,6 @@ import { LatestTiles } from "@/components/latest-tiles";
 import Loader from "@/components/loader";
 import { SavedCoffeeCard } from "@/components/saved-coffee-card";
 import { SignInCta } from "@/components/sign-in-cta";
-import { SiteFooter } from "@/components/site-footer";
 
 /*
  * Direction contract (owner-pinned to two references, 2026-09-16; the
@@ -78,7 +77,6 @@ const SignedOutHome = () => {
 					</div>
 				</>
 			)}
-			<SiteFooter />
 		</main>
 	);
 };

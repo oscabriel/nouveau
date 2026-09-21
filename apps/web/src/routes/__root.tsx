@@ -7,6 +7,7 @@ import {
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 
 import Header from "@/components/header";
+import { SiteFooter } from "@/components/site-footer";
 import { ThemeProvider } from "@/components/theme-provider";
 
 import "../index.css";
@@ -25,6 +26,7 @@ const RootComponent = () => (
 			<div className="grid min-h-svh grid-cols-[minmax(0,1fr)] grid-rows-[auto_1fr]">
 				<Header />
 				<Outlet />
+				<SiteFooter />
 			</div>
 			<Toaster richColors />
 		</ThemeProvider>

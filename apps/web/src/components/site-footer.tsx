@@ -1,85 +1,158 @@
-import { useSignInWithGoogle } from "@convex-dev/auth/providers/oauth/react";
-import { useConvexAuth } from "@convex-dev/auth/react";
-import { api } from "@nouveau/backend/convex/_generated/api";
 import { Link } from "@tanstack/react-router";
 
+import branch from "@/assets/coffea-arabica/01-branch.webp";
+import stamens from "@/assets/coffea-arabica/02-five-stamina.webp";
+import pistil from "@/assets/coffea-arabica/03-pistillium.webp";
+import berry from "@/assets/coffea-arabica/04-berry.webp";
+import berryHalves from "@/assets/coffea-arabica/05-berry-halves.webp";
+import seed from "@/assets/coffea-arabica/06-seed.webp";
+import arilCup from "@/assets/coffea-arabica/07-arillus-cup.webp";
 import { navLinkClass } from "@/lib/ui";
 
 const scrollToTop = () => {
 	window.scrollTo({ behavior: "smooth", top: 0 });
 };
 
+/** One engraved detail with its Caveat caption naming the part and its Wikipedia article. */
+const PlateDetail = ({
+	alt,
+	caption,
+	captionFor,
+	height,
+	src,
+}: {
+	alt: string;
+	caption: string;
+	captionFor: string;
+	height: number;
+	src: string;
+}) => (
+	<a
+		className="group inline-flex flex-col items-center gap-3"
+		href={captionFor}
+	>
+		<img
+			alt={alt}
+			className="w-auto transition-opacity group-hover:opacity-80"
+			height={height}
+			src={src}
+		/>
+		<span className="font-caveat text-foreground text-2xl leading-none md:text-3xl">
+			{caption}
+		</span>
+	</a>
+);
+
+/** The two berry details share the one caption; Drupe is the fruit's name. */
+const DrupePair = () => (
+	<figure className="inline-flex flex-col items-center gap-3">
+		<div className="flex items-center gap-5 md:gap-6">
+			<a href="https://en.wikipedia.org/wiki/Drupe" className="group">
+				<img
+					alt="A ripe Coffea arabica cherry, whole, engraved and hand-colored for Thornton in 1808"
+					className="h-16 w-auto md:h-20"
+					src={berry}
+				/>
+			</a>
+			<a href="https://en.wikipedia.org/wiki/Drupe" className="group">
+				<img
+					alt="A Coffea arabica cherry cut in half, showing the two seeds in the pulp, engraved and hand-colored for Thornton in 1808"
+					className="h-16 w-auto md:h-20"
+					src={berryHalves}
+				/>
+			</a>
+		</div>
+		<a href="https://en.wikipedia.org/wiki/Drupe">
+			<figcaption className="font-caveat text-foreground text-2xl leading-none md:text-3xl">
+				Drupe
+			</figcaption>
+		</a>
+	</figure>
+);
+
 /**
- * Site footer: the wordmark at building scale, cropped at the baseline and
- * scrolling right to left, then one row of caps links. The marquee is a
- * single continuous run; two copies translate by half so it never seams.
+ * Site footer. Every route ends in it (ADR-0012). One row of caps links
+ * mirroring the header on the left, BACK TO THE TOP centered, ABOUT and
+ * GITHUB right, no user links. Below the links, the plate's parts with
+ * Caveat captions naming each part and linking its Wikipedia article, and
+ * the branch, much larger, linking Coffea arabica. The captions are
+ * content: every image carries alt text and nothing here is aria-hidden.
  */
-export const SiteFooter = () => {
-	const { isAuthenticated } = useConvexAuth();
-	const { signInGoogle } = useSignInWithGoogle(api.auth);
-	const startSignIn = async () => {
-		try {
-			await signInGoogle();
-		} catch {
-			// The header's sign-in surfaces flow errors; this one stays quiet.
-		}
-	};
-	return (
-		<footer className="mt-32 md:mt-40">
-			<div
-				aria-hidden
-				className="relative h-[16.5vw] overflow-hidden select-none"
-			>
-				<div className="absolute top-0 left-0 flex whitespace-nowrap will-change-transform motion-safe:animate-[marquee_60s_linear_infinite]">
-					<span className="pr-[0.3em] text-[22vw] leading-none font-semibold tracking-[-0.02em]">
-						NOUVEAU.COFFEE
-					</span>
-					<span className="pr-[0.3em] text-[22vw] leading-none font-semibold tracking-[-0.02em]">
-						NOUVEAU.COFFEE
-					</span>
+export const SiteFooter = () => (
+	<footer className="mt-32 md:mt-40">
+		<div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-5 pt-4 pb-5 md:px-10">
+			<nav aria-label="Footer" className="flex gap-4 md:gap-5">
+				<Link className={navLinkClass} to="/">
+					Nouveau
+				</Link>
+				<Link className={navLinkClass} to="/roasters">
+					Roasters
+				</Link>
+				<Link className={navLinkClass} to="/drops">
+					Drops
+				</Link>
+			</nav>
+			<button className={navLinkClass} onClick={scrollToTop} type="button">
+				Back to the top
+			</button>
+			<nav className="flex gap-4 md:gap-5">
+				<Link className={navLinkClass} to="/about">
+					About
+				</Link>
+				<a
+					className={navLinkClass}
+					href="https://github.com/oscabriel/nouveau"
+					rel="noreferrer"
+					target="_blank"
+				>
+					GitHub
+				</a>
+			</nav>
+		</div>
+		<div className="border-t px-5 pt-12 pb-14 md:px-10 md:pt-16">
+			<div className="flex flex-wrap items-end justify-between gap-x-12 gap-y-12">
+				<div className="flex flex-wrap items-end gap-x-10 gap-y-10 md:gap-x-12">
+					<PlateDetail
+						alt="Five stamens of Coffea arabica, the flower's pollen-bearing organs, engraved and hand-colored for Thornton in 1808"
+						caption="Stamen"
+						captionFor="https://en.wikipedia.org/wiki/Stamen"
+						height={88}
+						src={stamens}
+					/>
+					<PlateDetail
+						alt="The gynoecium of Coffea arabica, the flower's pistil, engraved and hand-colored for Thornton in 1808"
+						caption="Gynoecium"
+						captionFor="https://en.wikipedia.org/wiki/Gynoecium"
+						height={88}
+						src={pistil}
+					/>
+					<DrupePair />
+					<PlateDetail
+						alt="A seed of Coffea arabica, a coffee bean, engraved and hand-colored for Thornton in 1808"
+						caption="Seed"
+						captionFor="https://en.wikipedia.org/wiki/Seed"
+						height={88}
+						src={seed}
+					/>
+					<PlateDetail
+						alt="A Coffea arabica seed sitting in its aril cup, engraved and hand-colored for Thornton in 1808"
+						caption="Aril"
+						captionFor="https://en.wikipedia.org/wiki/Aril"
+						height={88}
+						src={arilCup}
+					/>
 				</div>
+				<a
+					className="group"
+					href="https://en.wikipedia.org/wiki/Coffea_arabica"
+				>
+					<img
+						alt="The full Coffea arabica plate: a flowering and fruiting branch, engraved and hand-colored for Robert Thornton in 1808"
+						className="h-44 w-auto transition-opacity group-hover:opacity-80 md:h-64"
+						src={branch}
+					/>
+				</a>
 			</div>
-			<div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 px-5 pt-4 pb-5 md:px-10">
-				<nav className="flex gap-4 md:gap-5">
-					<Link className={navLinkClass} to="/roasters">
-						Roasters
-					</Link>
-					<Link className={navLinkClass} to="/activity">
-						Activity
-					</Link>
-					<Link className={navLinkClass} to="/drops">
-						Feed
-					</Link>
-				</nav>
-				<button className={navLinkClass} onClick={scrollToTop} type="button">
-					Back to the top
-				</button>
-				<nav className="flex gap-4 md:gap-5">
-					{isAuthenticated ? (
-						<Link className={navLinkClass} to="/settings/alerts">
-							Watches
-						</Link>
-					) : (
-						<button
-							className={navLinkClass}
-							onClick={() => {
-								startSignIn();
-							}}
-							type="button"
-						>
-							Sign in
-						</button>
-					)}
-					<a
-						className={navLinkClass}
-						href="https://github.com/oscabriel/nouveau"
-						rel="noreferrer"
-						target="_blank"
-					>
-						GitHub
-					</a>
-				</nav>
-			</div>
-		</footer>
-	);
-};
+		</div>
+	</footer>
+);

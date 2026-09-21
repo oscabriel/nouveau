@@ -10,7 +10,6 @@ import { DropTable } from "@/components/drop-index";
 import Loader from "@/components/loader";
 import { Lots } from "@/components/lots";
 import { PageTitle } from "@/components/page-title";
-import { SiteFooter } from "@/components/site-footer";
 import { StatusChip } from "@/components/status-chip";
 import { WatchButton } from "@/components/watch-button";
 
@@ -81,7 +80,6 @@ const RoasterComponent = () => {
 					</Link>
 					.
 				</p>
-				<SiteFooter />
 			</main>
 		);
 	}
@@ -118,7 +116,6 @@ const RoasterComponent = () => {
 					<Lots roasterId={roaster.id} slug={roaster.slug} />
 				</div>
 			</div>
-			<SiteFooter />
 		</main>
 	);
 };
