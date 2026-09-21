@@ -1,6 +1,8 @@
 import { useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { TASTING_FAMILIES } from "@nouveau/backend/convex/tasting";
+import type { TastingFamily } from "@nouveau/backend/convex/tasting";
+import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useState } from "react";
@@ -126,20 +128,28 @@ const FilterTabs = ({
 };
 
 const GlobalDrops = ({
+	family,
 	feed,
 	filter,
 }: {
+	family: TastingFamily | null;
 	feed: GlobalRow[];
 	filter: Exclude<Filter, "your">;
 }) => {
-	const shown =
+	const byType =
 		filter === "all" ? feed : feed.filter((row) => row.type === filter);
+	const shown =
+		family === null
+			? byType
+			: byType.filter((row) => row.families.includes(family));
 	return (
 		<div className="px-5 md:px-10">
 			<DropTable rows={shown} />
 			{shown.length === 0 && (
 				<p className="text-muted-foreground py-16 text-center text-[15px]">
-					No drops yet. The crawlers are out there checking.
+					{family === null
+						? "No drops yet. The crawlers are out there checking."
+						: `No recent lot with ${family} notes.`}
 				</p>
 			)}
 		</div>
@@ -171,6 +181,7 @@ const YourDrops = ({ mine }: { mine: PersonalizedRow[] }) => (
  */
 const FeedComponent = () => {
 	const { isAuthenticated } = useConvexAuth();
+	const { family } = useSearch({ from: "/drops" });
 	const [chosen, setChosen] = useState<Filter>("all");
 	const filter: Filter = chosen === "your" && !isAuthenticated ? "all" : chosen;
 	const feed = useQuery(api.feed.globalFeed, { limit: FEED_PAGE_LIMIT });
@@ -185,7 +196,7 @@ const FeedComponent = () => {
 	} else if (filter === "your") {
 		body = mine === undefined ? <Loader /> : <YourDrops mine={mine} />;
 	} else {
-		body = <GlobalDrops feed={feed} filter={filter} />;
+		body = <GlobalDrops family={family ?? null} feed={feed} filter={filter} />;
 	}
 
 	return (
@@ -212,6 +223,17 @@ const FeedComponent = () => {
 	);
 };
 
+const isFamily = (value: unknown): value is TastingFamily =>
+	typeof value === "string" &&
+	(TASTING_FAMILIES as readonly string[]).includes(value);
+
+/**
+ * `?family=fruity` narrows the table to lots whose roaster notes fall in
+ * that wheel family; a tasting-note pill anywhere links here. Anything
+ * else in the param is dropped.
+ */
 export const Route = createFileRoute("/drops")({
 	component: FeedComponent,
+	validateSearch: (search: Record<string, unknown>) =>
+		isFamily(search.family) ? { family: search.family } : {},
 });

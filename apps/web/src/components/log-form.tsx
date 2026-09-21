@@ -1,13 +1,12 @@
 import { api } from "@nouveau/backend/convex/_generated/api";
 import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
-import type { TastingNote } from "@nouveau/backend/convex/tasting";
 import { useMutation } from "convex/react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { DotToggle } from "@/components/dot-toggle";
 import { Stars } from "@/components/stars";
-import { TastingNotesPicker } from "@/components/tasting-picker";
+import { TastingTagsInput } from "@/components/tasting-tags-input";
 import { navLinkClass } from "@/lib/ui";
 
 const NOTES_MAX_LENGTH = 1000;
@@ -15,12 +14,13 @@ const DEFAULT_RATING = 3;
 
 /**
  * Create or edit a Log (build spec §14.1, ADR-0016). Inline under a
- * hairline, no box: the picker beside the roaster's notes, RATE IT as a
+ * hairline, no box: the tasting-notes tag field beside the roaster's notes, RATE IT as a
  * toggle that reveals the slider, REVIEW as one line over a hairline that
  * grows with the text, then SAVE LOG and CANCEL as caps actions. Turning
  * the rating off stores a rating-less log; clearing it on edit sends
- * `null`. The freeform field is the review; the structured picks are the
- * tasting notes. `roasterNotes` (§14.4) is read-only reference, the
+ * `null`. The freeform field is the review; the typed words are the
+ * tasting notes (free text since 2026-09-21, each a pill colored by its
+ * wheel family). `roasterNotes` (§14.4) is read-only reference, the
  * descriptors the roaster published, verbatim, never prefilled into the
  * taster's own picks.
  */
@@ -34,7 +34,7 @@ export const LogForm = ({
 		logId: Id<"logs">;
 		notes: string | null;
 		rating: number | null;
-		tastingNotes: TastingNote[] | null;
+		tastingNotes: string[] | null;
 	};
 	lotId: Id<"products">;
 	onDone: () => void;
@@ -45,15 +45,14 @@ export const LogForm = ({
 	);
 	const [rating, setRating] = useState(existing?.rating ?? DEFAULT_RATING);
 	const [notes, setNotes] = useState(existing?.notes ?? "");
-	const [picks, setPicks] = useState<TastingNote[]>(
-		existing?.tastingNotes ?? []
-	);
+	const [picks, setPicks] = useState<string[]>(existing?.tastingNotes ?? []);
 	const [saving, setSaving] = useState(false);
 
 	const create = useMutation(api.logs.createLog);
 	const update = useMutation(api.logs.updateLog);
 	const restore = useMutation(api.savedCoffees.save);
 	const reviewId = `review-${existing?.logId ?? lotId}`;
+	const tagsId = `tasting-${existing?.logId ?? lotId}`;
 
 	const save = async () => {
 		const trimmed = notes.trim();
@@ -107,8 +106,13 @@ export const LogForm = ({
 		<div className="my-4 flex flex-col gap-6 border-t pt-5">
 			<div className="flex flex-col gap-6 md:flex-row md:gap-10">
 				<div className="md:w-1/2">
-					<p className="label-caps text-foreground mb-4">Tasting notes</p>
-					<TastingNotesPicker onChange={setPicks} value={picks} />
+					<label
+						className="label-caps text-foreground mb-2 block"
+						htmlFor={tagsId}
+					>
+						Tasting notes
+					</label>
+					<TastingTagsInput id={tagsId} onChange={setPicks} value={picks} />
 				</div>
 				{roasterNotes !== null && (
 					<div className="md:w-1/2">

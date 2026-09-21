@@ -168,3 +168,83 @@
 		font-variant-numeric: tabular-nums;
 	}
 }
+
+/*
+ * Tasting-note pills (batch 8, 2026-09-21): one soft ground and border per
+ * SCA wheel family, ink text. Light values sit near the ground; dark ones
+ * near the dark ground. The roaster's notes never take these.
+ */
+@layer utilities {
+	.pill-fruity {
+		background: oklch(0.95 0.035 20);
+		border-color: oklch(0.82 0.08 20);
+	}
+	.pill-floral {
+		background: oklch(0.95 0.035 320);
+		border-color: oklch(0.82 0.08 320);
+	}
+	.pill-sweet {
+		background: oklch(0.95 0.04 75);
+		border-color: oklch(0.82 0.09 75);
+	}
+	.pill-nutty {
+		background: oklch(0.93 0.03 55);
+		border-color: oklch(0.72 0.07 55);
+	}
+	.pill-spices {
+		background: oklch(0.94 0.04 40);
+		border-color: oklch(0.76 0.1 40);
+	}
+	.pill-roasted {
+		background: oklch(0.92 0.02 60);
+		border-color: oklch(0.6 0.05 60);
+	}
+	.pill-sour {
+		background: oklch(0.95 0.045 105);
+		border-color: oklch(0.82 0.1 105);
+	}
+	.pill-green {
+		background: oklch(0.95 0.04 145);
+		border-color: oklch(0.8 0.09 145);
+	}
+	.pill-other {
+		background: oklch(0.95 0.02 240);
+		border-color: oklch(0.8 0.05 240);
+	}
+	.dark .pill-fruity {
+		background: oklch(0.28 0.05 20);
+		border-color: oklch(0.45 0.09 20);
+	}
+	.dark .pill-floral {
+		background: oklch(0.28 0.05 320);
+		border-color: oklch(0.45 0.09 320);
+	}
+	.dark .pill-sweet {
+		background: oklch(0.28 0.05 75);
+		border-color: oklch(0.47 0.09 75);
+	}
+	.dark .pill-nutty {
+		background: oklch(0.27 0.04 55);
+		border-color: oklch(0.45 0.07 55);
+	}
+	.dark .pill-spices {
+		background: oklch(0.28 0.05 40);
+		border-color: oklch(0.47 0.1 40);
+	}
+	.dark .pill-roasted {
+		background: oklch(0.26 0.02 60);
+		border-color: oklch(0.45 0.04 60);
+	}
+	.dark .pill-sour {
+		background: oklch(0.28 0.05 105);
+		border-color: oklch(0.47 0.09 105);
+	}
+	.dark .pill-green {
+		background: oklch(0.28 0.05 145);
+		border-color: oklch(0.45 0.08 145);
+	}
+	.dark .pill-other {
+		background: oklch(0.28 0.02 240);
+		border-color: oklch(0.45 0.05 240);
+	}
+}

@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { LogForm } from "@/components/log-form";
 import { SaveButton } from "@/components/save-button";
 import { Stars } from "@/components/stars";
+import { TastingPill } from "@/components/tasting-pill";
 import { relativeTime } from "@/lib/format";
 import { navLinkClass } from "@/lib/ui";
 
@@ -17,9 +18,47 @@ export type LogCardData = FunctionReturnType<
 >[number];
 
 /**
+ * The taster's notes as colored pills beside the roaster's descriptors in
+ * plain text (ADR-0016). Nothing renders when the log has neither.
+ */
+const LogNotes = ({
+	roasterNotes,
+	tastingNotes,
+}: {
+	roasterNotes: LogCardData["lot"]["roasterNotes"];
+	tastingNotes: LogCardData["tastingNotes"];
+}) => {
+	if (tastingNotes === null && roasterNotes === null) {
+		return null;
+	}
+	return (
+		<dl className="text-muted-foreground grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_minmax(0,1fr)]">
+			{tastingNotes !== null && (
+				<>
+					<dt className="label-caps text-foreground pt-0.5">Tasting notes</dt>
+					<dd className="flex flex-wrap gap-1.5">
+						{tastingNotes.map(({ family, note }) => (
+							<TastingPill family={family} key={note} link>
+								{note}
+							</TastingPill>
+						))}
+					</dd>
+				</>
+			)}
+			{roasterNotes !== null && (
+				<>
+					<dt className="label-caps text-foreground pt-0.5">Roaster notes</dt>
+					<dd>{roasterNotes}</dd>
+				</>
+			)}
+		</dl>
+	);
+};
+
+/**
  * One log row under a hairline: who tried what from whom and when on one
- * line, the stars, the review, then the taster's picks beside the roaster's
- * descriptors. The activity feed shows the taster (showUser); the profile
+ * line, the stars, the review, then the taster's notes as colored pills
+ * beside the roaster's descriptors in plain text. The activity feed shows the taster (showUser); the profile
  * already belongs to them, so it passes showUser={false}; the lot page
  * already names the lot, so it passes showLot={false}. Both false is never
  * mounted (the line would be empty). Every mount passes isMine for the
@@ -109,27 +148,12 @@ export const LogCard = ({
 					{log.notes}
 				</p>
 			)}
-			{!editing &&
-				(log.tastingNotes !== null || log.lot.roasterNotes !== null) && (
-					<dl className="text-muted-foreground grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_minmax(0,1fr)]">
-						{log.tastingNotes !== null && (
-							<>
-								<dt className="label-caps text-foreground pt-0.5">
-									Tasting notes
-								</dt>
-								<dd>{log.tastingNotes.join(" · ")}</dd>
-							</>
-						)}
-						{log.lot.roasterNotes !== null && (
-							<>
-								<dt className="label-caps text-foreground pt-0.5">
-									Roaster notes
-								</dt>
-								<dd>{log.lot.roasterNotes}</dd>
-							</>
-						)}
-					</dl>
-				)}
+			{!editing && (
+				<LogNotes
+					roasterNotes={log.lot.roasterNotes}
+					tastingNotes={log.tastingNotes}
+				/>
+			)}
 			{!isMine && <SaveButton className="self-start" lotId={log.lot.id} />}
 			{isMine && (
 				<div className="flex items-center gap-5">
@@ -161,7 +185,10 @@ export const LogCard = ({
 						logId: log.logId,
 						notes: log.notes,
 						rating: log.rating,
-						tastingNotes: log.tastingNotes,
+						tastingNotes:
+							log.tastingNotes === null
+								? null
+								: log.tastingNotes.map(({ note }) => note),
 					}}
 					lotId={log.lot.id}
 					onDone={() => {
