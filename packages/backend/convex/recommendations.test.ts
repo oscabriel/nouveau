@@ -10,6 +10,7 @@ import type { z } from "zod";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import {
+	appliedFilters,
 	buildAgent,
 	buildPrompt,
 	checkAvailability,
@@ -619,6 +620,25 @@ test("the search tool rejects placeholder budgets and bag sizes", () => {
 	).toBe(false);
 });
 
+test("a budget or bag size at its ceiling is no limit: dropped before the query and absent from what the tool reports", async () => {
+	// What the second OpenAI-only run sent for "no budget" and "any size".
+	const atTheCeilings = { maxGrams: 5000, maxPriceCents: 50_000, minGrams: 50 };
+	expect(appliedFilters(atTheCeilings)).toEqual({});
+	expect(appliedFilters({ maxPriceCents: 2500, minGrams: 250 })).toEqual({
+		maxPriceCents: 2500,
+		minGrams: 250,
+	});
+	const f = await setup();
+	const run = await claim(f);
+	// The fixture lot is 250 g; a real 500 g floor hides it, the ceilings do not.
+	const result = (await runTool(f, searchCatalog, run._id, {
+		...atTheCeilings,
+		query: "floral",
+	})) as { applied: Record<string, unknown>; lots: unknown[] };
+	expect(result.lots).toHaveLength(1);
+	expect(result.applied).toEqual({});
+});
+
 test("the search tool ranks lots, records them on the run, and applies only the budget constraints", async () => {
 	const f = await setup();
 	const run = await claim(f);
@@ -644,8 +664,9 @@ test("the search tool ranks lots, records them on the run, and applies only the 
 	const tooSmall = (await runTool(f, searchCatalog, run._id, {
 		minGrams: 500,
 		query: "anything",
-	})) as { lots: unknown[] };
+	})) as { applied: unknown; lots: unknown[] };
 	expect(tooSmall.lots).toEqual([]);
+	expect(tooSmall.applied).toEqual({ minGrams: 500 });
 	// A second search over the same lots records nothing new.
 	const repeat = (await runTool(f, searchCatalog, run._id, {
 		query: "floral washed",

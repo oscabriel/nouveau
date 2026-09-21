@@ -39,9 +39,35 @@ const AGENT_NAME = "next-bag";
 // Ceilings on the search tool's numeric filters. The first OpenAI-only run
 // on dev sent Number.MAX_SAFE_INTEGER for the budget and bag size instead of
 // omitting them; a value past these fails validation and the model retries.
+// The run after that sent the ceilings themselves on a request that named
+// no budget or size, so a value at a ceiling means "no limit": the tool
+// drops it before the query and reports what it applied.
 const MAX_FILTER_PRICE_CENTS = 50_000;
 const MIN_FILTER_GRAMS = 50;
 const MAX_FILTER_GRAMS = 5000;
+
+/** The three numeric filters the search tool accepts. */
+export interface SearchFilters {
+	maxGrams?: number;
+	maxPriceCents?: number;
+	minGrams?: number;
+}
+
+const limitOrNone = (
+	value: number | undefined,
+	isNoLimit: (value: number) => boolean
+): number | undefined =>
+	value === undefined || isNoLimit(value) ? undefined : value;
+
+/** The filters the search applies: a value at its ceiling is dropped. */
+export const appliedFilters = (args: SearchFilters): SearchFilters => ({
+	maxGrams: limitOrNone(args.maxGrams, (g) => g >= MAX_FILTER_GRAMS),
+	maxPriceCents: limitOrNone(
+		args.maxPriceCents,
+		(cents) => cents >= MAX_FILTER_PRICE_CENTS
+	),
+	minGrams: limitOrNone(args.minGrams, (g) => g <= MIN_FILTER_GRAMS),
+});
 
 /** The context the tool handlers run with: the action ctx plus the run. */
 type LoopContext = GenericActionCtx<DataModel> & {
@@ -173,17 +199,16 @@ export const myLogsQuery = internalQuery({
 
 export const searchCatalog: Tool = createTool({
 	description:
-		"Search the US coffee catalog. Returns the lots inside the budget and bag size, ranked by how many query words their details carry, with price, size and details. Words never exclude a lot, so a search always returns what the catalog has. Pick only from these results.",
+		"Search the US coffee catalog. Returns the lots inside the budget and bag size, ranked by how many query words their details carry, with price, size and details. Words never exclude a lot, so a search always returns what the catalog has. Leave the budget and bag size out unless the request names them; a value at a field's limit counts as no limit. Pick only from these results.",
 	execute: async (ctx: LoopContext, args) => {
+		const applied = appliedFilters(args);
 		const {
 			candidates,
 			rows,
 		}: { candidates: Candidate[]; rows: CatalogRow[] } = await ctx.runQuery(
 			internal.recommendationAgent.searchCatalogQuery,
 			{
-				maxGrams: args.maxGrams,
-				maxPriceCents: args.maxPriceCents,
-				minGrams: args.minGrams,
+				...applied,
 				now: Date.now(),
 				query: args.query,
 			}
@@ -193,6 +218,7 @@ export const searchCatalog: Tool = createTool({
 			{ attempt: ctx.attempt, candidates, runId: ctx.runId }
 		);
 		return {
+			applied,
 			lots: rows.map((row) => ({
 				grams: row.grams,
 				name: row.name,
@@ -212,7 +238,7 @@ export const searchCatalog: Tool = createTool({
 			.max(MAX_FILTER_GRAMS)
 			.optional()
 			.describe(
-				"The largest bag wanted, in grams. Only when the request names a size; never a placeholder."
+				"The largest bag wanted, in grams. Only when the request names a size; omit it otherwise. 5000 means no limit."
 			),
 		maxPriceCents: z
 			.number()
@@ -221,7 +247,7 @@ export const searchCatalog: Tool = createTool({
 			.max(MAX_FILTER_PRICE_CENTS)
 			.optional()
 			.describe(
-				"The budget per bag, in US cents. Only when the request names a price; never a placeholder."
+				"The budget per bag, in US cents. Only when the request names a price; omit it otherwise. 50000 means no limit."
 			),
 		minGrams: z
 			.number()
@@ -230,7 +256,7 @@ export const searchCatalog: Tool = createTool({
 			.max(MAX_FILTER_GRAMS)
 			.optional()
 			.describe(
-				"The smallest bag wanted, in grams. Only when the request names a size; never a placeholder."
+				"The smallest bag wanted, in grams. Only when the request names a size; omit it otherwise. 50 means no limit."
 			),
 		query: z
 			.string()
