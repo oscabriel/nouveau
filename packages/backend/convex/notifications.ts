@@ -240,6 +240,32 @@ export const fanoutEvent = internalMutation({
 });
 
 /**
+ * Operator entry: force a fresh send for an already-notified event. Deletes
+ * the ledger rows that act as the one-email-per-event guard (all watchers,
+ * or just `userId`), then re-runs the fanout so AgentMail gets a new
+ * outbound. Dev/prod smoke test for the email path; never called by app code.
+ */
+export const resendEvent = internalMutation({
+	args: { eventId: v.id("dropEvents"), userId: v.optional(v.id("users")) },
+	handler: async (ctx, args) => {
+		const rows = await ctx.db
+			.query("notifications")
+			.withIndex("by_drop_event_id", (q) => q.eq("dropEventId", args.eventId))
+			.collect();
+		const targets =
+			args.userId === undefined
+				? rows
+				: rows.filter((row) => row.userId === args.userId);
+		await Promise.all(targets.map((row) => ctx.db.delete(row._id)));
+		// With a userId, only that user's row is gone, so the fanout's dedupe
+		// check skips every other watcher and sends to them alone.
+		await notifyWatchersOfEvent(ctx, args.eventId);
+		return { cleared: targets.length };
+	},
+	returns: v.object({ cleared: v.number() }),
+});
+
+/**
  * Atomically claim the right to provision the shared alert inbox. Any code
  * path may schedule provisionAlertInbox (fanout with no inbox yet, sign-ins
  * via ensureAlertInbox), and actions don't serialize, so the exclusivity
