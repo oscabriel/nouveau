@@ -156,7 +156,15 @@ const SignedInPane = () => {
 		const timer = window.setInterval(() => setNow(Date.now()), 30_000);
 		return () => window.clearInterval(timer);
 	}, []);
-	const latest = useQuery(api.recommendations.latest, { now });
+	const fresh = useQuery(api.recommendations.latest, { now });
+	// Each tick is a new subscription and `fresh` is undefined until it
+	// answers; showing a Loader every 30 seconds read as a stutter. Keep the
+	// last answer on screen until the next arrives (React's "adjust state
+	// from a previous render" pattern; a state set during render).
+	const [latest, setLatest] = useState(fresh);
+	if (fresh !== undefined && fresh !== latest) {
+		setLatest(fresh);
+	}
 	const busy = latest?.status === "queued" || latest?.status === "running";
 	return (
 		<>
