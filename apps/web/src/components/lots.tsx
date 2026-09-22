@@ -10,8 +10,9 @@ import Loader from "@/components/loader";
 import { SearchField } from "@/components/search-field";
 import { ArrowCell, TableHoverImage } from "@/components/table";
 import { TastingPill } from "@/components/tasting-pill";
-import { displayPriceCents, formatGrams, formatPrice } from "@/lib/format";
+import { displayPriceCents, formatPrice } from "@/lib/format";
 import { bodyCell, headCell, headCellRight } from "@/lib/ui";
+import { useFormatWeight } from "@/lib/weight";
 
 type LotRow = FunctionReturnType<typeof api.roasters.listLots>["page"][number];
 
@@ -210,57 +211,60 @@ const LotFilterRow = ({
 	size: number | null;
 	stock: boolean;
 	weightOptions: number[];
-}) => (
-	<div className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-3">
-		<DotToggle
-			onClick={() => {
-				onStock(!stock);
-			}}
-			pressed={stock}
-		>
-			In stock
-		</DotToggle>
-		<select
-			aria-label="Bag size"
-			className="text-muted-foreground h-11 max-w-40 border-b bg-transparent text-sm outline-none"
-			onChange={(event) => {
-				onSize(event.target.value === "" ? null : Number(event.target.value));
-			}}
-			value={size ?? ""}
-		>
-			<option value="">Any size</option>
-			{weightOptions.map((option) => (
-				<option key={option} value={option}>
-					{formatGrams(option)}
-				</option>
-			))}
-		</select>
-		<input
-			aria-label="Price at most, dollars"
-			autoComplete="off"
-			className="placeholder:text-muted-foreground focus-visible:border-foreground h-11 w-28 border-b bg-transparent text-sm outline-none"
-			min="0"
-			onChange={(event) => {
-				onPrice(event.target.value);
-			}}
-			placeholder="≤ $ price"
-			step="any"
-			type="number"
-			value={price}
-		/>
-		<input
-			aria-label="Origin contains"
-			autoComplete="off"
-			className="placeholder:text-muted-foreground focus-visible:border-foreground h-11 w-40 border-b bg-transparent text-sm outline-none [&::-webkit-search-cancel-button]:hidden"
-			onChange={(event) => {
-				onOrigin(event.target.value);
-			}}
-			placeholder="Origin"
-			type="search"
-			value={origin}
-		/>
-	</div>
-);
+}) => {
+	const formatWeight = useFormatWeight();
+	return (
+		<div className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-3">
+			<DotToggle
+				onClick={() => {
+					onStock(!stock);
+				}}
+				pressed={stock}
+			>
+				In stock
+			</DotToggle>
+			<select
+				aria-label="Bag size"
+				className="text-muted-foreground h-11 max-w-40 border-b bg-transparent text-sm outline-none"
+				onChange={(event) => {
+					onSize(event.target.value === "" ? null : Number(event.target.value));
+				}}
+				value={size ?? ""}
+			>
+				<option value="">Any size</option>
+				{weightOptions.map((option) => (
+					<option key={option} value={option}>
+						{formatWeight(option)}
+					</option>
+				))}
+			</select>
+			<input
+				aria-label="Price at most, dollars"
+				autoComplete="off"
+				className="placeholder:text-muted-foreground focus-visible:border-foreground h-11 w-28 border-b bg-transparent text-sm outline-none"
+				min="0"
+				onChange={(event) => {
+					onPrice(event.target.value);
+				}}
+				placeholder="≤ $ price"
+				step="any"
+				type="number"
+				value={price}
+			/>
+			<input
+				aria-label="Origin contains"
+				autoComplete="off"
+				className="placeholder:text-muted-foreground focus-visible:border-foreground h-11 w-40 border-b bg-transparent text-sm outline-none [&::-webkit-search-cancel-button]:hidden"
+				onChange={(event) => {
+					onOrigin(event.target.value);
+				}}
+				placeholder="Origin"
+				type="search"
+				value={origin}
+			/>
+		</div>
+	);
+};
 
 /**
  * The roaster's lot catalog (screen inventory §11). Browsing pages the

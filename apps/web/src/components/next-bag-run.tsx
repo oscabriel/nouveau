@@ -1,5 +1,6 @@
 import { useUIMessages } from "@convex-dev/agent/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
+import type { WeightUnit } from "@nouveau/backend/convex/weightUnit";
 import { Link } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
@@ -11,6 +12,7 @@ import { thumbUrl } from "@/lib/drops";
 import { describeMutationError } from "@/lib/errors";
 import { formatPrice } from "@/lib/format";
 import { navLinkClass } from "@/lib/ui";
+import { formatWeight, useFormatWeight, useWeightUnit } from "@/lib/weight";
 
 type Run = NonNullable<FunctionReturnType<typeof api.recommendations.latest>>;
 type PickRow = Run["picks"][number];
@@ -60,7 +62,10 @@ const readArray = (value: unknown): unknown[] =>
  * a value the model sent at a field's ceiling is no limit and the tool
  * drops it.
  */
-const searchDetail = (part: Record<string, unknown>): string => {
+const searchDetail = (
+	part: Record<string, unknown>,
+	unit: WeightUnit
+): string => {
 	const input = readRecord(part.input);
 	const output = readRecord(part.output);
 	const applied = readRecord(output.applied);
@@ -76,8 +81,10 @@ const searchDetail = (part: Record<string, unknown>): string => {
 	const min = readNumber(applied.minGrams);
 	const max = readNumber(applied.maxGrams);
 	if (min !== undefined || max !== undefined) {
-		const floor = min === undefined ? "any size" : `${min} g`;
-		const ceiling = max === undefined ? "" : ` up to ${max} g`;
+		const floor =
+			min === undefined ? "any size" : (formatWeight(min, unit) ?? "");
+		const ceiling =
+			max === undefined ? "" : ` up to ${formatWeight(max, unit) ?? ""}`;
 		parts.push(`${floor}${ceiling}`);
 	}
 	const lots = readArray(output.lots);
@@ -103,7 +110,8 @@ const readLogsDetail = (part: Record<string, unknown>): string =>
 const stepFromPart = (
 	part: Record<string, unknown>,
 	index: number,
-	message: ThreadMessage
+	message: ThreadMessage,
+	unit: WeightUnit
 ): Step => {
 	const state = readString(part.state) ?? "";
 	const name =
@@ -119,7 +127,7 @@ const stepFromPart = (
 		detail = "failed";
 	} else if (name === "searchCatalog") {
 		label = "Search";
-		detail = searchDetail(part);
+		detail = searchDetail(part, unit);
 	} else if (name === "readLotFacts") {
 		label = "Page read";
 		detail = readLotDetail(part);
@@ -137,12 +145,12 @@ const stepFromPart = (
 const isPickPart = (part: Record<string, unknown>): boolean =>
 	part.type === "tool-pickLot" || part.toolName === "pickLot";
 
-const stepsFromMessages = (messages: ThreadPage): Step[] =>
+const stepsFromMessages = (messages: ThreadPage, unit: WeightUnit): Step[] =>
 	messages.flatMap((message) =>
 		message.parts
 			.map((part, index) => ({ index, message, part }))
 			.filter(({ part }) => isToolPart(part) && !isPickPart(part))
-			.map(({ index, part }) => stepFromPart(part, index, message))
+			.map(({ index, part }) => stepFromPart(part, index, message, unit))
 	);
 
 const StepList = ({ steps }: { steps: Step[] }) => (
@@ -205,6 +213,7 @@ const PickCard = ({
 	runId: Run["id"];
 }) => {
 	const { candidate, canBuy, imageUrl, pick } = row;
+	const weight = useFormatWeight();
 	return (
 		<li className="motion-safe:animate-in motion-safe:fade-in grid grid-cols-[88px_1fr] gap-x-4 py-5 motion-safe:duration-300">
 			<div className="bg-muted aspect-[3/2]">
@@ -225,7 +234,7 @@ const PickCard = ({
 				<p className="text-muted-foreground mt-0.5 text-sm">
 					{candidate.roasterName}
 					<span className="tnum">
-						{` · ${formatPrice(candidate.priceCents)} · ${candidate.grams} g`}
+						{` · ${formatPrice(candidate.priceCents)} · ${weight(candidate.grams)}`}
 					</span>
 				</p>
 				<p className="mt-2 text-sm leading-snug [overflow-wrap:anywhere]">
@@ -302,7 +311,8 @@ export const NextBagRun = ({ run }: { run: Run }) => {
 		working && run.threadId !== null ? { threadId: run.threadId } : "skip",
 		{ initialNumItems: 24, stream: true }
 	);
-	const steps = stepsFromMessages(thread.results ?? []);
+	const unit = useWeightUnit();
+	const steps = stepsFromMessages(thread.results ?? [], unit);
 	return (
 		<section aria-label="Your shortlist" className="mt-8">
 			<p className="text-[15px] leading-snug [overflow-wrap:anywhere]">

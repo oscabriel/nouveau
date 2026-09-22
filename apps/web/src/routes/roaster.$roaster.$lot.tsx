@@ -13,8 +13,9 @@ import { LogSheet } from "@/components/log-form";
 import { PageTitle } from "@/components/page-title";
 import { SaveButton } from "@/components/save-button";
 import { SignInCta } from "@/components/sign-in-cta";
-import { formatGrams, formatPrice } from "@/lib/format";
+import { formatPrice } from "@/lib/format";
 import { bodyCell, headCell, navLinkClass } from "@/lib/ui";
+import { useFormatWeight } from "@/lib/weight";
 
 export type LotPageData = FunctionReturnType<typeof api.lots.get>;
 type LotData = NonNullable<LotPageData>["lot"];
@@ -75,41 +76,44 @@ const VariantRow = ({
 	variant,
 }: {
 	variant: NonNullable<LotData>["variants"][number];
-}) => (
-	<tr
-		className={`hover:bg-muted focus-within:bg-muted border-b transition-colors ${variant.available ? "" : "text-muted-foreground"}`}
-	>
-		<td className={`${bodyCell} tnum whitespace-nowrap`}>
-			{formatGrams(variant.grams) ?? "—"}
-		</td>
-		<td
-			className={`${bodyCell} text-muted-foreground hidden pr-4 sm:table-cell`}
+}) => {
+	const formatWeight = useFormatWeight();
+	return (
+		<tr
+			className={`hover:bg-muted focus-within:bg-muted border-b transition-colors ${variant.available ? "" : "text-muted-foreground"}`}
 		>
-			{variant.grind ?? ""}
-		</td>
-		<td className={`${bodyCell} tnum whitespace-nowrap`}>
-			{formatPrice(variant.priceCents)}
-		</td>
-		<td className={`${bodyCell} whitespace-nowrap`}>
-			{variant.available ? (
-				<span className="label-caps text-muted-foreground">In stock</span>
-			) : (
-				<span className="label-caps">Sold out</span>
-			)}
-		</td>
-		<td className={`${bodyCell} w-8 text-right md:w-10`}>
-			<a
-				aria-label={`Buy ${variant.name} at the roaster's shop`}
-				className="inline-flex size-6 items-center justify-center"
-				href={variant.url}
-				rel="noopener noreferrer"
-				target="_blank"
+			<td className={`${bodyCell} tnum whitespace-nowrap`}>
+				{formatWeight(variant.grams) ?? "—"}
+			</td>
+			<td
+				className={`${bodyCell} text-muted-foreground hidden pr-4 sm:table-cell`}
 			>
-				<ArrowUpRight aria-hidden className="size-3.5" strokeWidth={1.5} />
-			</a>
-		</td>
-	</tr>
-);
+				{variant.grind ?? ""}
+			</td>
+			<td className={`${bodyCell} tnum whitespace-nowrap`}>
+				{formatPrice(variant.priceCents)}
+			</td>
+			<td className={`${bodyCell} whitespace-nowrap`}>
+				{variant.available ? (
+					<span className="label-caps text-muted-foreground">In stock</span>
+				) : (
+					<span className="label-caps">Sold out</span>
+				)}
+			</td>
+			<td className={`${bodyCell} w-8 text-right md:w-10`}>
+				<a
+					aria-label={`Buy ${variant.name} at the roaster's shop`}
+					className="inline-flex size-6 items-center justify-center"
+					href={variant.url}
+					rel="noopener noreferrer"
+					target="_blank"
+				>
+					<ArrowUpRight aria-hidden className="size-3.5" strokeWidth={1.5} />
+				</a>
+			</td>
+		</tr>
+	);
+};
 
 /**
  * The size table: every purchasable option the roaster publishes, one row
