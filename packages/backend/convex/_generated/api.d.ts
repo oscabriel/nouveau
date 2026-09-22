@@ -56,6 +56,7 @@ import type * as tasting from "../tasting.js";
 import type * as tiles from "../tiles.js";
 import type * as users from "../users.js";
 import type * as watches from "../watches.js";
+import type * as weightUnit from "../weightUnit.js";
 import type * as woocommerce from "../woocommerce.js";
 
 import type {
@@ -113,6 +114,7 @@ declare const fullApi: ApiFromModules<{
   tiles: typeof tiles;
   users: typeof users;
   watches: typeof watches;
+  weightUnit: typeof weightUnit;
   woocommerce: typeof woocommerce;
 }>;
 

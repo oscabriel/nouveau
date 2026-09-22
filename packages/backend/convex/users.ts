@@ -10,8 +10,8 @@ import {
 	isValidHandle,
 } from "./handles";
 import { optionalUserId, requireUserId } from "./identity";
-import { DEFAULT_WEIGHT_UNIT, weightUnitValidator } from './weightUnit';
-import type { WeightUnit } from './weightUnit';
+import { DEFAULT_WEIGHT_UNIT, weightUnitValidator } from "./weightUnit";
+import type { WeightUnit } from "./weightUnit";
 
 /**
  * Create the user row for a first-time Google sign-in and return its id. The
