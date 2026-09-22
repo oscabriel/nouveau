@@ -17,7 +17,6 @@
 		"@fontsource-variable/eb-garamond": "^5.3.0",
 		"@fontsource-variable/schibsted-grotesk": "^5.3.0",
 		"@nouveau/backend": "workspace:*",
-		"@nouveau/env": "workspace:*",
 		"@nouveau/ui": "workspace:*",
 		"@tailwindcss/vite": "^4.3.3",
 		"@tanstack/react-router": "^1.170.18",

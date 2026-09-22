@@ -26,7 +26,6 @@ The design is one column, black type on a white ground, hairline tables, and Tho
 apps/web              Vite + React 19 + TanStack Router, Tailwind 4
 packages/backend      Convex functions, schema, crons, tests (vitest + convex-test)
 packages/ui           Shared styles and primitives
-packages/env          Typed env access for the web app
 .agents/docs          ADRs, work plan, Convex and code-standard guidelines
 CONTEXT.md            The domain vocabulary
 DESIGN.md             The design record

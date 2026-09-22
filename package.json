@@ -36,7 +36,6 @@
 		"deploy": "cd packages/backend && CONVEX_DEPLOYMENT=prod:artful-chameleon-402 npx @convex-dev/static-hosting deploy --build-command \"bun run --filter web build\" --dist ../../apps/web/dist"
 	},
 	"dependencies": {
-		"@nouveau/env": "workspace:*",
 		"dotenv": "catalog:",
 		"zod": "catalog:"
 	},
