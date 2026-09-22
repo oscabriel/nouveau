@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { LinkProps } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 
 import { thumbUrl } from "@/lib/drops";
@@ -34,13 +34,6 @@ export const ArrowCell = ({
 	</td>
 );
 
-/** Where the image sits: its source and its viewport position. */
-interface Placement {
-	left: number;
-	src: string;
-	top: number;
-}
-
 /** Above-right of the pointer, clamped inside the viewport (ADR-0015). */
 const place = (x: number, y: number): { left: number; top: number } => {
 	const width = FLOATING_IMAGE_WIDTH;
@@ -70,6 +63,12 @@ const place = (x: number, y: number): { left: number; top: number } => {
  *
  * Mount as a sibling of the `<table>`, passing the table's ref. The image
  * is `position: fixed`, so no wrapper is needed.
+ *
+ * The position is written straight to the element as a `transform` on each
+ * pointer move; React state holds only the source and whether the image
+ * shows. A state update per move re-rendered on every pixel and moved the
+ * box with `left`/`top`, which lays out; a translate stays on the
+ * compositor.
  */
 export const TableHoverImage = ({
 	tableRef,
@@ -78,8 +77,11 @@ export const TableHoverImage = ({
 }) => {
 	// The image keeps its last source and position while hidden, so a
 	// row-to-row move only swaps the source and never flickers the box.
-	const [frame, setFrame] = useState<Placement | null>(null);
+	const [src, setSrc] = useState<string | null>(null);
 	const [shown, setShown] = useState(false);
+	const imageRef = useRef<HTMLImageElement | null>(null);
+	// The last position, for the first paint after the element mounts.
+	const positionRef = useRef({ left: 0, top: 0 });
 	// `matchMedia` in the initializer: this is a client-only SPA, and a fine
 	// pointer is a property of the device, not of any render.
 	const [finePointer, setFinePointer] = useState(
@@ -108,33 +110,38 @@ export const TableHoverImage = ({
 		// The hovered or focused row, when it carries an image URL.
 		const rowAt = (target: EventTarget | null): HTMLElement | null =>
 			target instanceof Element ? target.closest("tr[data-image-url]") : null;
-		const show = (src: string, left: number, top: number) => {
-			setFrame({ left, src, top });
+		const show = (nextSrc: string, left: number, top: number) => {
+			positionRef.current = { left, top };
+			const image = imageRef.current;
+			if (image !== null) {
+				image.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+			}
+			setSrc(nextSrc);
 			setShown(true);
 		};
 		const onPointerMove = (event: PointerEvent) => {
 			const row = rowAt(event.target);
-			const src = row?.dataset.imageUrl ?? "";
-			if (src === "") {
+			const rowSrc = row?.dataset.imageUrl ?? "";
+			if (rowSrc === "") {
 				setShown(false);
 				return;
 			}
 			const { left, top } = place(event.clientX, event.clientY);
-			show(src, left, top);
+			show(rowSrc, left, top);
 		};
 		const onFocusIn = (event: FocusEvent) => {
 			const row = rowAt(event.target);
 			if (row === null) {
 				return;
 			}
-			const src = row.dataset.imageUrl ?? "";
-			if (src === "") {
+			const rowSrc = row.dataset.imageUrl ?? "";
+			if (rowSrc === "") {
 				setShown(false);
 				return;
 			}
 			const rect = row.getBoundingClientRect();
 			const { left, top } = place(rect.left, rect.top + rect.height / 2);
-			show(src, left, top);
+			show(rowSrc, left, top);
 		};
 		const onFocusOut = (event: FocusEvent) => {
 			// Focus moving within the same row keeps the image up.
@@ -168,17 +175,25 @@ export const TableHoverImage = ({
 		};
 	}, [finePointer, tableRef]);
 
-	if (frame === null) {
+	if (src === null) {
 		return null;
 	}
 	return (
 		<img
 			alt=""
 			aria-hidden
-			className={`border-border bg-background pointer-events-none fixed z-50 border transition-opacity duration-150 ${shown ? "opacity-100" : "opacity-0"} motion-reduce:transition-none`}
+			className={`border-border bg-background pointer-events-none fixed top-0 left-0 z-50 border transition-opacity duration-150 will-change-transform ${shown ? "opacity-100" : "opacity-0"} motion-reduce:transition-none`}
 			height={FLOATING_IMAGE_HEIGHT}
-			src={thumbUrl(frame.src, FLOATING_IMAGE_WIDTH)}
-			style={{ left: frame.left, top: frame.top }}
+			ref={(element) => {
+				// The first paint takes the position the pointer already has;
+				// later moves write the transform in the handler.
+				imageRef.current = element;
+				if (element !== null) {
+					const { left, top } = positionRef.current;
+					element.style.transform = `translate3d(${left}px, ${top}px, 0)`;
+				}
+			}}
+			src={thumbUrl(src, FLOATING_IMAGE_WIDTH)}
 			width={FLOATING_IMAGE_WIDTH}
 		/>
 	);
