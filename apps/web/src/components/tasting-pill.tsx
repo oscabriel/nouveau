@@ -26,8 +26,9 @@ export const pillClass = (family: TastingFamily | null): string =>
 
 /**
  * A tasting note as a colored pill (batch 8, 2026-09-21): soft ground and
- * border in the family's hue, ink text. Personal notes only; the roaster's
- * words stay plain text. With `link`, the pill goes to /drops filtered to
+ * border in the family's hue, ink text. Since 2026-09-21 the roaster's
+ * descriptors in tables and cards use it too, so every lot note on the site
+ * reads the same way. With `link`, the pill goes to /drops filtered to
  * the family, so one word on a log leads to every recent lot in its
  * family. A word with no family is a plain hairline pill and never links.
  */

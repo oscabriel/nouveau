@@ -9,6 +9,7 @@ import { DotToggle } from "@/components/dot-toggle";
 import Loader from "@/components/loader";
 import { SearchField } from "@/components/search-field";
 import { ArrowCell, TableHoverImage } from "@/components/table";
+import { TastingPill } from "@/components/tasting-pill";
 import { displayPriceCents, formatGrams, formatPrice } from "@/lib/format";
 import { bodyCell, headCell, headCellRight } from "@/lib/ui";
 
@@ -72,9 +73,16 @@ const LotTableRow = ({
 				)}
 			</td>
 			<td
-				className={`${bodyCell} text-muted-foreground hidden max-w-0 truncate pr-4 md:table-cell md:w-[40%]`}
+				className={`${bodyCell} hidden max-w-0 pr-4 md:table-cell md:w-[40%]`}
 			>
-				{lot.roasterNotes ?? ""}
+				{/* Pills, one row, clipped at the cell's edge: the row stays one line tall. */}
+				<div className="flex gap-1.5 overflow-hidden">
+					{lot.roasterTags.map(({ family, note }) => (
+						<TastingPill family={family} key={note} link>
+							{note}
+						</TastingPill>
+					))}
+				</div>
 			</td>
 			<td
 				className={`${bodyCell} text-muted-foreground hidden pr-4 lg:table-cell`}

@@ -18,17 +18,19 @@ export type LogCardData = FunctionReturnType<
 >[number];
 
 /**
- * The taster's notes as colored pills beside the roaster's descriptors in
- * plain text (ADR-0016). Nothing renders when the log has neither.
+ * The taster's notes and the roaster's descriptors, both as colored pills
+ * (ADR-0016; the roaster's row joined the pills 2026-09-21 so every lot
+ * note on the site reads the same way). Nothing renders when the log has
+ * neither.
  */
 const LogNotes = ({
-	roasterNotes,
+	roasterTags,
 	tastingNotes,
 }: {
-	roasterNotes: LogCardData["lot"]["roasterNotes"];
+	roasterTags: LogCardData["lot"]["roasterTags"];
 	tastingNotes: LogCardData["tastingNotes"];
 }) => {
-	if (tastingNotes === null && roasterNotes === null) {
+	if (tastingNotes === null && roasterTags.length === 0) {
 		return null;
 	}
 	return (
@@ -45,10 +47,16 @@ const LogNotes = ({
 					</dd>
 				</>
 			)}
-			{roasterNotes !== null && (
+			{roasterTags.length > 0 && (
 				<>
 					<dt className="label-caps text-foreground pt-0.5">Roaster notes</dt>
-					<dd>{roasterNotes}</dd>
+					<dd className="flex flex-wrap gap-1.5">
+						{roasterTags.map(({ family, note }) => (
+							<TastingPill family={family} key={note} link>
+								{note}
+							</TastingPill>
+						))}
+					</dd>
 				</>
 			)}
 		</dl>
@@ -149,7 +157,7 @@ export const LogCard = ({
 				</p>
 			)}
 			<LogNotes
-				roasterNotes={log.lot.roasterNotes}
+				roasterTags={log.lot.roasterTags}
 				tastingNotes={log.tastingNotes}
 			/>
 			{!isMine && <SaveButton className="self-start" lotId={log.lot.id} />}
