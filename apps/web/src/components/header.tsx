@@ -1,7 +1,3 @@
-import {
-	useOauth,
-	useSignInWithGoogle,
-} from "@convex-dev/auth/providers/oauth/react";
 import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
 import {
@@ -15,6 +11,7 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { useEffect } from "react";
 
+import { useGoogleSignIn } from "@/components/sign-in-cta";
 import { THEME_SIDES, useThemeControls } from "@/components/theme-switch";
 import { navLinkClass } from "@/lib/ui";
 
@@ -37,29 +34,15 @@ const firstName = (name: string | undefined): string | undefined =>
 	name?.trim().split(/\s+/u)[0];
 
 const SignInButton = () => {
-	const { signInGoogle } = useSignInWithGoogle(api.auth);
-	const { flowError } = useOauth();
-	const startSignIn = async () => {
-		try {
-			await signInGoogle();
-		} catch {
-			// The failure is surfaced later through flowError.
-		}
-	};
+	const { error, start } = useGoogleSignIn();
 	return (
 		<>
-			{flowError !== null && (
+			{error !== null && (
 				<span className="text-destructive text-sm" role="alert">
-					{flowError.message ?? "Sign-in failed. Please try again."}
+					{error}
 				</span>
 			)}
-			<button
-				className={navLinkClass}
-				onClick={() => {
-					startSignIn();
-				}}
-				type="button"
-			>
+			<button className={navLinkClass} onClick={start} type="button">
 				Log in
 			</button>
 		</>
@@ -131,7 +114,7 @@ const HandleMenu = ({ label, path }: { label: string; path: string }) => {
 				<DropdownMenuSeparator />
 				<DropdownMenuItem
 					className={menuItemClass}
-					onSelect={() => {
+					onClick={() => {
 						void signOut();
 					}}
 				>
