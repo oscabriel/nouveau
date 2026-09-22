@@ -273,7 +273,8 @@ export const Lots = ({
 	slug: string;
 }) => {
 	const [search, setSearch] = useState("");
-	const [inStockOnly, setInStockOnly] = useState(false);
+	// In stock by default (owner, 2026-09-21); the toggle shows everything.
+	const [inStockOnly, setInStockOnly] = useState(true);
 	const [maxPriceDollars, setMaxPriceDollars] = useState("");
 	const [weight, setWeight] = useState<number | null>(null);
 	const [originTerm, setOriginTerm] = useState("");
