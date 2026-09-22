@@ -26,7 +26,7 @@ export const SiteFooter = () => (
 		<div className="flex items-start justify-between gap-x-6 px-5 pt-4 pb-5 md:items-center md:px-10">
 			<nav
 				aria-label="Footer"
-				className="flex flex-col items-start gap-y-1 md:flex-row md:items-center md:gap-x-5 md:gap-y-0"
+				className="flex flex-col items-start md:flex-row md:items-center md:gap-x-5"
 			>
 				<Link className={navLinkClass} to="/">
 					Nouveau
@@ -38,14 +38,12 @@ export const SiteFooter = () => (
 					Drops
 				</Link>
 			</nav>
-			<button
-				className={`${navLinkClass} hidden md:inline-flex`}
-				onClick={scrollToTop}
-				type="button"
-			>
-				Back to the top
-			</button>
-			<nav className="flex flex-col items-end gap-y-1 md:flex-row md:items-center md:gap-x-5 md:gap-y-0">
+			<div className="hidden md:block">
+				<button className={navLinkClass} onClick={scrollToTop} type="button">
+					Back to the top
+				</button>
+			</div>
+			<nav className="flex flex-col items-end md:flex-row md:items-center md:gap-x-5">
 				<Link className={navLinkClass} to="/about">
 					About
 				</Link>

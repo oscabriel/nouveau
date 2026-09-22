@@ -190,7 +190,7 @@ const Header = () => {
 				aria-label="Primary"
 				className="flex w-full items-start justify-between gap-x-5 md:items-center"
 			>
-				<div className="flex flex-col items-start gap-y-1 md:flex-row md:items-center md:gap-x-5 md:gap-y-0">
+				<div className="flex flex-col items-start md:flex-row md:items-center md:gap-x-5">
 					<Link
 						activeOptions={{ exact: true }}
 						activeProps={activeProps}
@@ -210,7 +210,7 @@ const Header = () => {
 						Drops
 					</Link>
 				</div>
-				<div className="flex flex-col items-end gap-y-1 md:flex-row md:items-center md:gap-x-5 md:gap-y-0">
+				<div className="flex flex-col items-end md:flex-row md:items-center md:gap-x-5">
 					<Link
 						activeProps={activeProps}
 						className={navLinkClass}
