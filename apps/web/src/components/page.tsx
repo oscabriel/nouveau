@@ -95,7 +95,11 @@ export const PageTitle = ({
 				)}
 			</h1>
 			{children !== undefined && (
-				<div className="flex items-center gap-4 md:gap-5">{children}</div>
+				// The controls are 44px tap targets with 11px caps centered, so
+				// baseline alignment would hang 19px of box under the h1 and push
+				// the lede down on pages that have controls. The negative margin
+				// takes that box out of the row's height; the target stays.
+				<div className="-my-4 flex items-center gap-4 md:gap-5">{children}</div>
 			)}
 		</div>
 		{lede !== undefined && <p className={`${ledeClass} max-w-prose`}>{lede}</p>}
