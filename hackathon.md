@@ -2,18 +2,18 @@
 
 - **Project:** nouveau
 - **Event:** Convex All Gas Hackathon
-- **What it does:** A live index of specialty coffee and a place to remember what you tried. Log the lots you drink, ask Find my next bag in plain words and watch an OpenAI agent search the catalog, read pages and hand over up to five in-stock picks one card at a time, save the ones you want, and watch roasters so AgentMail emails you on new lots, restocks and price drops.
-- **Demo:** _video link to be added at submission (Task 6)_
-- **Live app:** https://nouveau.coffee (https://artful-chameleon-402.convex.site)
+- **What it does:** A live index of new beans from specialty coffee roasters that emails you when new lots drop and lets you log what you drink, save what to try, and ask "Find my next bag" in plain words for in-stock picks based on your preferences.
+- **Demo:** https://youtu.be/zNkfCaUcyO4
+- **Live app:** https://artful-chameleon-402.convex.site (https://nouveau.coffee)
 - **Repo:** https://github.com/oscabriel/nouveau
 - **Frontend:** Convex static hosting
-- **Convex deployment:** https://api.nouveau.coffee (https://artful-chameleon-402.convex.cloud)
+- **Convex deployment:** https://artful-chameleon-402.convex.cloud (https://api.nouveau.coffee)
 - **Components:** @agentmail/convex, @convex-dev/agent, @convex-dev/aggregate, @convex-dev/auth (core + Google OAuth), @convex-dev/rate-limiter, @convex-dev/static-hosting, @convex-dev/workpool, @firecrawl/firecrawl-convex
 - **Convex features:** schema, indexes, queries, mutations, actions, crons, scheduled functions, file storage, realtime queries, HTTP actions, workpool, full-text search
-- **Auth:** Convex Auth
-- **AI models:** OpenAI `gpt-5.6-luna` (Responses API, tool loop on @convex-dev/agent) for Find my next bag; TypeSafe System One `jev-1.13.0` picks and verifies spans in the page reader
+- **Auth:** Convex Auth v2, Google OAuth
+- **AI models:** OpenAI `gpt-5.6-luna` (Responses API, tool loop on @convex-dev/agent) for "Find my next bag"; TypeSafe `jev-1.13.0` picks and verifies spans in the page reader
 - **Started:** 2026-08-29T18:06:09Z
-- **Last updated:** 2026-09-21T19:52:51Z
+- **Last updated:** 2026-09-22T05:52:08Z
 
 ## Log
 
@@ -168,3 +168,23 @@ Batch 8, seven items in ten commits. The repo has a README with the custom domai
 ### 2026-09-21 - aab6f30
 
 The page reader learned to show its work. Jev's answers keep their probabilities: every stored page fact carries the confidence of the line it came from, four closed facts (process family, roast level, origin country, altitude band) are vocabulary Choices instead of free text, and each tasting-note candidate gets its own Noul over an over-proposed list rather than one pass over the paragraph. Every production page read now writes a trace (per field the picked line, its probability, the runner-up, the cut value and whether the verifier kept it; per note and sentence its Noul; stage timings), pruned after three days. `/nerd-stuff` is an unlisted workbench over those traces, ported from the jev-think-test lab: pick a roaster, START, and watch ten lots go FEED, GATE, PAGE, JEV, CUT, STORE through the same Firecrawl budget as the sweep, each finished lot a row you can open to every candidate and bar. It is the owner's, gated by an `appConfig` key, a new run supersedes the old, and a run stores what it reads like a sweep would. 622 backend tests; ADR-0018.
+
+### 2026-09-21 - 2a06d49
+
+Docs catch-up after the workbench: DESIGN.md got its `/nerd-stuff` entry, the work plan its progress rows, and a wording pass across `/about` and the README, whose How it works now names the sponsor stack (Convex, Firecrawl, TypeSafe, AgentMail, OpenAI) in the order a request meets it.
+
+### 2026-09-22 - 19dc15e
+
+A batch of owner-reviewed design fixes. The nav stacks in two columns below md and the footer flower sits left of the wordmark from md; a dot means selected everywhere. The roaster catalog opens on in-stock lots, and the roaster's own tasting notes now render as wheel-family pills in the catalog table and on log cards (`tasting.ts` tags each note with its family; `roasters.ts`, `logs.ts` carry them). The branch links to Coffea arabica and glows under the cursor; `/about` shows the plate. Users carry a metric or imperial weight unit (`schema.ts`, `users.ts`, `weightUnit.ts`), every bag weight renders in it, and `/settings` is one page with Account, Alerts and Appearance tabs. `index.html` holds one static share card for the whole app. Landing lede: "Never forget your favorite cup or miss the next big drop."
+
+### 2026-09-22 - 0403d78
+
+Load and resilience work found while watching the app in the browser. The next-bag run view loads on demand, every route chunk warms on idle so a deploy mid-session no longer forces a reload, and the pane keeps its last run on screen while the 30-second tick re-subscribes. The table hover image and the branch glow write transforms and custom properties in the pointer handler instead of setting state per pixel. `resendEvent` is an operator `internalMutation` in `notifications.ts` for forcing a fresh alert email on an event. `zod/mini` covers the one env URL check.
+
+### 2026-09-22 - d8f4843
+
+Web review pass, then the first prod deploy since batch 7. Sign out fires again (Base UI menu items take `onClick`, `onSelect` was silently dropped). One page shell for every route (`components/page.tsx`), shared class constants in `lib/ui.ts`, `describeMutationError` in every catch, redirect routes in `beforeLoad`, a root `notFoundComponent`, and roaster, lot and taster pages put their name in the tab title. The drop type row is `aria-pressed` buttons instead of a tablist without panels. Fifteen unused shadcn components left with `@shadcn/react` and `cva`; `packages/env` and `@t3-oss/env-core` left for a 22-line `lib/env.ts`. The 1600px branch and the footer flower moved to `public/`.
+
+### 2026-09-22 - 5a4ac58
+
+Polish after the deploy, each change shipped to prod. `og.png` landed in `public/`, where the share card had pointed since batch 3, and the share description reads "cup of coffee". Title controls keep their 44px box out of the row's height so the lede stays put. The branch glow blends soft-light at 0.3 alpha with a long falloff, a sheen instead of a white disc, and the V ignores the pointer so the glow follows the cursor across the letter. The README's How it works is shorter and now says how a roaster's crawl mode is picked at submission and what Jev answers per page; `/about` matches what watching does, names Check now, and describes the shared reply inbox.
