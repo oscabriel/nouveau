@@ -54,9 +54,12 @@ const PrimarySlot = () => {
  * The branch behind the V: a link to the species' Wikipedia article, with a
  * soft glow inside the drawing that follows the cursor (owner, 2026-09-21).
  * The glow is a radial gradient masked to the webp's own alpha, so it lights
- * the leaves and berries and never the paper around them. Mouse only: the
+ * the leaves and berries and never the paper around them. It blends with
+ * soft-light at low alpha and a long falloff, so it lifts the drawing's own
+ * tones like a sheen instead of painting a white disc over them. Mouse only: the
  * position updates on mouse pointer moves, and `motion-reduce` hides the
- * layer. The V stays in front and outside the link.
+ * layer. The V stays in front and outside the link, but ignores the pointer
+ * so the glow keeps following the cursor across the letter.
  */
 const BranchLink = () => {
 	const [lit, setLit] = useState(false);
@@ -98,13 +101,13 @@ const BranchLink = () => {
 			/>
 			<span
 				aria-hidden
-				className={`pointer-events-none absolute inset-0 transition-opacity duration-300 motion-reduce:hidden ${
+				className={`pointer-events-none absolute inset-0 mix-blend-soft-light transition-opacity duration-300 motion-reduce:hidden ${
 					lit ? "opacity-100" : "opacity-0"
 				}`}
 				ref={glowRef}
 				style={{
 					background:
-						"radial-gradient(circle at var(--glow-x, 50%) var(--glow-y, 50%), rgb(255 255 255 / 0.55), transparent 28%)",
+						"radial-gradient(circle at var(--glow-x, 50%) var(--glow-y, 50%), rgb(255 255 255 / 0.3), transparent 60%)",
 					maskImage: `url(${BRANCH_SRC})`,
 					maskSize: "100% 100%",
 					WebkitMaskImage: `url(${BRANCH_SRC})`,
@@ -132,7 +135,7 @@ const Wordmark = () => (
 			<span aria-hidden="true">Nou</span>
 			<span className="relative inline-block">
 				<BranchLink />
-				<span aria-hidden="true" className="relative z-20">
+				<span aria-hidden="true" className="pointer-events-none relative z-20">
 					V
 				</span>
 			</span>
@@ -149,7 +152,7 @@ const LandingComponent = () => {
 			<section className="flex flex-col items-center px-5 pt-[14vw] text-center md:pt-[9vw]">
 				<Wordmark />
 				<p className="mt-[9vw] max-w-[44rem] font-serif text-[1.5rem] leading-[1.25] text-balance md:text-[1.875rem]">
-					Never forget your favorite cup or miss the next big drop.
+					Never forget your favorite cup of coffee or miss the next big drop.
 				</p>
 				<div className="mt-6 min-h-11">
 					<PrimarySlot />
