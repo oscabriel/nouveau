@@ -5,6 +5,7 @@ import { usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionArgs, FunctionReturnType } from "convex/server";
 import { useRef, useState } from "react";
 
+import { DotToggle } from "@/components/dot-toggle";
 import Loader from "@/components/loader";
 import { SearchField } from "@/components/search-field";
 import { ArrowCell, TableHoverImage } from "@/components/table";
@@ -203,16 +204,14 @@ const LotFilterRow = ({
 	weightOptions: number[];
 }) => (
 	<div className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-3">
-		<button
-			aria-pressed={stock}
-			className={`label-caps inline-flex min-h-11 items-center ${stock ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+		<DotToggle
 			onClick={() => {
 				onStock(!stock);
 			}}
-			type="button"
+			pressed={stock}
 		>
-			In stock{stock ? " ✓" : ""}
-		</button>
+			In stock
+		</DotToggle>
 		<select
 			aria-label="Bag size"
 			className="text-muted-foreground h-11 max-w-40 border-b bg-transparent text-sm outline-none"

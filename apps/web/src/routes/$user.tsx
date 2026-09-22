@@ -10,6 +10,7 @@ import type { FunctionReturnType } from "convex/server";
 import { useEffect } from "react";
 import { toast } from "sonner";
 
+import { DotToggle } from "@/components/dot-toggle";
 import Loader from "@/components/loader";
 import { LogCard } from "@/components/log-card";
 import { NextBagLink } from "@/components/next-bag-sheet";
@@ -61,21 +62,15 @@ const WatchRow = ({ watch }: { watch: Watch }) => {
 				{watch.roaster.name}
 			</Link>
 			<StatusChip compact status={watch.status} />
-			<div className="ml-auto flex items-center">
-				<button
-					aria-pressed={watch.muted}
-					className={`${navLinkClass} ${
-						watch.muted
-							? "text-foreground"
-							: "text-muted-foreground hover:text-foreground"
-					}`}
+			<div className="ml-auto flex items-center gap-x-5">
+				<DotToggle
 					onClick={() => {
 						void toggleMute();
 					}}
-					type="button"
+					pressed={watch.muted}
 				>
 					{watch.muted ? "Muted" : "Mute"}
-				</button>
+				</DotToggle>
 				<button
 					className={`${navLinkClass} text-muted-foreground hover:text-foreground`}
 					onClick={() => {
@@ -248,10 +243,9 @@ const ProfileComponent = () => {
 	return (
 		<main>
 			<div className="px-5 pt-10 md:px-10 md:pt-14">
-				<PageTitle
-					count={logsTruncated ? undefined : logs.length}
-					title={user.name ?? "A taster"}
-				>
+				{/* No count beside the name: the page shows one person, and the
+				    grey line under it already says how many logs. */}
+				<PageTitle title={user.name ?? "A taster"}>
 					{isMine && <NextBagLink />}
 				</PageTitle>
 				<p className="text-muted-foreground mt-4 text-sm md:text-[15px]">

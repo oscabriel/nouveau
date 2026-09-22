@@ -3,12 +3,10 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { useState } from "react";
 
+import { DotToggle } from "@/components/dot-toggle";
 import Loader from "@/components/loader";
 import { Stars } from "@/components/stars";
 import { thumbUrl } from "@/lib/drops";
-
-const toggleClass =
-	"label-caps inline-flex min-h-11 items-center text-muted-foreground transition-colors aria-pressed:text-foreground";
 
 /**
  * The landing's three tiles (ADR-0014): the most recent rated logs whose lot
@@ -16,10 +14,15 @@ const toggleClass =
  * taster. Each tile carries the rating as black stars in the top-right,
  * over the same white chip treatment as the name, with the rater's name
  * under the stars linking their /$user page. The chip sits beside the lot
- * link, not inside it, so the two links never nest. The active word of the
- * LATEST / SHUFFLE pair is underlined, like an active nav link; the dot is
- * gone. Shuffle redraws server-side from the recent pool through the seed.
+ * link, not inside it, so the two links never nest. LATEST / SHUFFLE is a
+ * DotToggle pair like every other selected-or-not control (owner,
+ * 2026-09-21: the dot means selected, site-wide). Shuffle redraws
+ * server-side from the recent pool through the seed.
  */
+const noop = () => {
+	// The loading state shows the pair in place; nothing to toggle yet.
+};
+
 export const LatestTiles = () => {
 	const [seed, setSeed] = useState<number | undefined>();
 	const tiles = useQuery(
@@ -31,12 +34,12 @@ export const LatestTiles = () => {
 		return (
 			<section aria-label="Latest">
 				<div className="flex items-center gap-5">
-					<button aria-pressed className={toggleClass} type="button">
+					<DotToggle onClick={noop} pressed>
 						Latest
-					</button>
-					<button aria-pressed={false} className={toggleClass} type="button">
+					</DotToggle>
+					<DotToggle onClick={noop} pressed={false}>
 						Shuffle
-					</button>
+					</DotToggle>
 				</div>
 				<div className="mt-3 grid gap-4 md:grid-cols-3 md:gap-6">
 					<div className="bg-muted aspect-[3/2]" />
@@ -62,31 +65,23 @@ export const LatestTiles = () => {
 	return (
 		<section aria-labelledby="latest-heading">
 			<div className="flex items-center gap-5">
-				<button
-					aria-pressed={seed === undefined}
-					className={`${toggleClass} ${
-						seed === undefined ? "underline underline-offset-4" : ""
-					}`}
+				<DotToggle
 					id="latest-heading"
 					onClick={() => {
 						setSeed(undefined);
 					}}
-					type="button"
+					pressed={seed === undefined}
 				>
 					Latest
-				</button>
-				<button
-					aria-pressed={seed !== undefined}
-					className={`${toggleClass} ${
-						seed === undefined ? "" : "underline underline-offset-4"
-					}`}
+				</DotToggle>
+				<DotToggle
 					onClick={() => {
 						setSeed(Date.now());
 					}}
-					type="button"
+					pressed={seed !== undefined}
 				>
 					Shuffle
-				</button>
+				</DotToggle>
 			</div>
 			<ul className="mt-3 grid gap-4 md:grid-cols-3 md:gap-6">
 				{tiles.map((tile) => (

@@ -6,12 +6,13 @@ import type { ReactNode } from "react";
  * `aria-pressed` carries the state; `busy` disables the button and pulses
  * the dot while a mutation runs. One control, five mounts: WATCH /
  * WATCHING, SAVE / SAVED, RATE IT, INCLUDE MY LOGS and each side of the
- * LIGHT / DARK pair.
+ * LIGHT / DARK pair, and LATEST / SHUFFLE on the landing.
  */
 export const DotToggle = ({
 	busy = false,
 	children,
 	className = "",
+	id,
 	onClick,
 	pressed,
 	title,
@@ -19,6 +20,7 @@ export const DotToggle = ({
 	busy?: boolean;
 	children: ReactNode;
 	className?: string;
+	id?: string;
 	onClick: () => void;
 	pressed: boolean;
 	title?: string;
@@ -31,6 +33,7 @@ export const DotToggle = ({
 				: "text-muted-foreground hover:text-foreground"
 		} ${className}`}
 		disabled={busy}
+		id={id}
 		onClick={onClick}
 		title={title}
 		type="button"
