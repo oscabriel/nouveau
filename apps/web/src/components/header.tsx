@@ -21,8 +21,12 @@ import { navLinkClass } from "@/lib/ui";
 /** The current route stays underlined so the nav doubles as a "you are here". */
 const activeProps = { className: "underline" };
 
-/** Caps menu item, same shape as the header links it drops from. */
-const menuItemClass = `${navLinkClass} justify-start px-2 text-foreground`;
+/**
+ * Caps menu item, same shape as the header links it drops from. `flex w-full`
+ * comes after `navLinkClass` on purpose: its `inline-flex` shrank the item to
+ * the word, so the hover and click region stopped where the label did.
+ */
+const menuItemClass = `${navLinkClass} flex w-full justify-start px-2 text-foreground`;
 
 /**
  * The label is the person, not the data: the first word of their Google
@@ -99,12 +103,21 @@ const HandleMenu = ({ label, path }: { label: string; path: string }) => {
 				<DropdownMenuSeparator />
 				{THEME_SIDES.map((side) => (
 					<DropdownMenuItem
+						aria-checked={resolved === side.target}
 						className={themeItemClass(resolved === side.target)}
 						key={side.target}
+						role="menuitemradio"
 						onClick={() => {
 							choose(side.target);
 						}}
 					>
+						{/* The dot means selected, as on every DotToggle. */}
+						<span
+							aria-hidden
+							className={`inline-block size-2 rounded-full bg-current ${
+								resolved === side.target ? "opacity-100" : "opacity-30"
+							}`}
+						/>
 						{side.label}
 					</DropdownMenuItem>
 				))}
@@ -132,8 +145,10 @@ const HandleMenu = ({ label, path }: { label: string; path: string }) => {
 /**
  * Site header: one row of caps labels, one nav, no bar and no rule. The left
  * side names what the site is about (Nouveau, Roasters, Drops), the right
- * names the people (Activity, then Log in or the person's first name). Below
- * `md` the right group wraps under the left instead of mounting twice. The
+ * names the people (Activity, About, then Log in or the person's first name).
+ * Below `md` the two groups become two columns, left links stacked at the
+ * left edge and right links stacked at the right edge (owner's mock,
+ * 2026-09-21), still one nav mounted once. The
  * name carries the dropdown, so settings, theme and sign out are one click
  * deep.
  */
@@ -173,9 +188,9 @@ const Header = () => {
 		<header className="px-5 pt-3 md:px-10 md:pt-4">
 			<nav
 				aria-label="Primary"
-				className="flex flex-col items-start gap-y-0 md:w-full md:flex-row md:items-center md:justify-between md:gap-x-5"
+				className="flex w-full items-start justify-between gap-x-5 md:items-center"
 			>
-				<div className="flex items-center gap-x-4 md:gap-x-5">
+				<div className="flex flex-col items-start gap-y-1 md:flex-row md:items-center md:gap-x-5 md:gap-y-0">
 					<Link
 						activeOptions={{ exact: true }}
 						activeProps={activeProps}
@@ -195,7 +210,7 @@ const Header = () => {
 						Drops
 					</Link>
 				</div>
-				<div className="flex items-center gap-x-4 md:gap-x-5">
+				<div className="flex flex-col items-end gap-y-1 md:flex-row md:items-center md:gap-x-5 md:gap-y-0">
 					<Link
 						activeProps={activeProps}
 						className={navLinkClass}
@@ -206,7 +221,10 @@ const Header = () => {
 					<Link activeProps={activeProps} className={navLinkClass} to="/about">
 						About
 					</Link>
-					{authControl}
+					{/* The person leads the column on mobile (owner's mock), trails the row from md. */}
+					<div className="order-first flex items-center md:order-none">
+						{authControl}
+					</div>
 				</div>
 			</nav>
 		</header>

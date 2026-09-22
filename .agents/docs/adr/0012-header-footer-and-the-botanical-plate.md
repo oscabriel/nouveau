@@ -39,6 +39,8 @@ The split is that the left names what the site is about (roasters, drops) and th
 
 **2026-09-21 (owner's post-batch-8 list). The flower is the last thing on the page.** The lower block stacks at every width: NOUVEAU.COFFEE first, then the five-stamen flower under it, bottom-most. The same day's earlier arrangement (flower and wordmark side by side on one baseline) goes. The flower keeps the wordmark's font-size from `md`, its alt text and its Coffea arabica link.
 
+**2026-09-21 (owner's work-plan-2 brief). The flower returns to the wordmark's left from `md`; the nav stacks in two columns below it.** The stacked arrangement of the same day stays only below `md`. From `md` the flower sits at the page's left edge and NOUVEAU.COFFEE at the right, bottoms flush on one line. Header and footer below `md` are two columns, left links stacked at the left edge and right links stacked at the right edge, in place of the wrapped rows of `f1fd30e`; the footer hides BACK TO THE TOP below `md`. In the header's right column the person's name leads on mobile.
+
 ## Considered alternatives
 
 - **Keep the marquee and add the plate elsewhere.** The marquee is the loudest thing on every page and says the domain name, which the wordmark already does. The plate says what the product is about.
