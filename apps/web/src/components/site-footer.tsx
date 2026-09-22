@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 
-import stamens from "@/assets/coffea-arabica/02-five-stamina.webp";
 import { navLinkClass } from "@/lib/ui";
 
 const scrollToTop = () => {
@@ -71,7 +70,7 @@ export const SiteFooter = () => (
 						className="h-32 w-auto transition-opacity group-hover:opacity-80 md:h-[8.5vw]"
 						height={540}
 						loading="lazy"
-						src={stamens}
+						src="/coffea-arabica-flower.webp"
 						width={540}
 					/>
 				</a>
