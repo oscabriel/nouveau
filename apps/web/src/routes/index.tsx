@@ -2,7 +2,7 @@ import { useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { DropIndex } from "@/components/drop-index";
 import { LatestTiles } from "@/components/latest-tiles";
@@ -58,24 +58,31 @@ const PrimarySlot = () => {
  * layer. The V stays in front and outside the link.
  */
 const BranchLink = () => {
-	const [glow, setGlow] = useState<{ x: number; y: number } | null>(null);
+	const [lit, setLit] = useState(false);
+	const glowRef = useRef<HTMLSpanElement | null>(null);
 	return (
 		<a
 			aria-label="Coffea arabica on Wikipedia"
 			className="absolute top-1/2 left-1/2 z-10 block h-[2.05em] -translate-x-1/2 -translate-y-[54%]"
 			href="https://en.wikipedia.org/wiki/Coffea_arabica"
 			onPointerLeave={() => {
-				setGlow(null);
+				setLit(false);
 			}}
 			onPointerMove={(event) => {
 				if (event.pointerType !== "mouse") {
 					return;
 				}
+				// The position goes straight onto the element as two custom
+				// properties; React state flips only when the glow turns on.
 				const box = event.currentTarget.getBoundingClientRect();
-				setGlow({
-					x: ((event.clientX - box.left) / box.width) * 100,
-					y: ((event.clientY - box.top) / box.height) * 100,
-				});
+				const glow = glowRef.current;
+				if (glow !== null) {
+					const x = ((event.clientX - box.left) / box.width) * 100;
+					const y = ((event.clientY - box.top) / box.height) * 100;
+					glow.style.setProperty("--glow-x", `${x}%`);
+					glow.style.setProperty("--glow-y", `${y}%`);
+				}
+				setLit(true);
 			}}
 			rel="noreferrer"
 			target="_blank"
@@ -91,10 +98,12 @@ const BranchLink = () => {
 			<span
 				aria-hidden
 				className={`pointer-events-none absolute inset-0 transition-opacity duration-300 motion-reduce:hidden ${
-					glow === null ? "opacity-0" : "opacity-100"
+					lit ? "opacity-100" : "opacity-0"
 				}`}
+				ref={glowRef}
 				style={{
-					background: `radial-gradient(circle at ${glow?.x ?? 50}% ${glow?.y ?? 50}%, rgb(255 255 255 / 0.55), transparent 28%)`,
+					background:
+						"radial-gradient(circle at var(--glow-x, 50%) var(--glow-y, 50%), rgb(255 255 255 / 0.55), transparent 28%)",
 					maskImage: "url(/coffea-arabica.webp)",
 					maskSize: "100% 100%",
 					WebkitMaskImage: "url(/coffea-arabica.webp)",
