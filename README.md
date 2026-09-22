@@ -63,7 +63,20 @@ The backend reads these from the Convex deployment's environment (set them in th
 bun run check-types                     # tsc in both packages
 bun x ultracite check                   # lint and format (bun x ultracite fix to apply)
 cd packages/backend && bunx vitest run  # backend tests
+cd apps/web && bunx vitest run          # web tests, including the site tool contracts
 ```
+
+### Site tools (WebMCP)
+
+The web app registers three tools on `document.modelContext` for browser agents (`apps/web/src/lib/site-tools.ts`): `get_context`, `get_lot`, `save_lot`. To act as the agent locally, run the dev server, then drive the system Chromium (153 or newer) through `scripts/webmcp-harness.ts`:
+
+```sh
+bun run webmcp list                                     # the tools the home page registers
+bun run webmcp call get_lot http://127.0.0.1:3004/roaster/<roaster>/<lot>
+bun run webmcp call save_lot --headed --profile /tmp/nv # sign in once in that window, run again to save
+```
+
+This proves registration and the handlers in a real browser. Whether ChatGPT's desktop browser discovers them is checked there, under Site tools in its address bar.
 
 ## Deploying
 

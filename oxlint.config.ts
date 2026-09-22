@@ -18,6 +18,12 @@ export default defineConfig({
 			},
 		},
 		{
+			// CLI drivers bridge browser events to promises; there is no
+			// library promise to return instead.
+			files: ["scripts/**"],
+			rules: { "promise/avoid-new": "off" },
+		},
+		{
 			files: ["packages/backend/convex/**"],
 			rules: {
 				"unicorn/filename-case": ["error", { case: "camelCase" }],

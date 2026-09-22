@@ -10,6 +10,7 @@ import { Header } from "@/components/header";
 import { NextBagSheet } from "@/components/next-bag-sheet";
 import { MissingPage } from "@/components/page";
 import { SiteFooter } from "@/components/site-footer";
+import { SiteTools } from "@/components/site-tools";
 import { ThemeProvider } from "@/components/theme-provider";
 import { validateNextBagSearch } from "@/lib/next-bag-search";
 
@@ -34,6 +35,7 @@ const RootComponent = () => (
 			<NextBagSheet />
 			<Toaster richColors />
 		</ThemeProvider>
+		<SiteTools />
 		<TanStackRouterDevtools position="bottom-left" />
 	</>
 );
