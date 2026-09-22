@@ -8,6 +8,7 @@ import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 
 import Header from "@/components/header";
 import { NextBagSheet } from "@/components/next-bag-sheet";
+import { MissingPage } from "@/components/page";
 import { SiteFooter } from "@/components/site-footer";
 import { ThemeProvider } from "@/components/theme-provider";
 import { validateNextBagSearch } from "@/lib/next-bag-search";
@@ -37,8 +38,20 @@ const RootComponent = () => (
 	</>
 );
 
+/**
+ * Unknown addresses (anything deeper than one segment; `/$user` catches the
+ * rest) read like every other dead end on the site. Rendered inside the
+ * root layout, so the header and footer stay.
+ */
+const NotFound = () => (
+	<MissingPage linkLabel="Back to the index" to="/">
+		Nothing at this address.
+	</MissingPage>
+);
+
 export const Route = createRootRouteWithContext<RouterAppContext>()({
 	component: RootComponent,
+	notFoundComponent: NotFound,
 	validateSearch: validateNextBagSearch,
 	head: () => ({
 		meta: [

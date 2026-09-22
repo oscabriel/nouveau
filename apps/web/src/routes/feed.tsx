@@ -1,17 +1,11 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 /**
- * The retired /feed address (ADR-0011): navigates on mount to /drops.
+ * The retired /feed address (ADR-0011): redirects to /drops before anything
+ * renders.
  */
-const FeedRedirect = () => {
-	const navigate = useNavigate();
-	useEffect(() => {
-		void navigate({ replace: true, to: "/drops" });
-	}, [navigate]);
-	return null;
-};
-
 export const Route = createFileRoute("/feed")({
-	component: FeedRedirect,
+	beforeLoad: () => {
+		throw redirect({ replace: true, to: "/drops" });
+	},
 });

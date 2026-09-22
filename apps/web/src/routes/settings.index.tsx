@@ -1,19 +1,12 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 /**
  * /settings lands on the first tab, Account (owner, 2026-09-21): the page
  * that edits the name, handle and weight unit. The tabs live in the
  * settings layout route.
  */
-const SettingsRedirect = () => {
-	const navigate = useNavigate();
-	useEffect(() => {
-		void navigate({ replace: true, to: "/settings/account" });
-	}, [navigate]);
-	return null;
-};
-
 export const Route = createFileRoute("/settings/")({
-	component: SettingsRedirect,
+	beforeLoad: () => {
+		throw redirect({ replace: true, to: "/settings/account" });
+	},
 });

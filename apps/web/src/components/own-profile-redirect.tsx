@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { useEffect } from "react";
 
-import Loader from "@/components/loader";
+import { PageLoader } from "@/components/page";
 
 /**
  * The retired private routes (/watches, /saved) land on the owner's /$user
@@ -27,5 +27,5 @@ export const OwnProfileRedirect = () => {
 			to: "/$user",
 		});
 	}, [me, navigate]);
-	return <Loader />;
+	return <PageLoader />;
 };
