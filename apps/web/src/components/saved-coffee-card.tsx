@@ -27,7 +27,7 @@ export const SavedCoffeeCard = ({ item }: { item: SavedCoffee }) => (
 		{item.lot.imageUrl !== null && (
 			<img
 				alt=""
-				className="size-12 shrink-0 rounded-md border object-cover"
+				className="bg-muted size-12 shrink-0 object-cover"
 				src={item.lot.imageUrl}
 			/>
 		)}

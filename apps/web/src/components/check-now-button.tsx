@@ -2,9 +2,10 @@ import { api } from "@nouveau/backend/convex/_generated/api";
 import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
 import type { CrawlStatus } from "@nouveau/backend/convex/health";
 import { useMutation } from "convex/react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { relativeTime } from "@/lib/format";
+import { useTicker } from "@/lib/use-ticker";
 
 type Note =
 	| { kind: "checked" }
@@ -64,17 +65,9 @@ export const CheckNowButton = ({
 	const requestCheck = useMutation(api.checkNow.requestCheck);
 	const [busy, setBusy] = useState(false);
 	const [note, setNote] = useState<Note | null>(null);
-	const [now, setNow] = useState(Date.now);
-
 	// A limited note counts down by the second; a checked note ages by the
-	// minute. One timer at the faster rate covers both while a note shows.
-	useEffect(() => {
-		if (note === null) {
-			return;
-		}
-		const timer = window.setInterval(() => setNow(Date.now()), 1000);
-		return () => window.clearInterval(timer);
-	}, [note]);
+	// minute. One clock at the faster rate covers both while a note shows.
+	const now = useTicker(note !== null, 1000);
 
 	const check = async () => {
 		setBusy(true);
@@ -97,7 +90,6 @@ export const CheckNowButton = ({
 			setNote({ kind: "failed" });
 		}
 		setBusy(false);
-		setNow(Date.now());
 	};
 
 	const line = note === null ? null : noteLine(note, status, now);

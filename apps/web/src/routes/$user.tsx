@@ -3,21 +3,30 @@ import {
 	createFileRoute,
 	Link,
 	useNavigate,
-	useParams,
+	getRouteApi,
 } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useEffect } from "react";
 import { toast } from "sonner";
 
-import { DotToggle } from "@/components/dot-toggle";
-import Loader from "@/components/loader";
 import { LogCard } from "@/components/log-card";
+import { MuteToggle } from "@/components/mute-toggle";
 import { NextBagLink } from "@/components/next-bag-sheet";
-import { PageTitle } from "@/components/page-title";
+import {
+	MissingPage,
+	Page,
+	PageLoader,
+	PageTitle,
+	SectionHeading,
+} from "@/components/page";
 import { SavedCoffeeCard } from "@/components/saved-coffee-card";
 import { StatusChip } from "@/components/status-chip";
-import { navLinkClass } from "@/lib/ui";
+import { describeMutationError } from "@/lib/errors";
+import { plural } from "@/lib/format";
+import { ledeClass, quietLinkClass } from "@/lib/ui";
+
+const route = getRouteApi("/$user");
 
 type Watch = FunctionReturnType<typeof api.watches.listMyWatches>[number];
 type ProfileOwner = Extract<
@@ -25,31 +34,18 @@ type ProfileOwner = Extract<
 	{ kind: "owner" }
 >;
 
-const plural = (count: number, noun: string) =>
-	`${count} ${count === 1 ? noun : `${noun}s`}`;
-
 /**
  * One watch row: the roaster's name, its crawl health, and the two toggles
  * the owner manages it with — mute and unwatch (ADR-0016).
  */
 const WatchRow = ({ watch }: { watch: Watch }) => {
-	const setMuted = useMutation(api.watches.setWatchMuted);
 	const unwatch = useMutation(api.watches.unwatchRoaster);
-	const toggleMute = async () => {
-		try {
-			await setMuted({ muted: !watch.muted, roasterId: watch.roaster.id });
-		} catch {
-			// The query refreshes; a failed toggle keeps state.
-		}
-	};
 	const stop = async () => {
 		try {
 			await unwatch({ roasterId: watch.roaster.id });
 			toast.success(`Stopped watching ${watch.roaster.name}.`);
 		} catch (error) {
-			toast.error(
-				error instanceof Error ? error.message : "Something went wrong."
-			);
+			toast.error(describeMutationError(error, "Could not stop watching."));
 		}
 	};
 	return (
@@ -63,16 +59,9 @@ const WatchRow = ({ watch }: { watch: Watch }) => {
 			</Link>
 			<StatusChip compact status={watch.status} />
 			<div className="ml-auto flex items-center gap-x-5">
-				<DotToggle
-					onClick={() => {
-						void toggleMute();
-					}}
-					pressed={watch.muted}
-				>
-					{watch.muted ? "Muted" : "Mute"}
-				</DotToggle>
+				<MuteToggle muted={watch.muted} roasterId={watch.roaster.id} />
 				<button
-					className={`${navLinkClass} text-muted-foreground hover:text-foreground`}
+					className={quietLinkClass}
 					onClick={() => {
 						void stop();
 					}}
@@ -116,12 +105,9 @@ const OwnerRecord = ({
 			)}
 
 			<section aria-labelledby="watching-heading" className="mt-16 md:mt-24">
-				<h2 className="text-xl md:text-2xl" id="watching-heading">
+				<SectionHeading count={watches.length} id="watching-heading">
 					Watching
-					<span className="text-muted-foreground tnum ml-2 text-xs">
-						({watches.length})
-					</span>
-				</h2>
+				</SectionHeading>
 				{watches.length === 0 ? (
 					<p className="text-muted-foreground mt-4 max-w-prose text-sm">
 						No roasters watched yet.{" "}
@@ -140,12 +126,9 @@ const OwnerRecord = ({
 			</section>
 
 			<section aria-labelledby="try-heading" className="mt-16 md:mt-24">
-				<h2 className="text-xl md:text-2xl" id="try-heading">
+				<SectionHeading count={saved.length} id="try-heading">
 					Try list
-					<span className="text-muted-foreground tnum ml-2 text-xs">
-						({saved.length})
-					</span>
-				</h2>
+				</SectionHeading>
 				{saved.length === 0 ? (
 					<p className="text-muted-foreground mt-4 max-w-prose text-sm">
 						Nothing saved. A lot you are curious about but have not tried yet
@@ -178,9 +161,9 @@ const LogsSection = ({
 	truncated: boolean;
 }) => (
 	<section aria-labelledby="logs-heading" className="mt-16 md:mt-24">
-		<h2 className="text-xl md:text-2xl" id="logs-heading">
+		<SectionHeading id="logs-heading">
 			{truncated ? "Recent logs" : "Logs"}
-		</h2>
+		</SectionHeading>
 		{logs.length === 0 ? (
 			<p className="text-muted-foreground mt-4 max-w-prose text-sm">
 				{isMine
@@ -198,7 +181,7 @@ const LogsSection = ({
 );
 
 const ProfileComponent = () => {
-	const { user: address } = useParams({ from: "/$user" });
+	const { user: address } = route.useParams();
 	// The address is whatever the URL holds; the query resolves handles,
 	// retired handles and legacy user ids alike (ADR-0011).
 	const profile = useQuery(api.logs.profile, { address });
@@ -221,19 +204,13 @@ const ProfileComponent = () => {
 	}, [address, canonical, navigate]);
 
 	if (profile === undefined) {
-		return <Loader />;
+		return <PageLoader />;
 	}
 	if (profile === null) {
 		return (
-			<main>
-				<p className="text-muted-foreground px-5 py-24 text-center text-[15px] md:px-10">
-					No taster at this address.{" "}
-					<Link className="text-foreground underline" to="/activity">
-						Back to recent logs
-					</Link>
-					.
-				</p>
-			</main>
+			<MissingPage linkLabel="Back to recent logs" to="/activity">
+				No taster at this address.
+			</MissingPage>
 		);
 	}
 
@@ -241,28 +218,26 @@ const ProfileComponent = () => {
 	const { user, logs, logsTruncated } = profile;
 
 	return (
-		<main>
-			<div className="px-5 pt-10 md:px-10 md:pt-14">
-				{/* No count beside the name: the page shows one person, and the
-				    grey line under it already says how many logs. */}
-				<PageTitle title={user.name ?? "A taster"}>
-					{isMine && <NextBagLink />}
-				</PageTitle>
-				<p className="text-muted-foreground mt-4 text-sm md:text-[15px]">
-					{user.handle !== undefined && `@${user.handle} · `}
-					{logsTruncated
-						? `${logs.length}+ recent logs`
-						: plural(logs.length, "log")}
-					{isMine && ` · ${plural(profile.watches.length, "roaster")} watched`}
-				</p>
+		<Page>
+			{/* No count beside the name: the page shows one person, and the
+			    grey line under it already says how many logs. */}
+			<PageTitle title={user.name ?? "A taster"}>
+				{isMine && <NextBagLink />}
+			</PageTitle>
+			<p className={ledeClass}>
+				{user.handle !== undefined && `@${user.handle} · `}
+				{logsTruncated
+					? `${logs.length}+ recent logs`
+					: plural(logs.length, "log")}
+				{isMine && ` · ${plural(profile.watches.length, "roaster")} watched`}
+			</p>
 
-				{profile.kind === "owner" && (
-					<OwnerRecord saved={profile.saved} watches={profile.watches} />
-				)}
+			{profile.kind === "owner" && (
+				<OwnerRecord saved={profile.saved} watches={profile.watches} />
+			)}
 
-				<LogsSection isMine={isMine} logs={logs} truncated={logsTruncated} />
-			</div>
-		</main>
+			<LogsSection isMine={isMine} logs={logs} truncated={logsTruncated} />
+		</Page>
 	);
 };
 

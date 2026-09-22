@@ -1,18 +1,14 @@
 import { api } from "@nouveau/backend/convex/_generated/api";
 import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
-import {
-	Sheet,
-	SheetClose,
-	SheetContent,
-	SheetTitle,
-} from "@nouveau/ui/components/sheet";
 import { useMutation } from "convex/react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { Pane } from "@/components/pane";
 import { StarsInput } from "@/components/stars-input";
 import { TastingTagsInput } from "@/components/tasting-tags-input";
-import { navLinkClass } from "@/lib/ui";
+import { describeMutationError } from "@/lib/errors";
+import { hairlineInputClass, navLinkClass, quietLinkClass } from "@/lib/ui";
 
 const NOTES_MAX_LENGTH = 1000;
 
@@ -98,9 +94,7 @@ const LogFields = ({
 			}
 			onDone();
 		} catch (error) {
-			toast.error(
-				error instanceof Error ? error.message : "Something went wrong."
-			);
+			toast.error(describeMutationError(error, "Could not save the log."));
 			setSaving(false);
 		}
 	};
@@ -133,7 +127,7 @@ const LogFields = ({
 					Review
 				</label>
 				<textarea
-					className="placeholder:text-muted-foreground focus-visible:border-foreground field-sizing-content min-h-11 w-full resize-none border-b bg-transparent py-2.5 text-[15px] leading-snug outline-none focus-visible:outline-none md:text-base"
+					className={`${hairlineInputClass} field-sizing-content h-auto min-h-11 w-full resize-none py-2.5 text-[15px] leading-snug md:text-base`}
 					id={reviewId}
 					maxLength={NOTES_MAX_LENGTH}
 					onChange={(event) => {
@@ -156,7 +150,7 @@ const LogFields = ({
 					{existing === undefined ? "Save log" : "Update log"}
 				</button>
 				<button
-					className={`${navLinkClass} text-muted-foreground hover:text-foreground disabled:no-underline`}
+					className={quietLinkClass}
 					disabled={saving}
 					onClick={onDone}
 					type="button"
@@ -190,30 +184,23 @@ export const LogSheet = ({
 	open: boolean;
 	roasterNotes: string | null;
 }) => (
-	<Sheet modal onOpenChange={onOpenChange} open={open}>
-		<SheetContent
-			aria-describedby={undefined}
-			className="px-5 pt-3 pb-16 md:px-8 md:pt-4"
-		>
-			<div className="flex items-center justify-between">
-				<SheetTitle className="label-caps inline-flex min-h-11 items-center font-semibold">
-					{existing === undefined ? "Log this lot" : "Edit log"}
-				</SheetTitle>
-				<SheetClose className={navLinkClass}>Close</SheetClose>
-			</div>
-			<p className="mt-4 text-[15px] leading-snug md:text-base">{lotName}</p>
-			<div className="mt-8">
-				{open && (
-					<LogFields
-						existing={existing}
-						lotId={lotId}
-						onDone={() => {
-							onOpenChange(false);
-						}}
-						roasterNotes={roasterNotes}
-					/>
-				)}
-			</div>
-		</SheetContent>
-	</Sheet>
+	<Pane
+		onOpenChange={onOpenChange}
+		open={open}
+		title={existing === undefined ? "Log this lot" : "Edit log"}
+	>
+		<p className="mt-4 text-[15px] leading-snug md:text-base">{lotName}</p>
+		<div className="mt-8">
+			{open && (
+				<LogFields
+					existing={existing}
+					lotId={lotId}
+					onDone={() => {
+						onOpenChange(false);
+					}}
+					roasterNotes={roasterNotes}
+				/>
+			)}
+		</div>
+	</Pane>
 );

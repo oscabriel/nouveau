@@ -1,5 +1,9 @@
 /** Formatting helpers shared by the feed and watch surfaces. */
 
+/** "1 log", "3 logs": count and noun, the noun taking a plain -s. */
+export const plural = (count: number, noun: string): string =>
+	`${count} ${count === 1 ? noun : `${noun}s`}`;
+
 export const formatPrice = (cents: number): string => {
 	const dollars = cents / 100;
 	return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;

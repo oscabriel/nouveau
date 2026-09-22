@@ -1,21 +1,17 @@
 import { useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
-import {
-	Sheet,
-	SheetClose,
-	SheetContent,
-	SheetTitle,
-} from "@nouveau/ui/components/sheet";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useRef, useState } from "react";
 
 import { DotToggle } from "@/components/dot-toggle";
 import Loader from "@/components/loader";
-import { SignInCta } from "@/components/sign-in-cta";
+import { Pane } from "@/components/pane";
+import { SignInPrompt } from "@/components/sign-in-cta";
 import { describeMutationError } from "@/lib/errors";
 import { closeNextBag, openNextBag } from "@/lib/next-bag-search";
-import { navLinkClass } from "@/lib/ui";
+import { hairlineInputClass, navLinkClass, primaryButtonClass } from "@/lib/ui";
+import { useTicker } from "@/lib/use-ticker";
 
 const PREFERENCES_MAX_CHARS = 500;
 /** The counter appears only when the box is getting full. */
@@ -26,11 +22,7 @@ const COUNTER_FROM_CHARS = 400;
  * (ADR-0014 for the landing slot; the same block on the owner's profile).
  */
 export const NextBagLink = () => (
-	<Link
-		className="label-caps bg-foreground text-background inline-flex min-h-11 items-center px-5 transition-opacity hover:opacity-80"
-		search={openNextBag}
-		to="."
-	>
+	<Link className={primaryButtonClass} search={openNextBag} to=".">
 		Find my next bag
 	</Link>
 );
@@ -90,7 +82,7 @@ const RequestBox = ({ busy }: { busy: boolean }) => {
 			<fieldset className="disabled:opacity-60" disabled={disabled}>
 				<textarea
 					aria-label="What are you looking for?"
-					className="focus-visible:border-foreground placeholder:text-muted-foreground w-full resize-none border-b bg-transparent py-3 text-[15px] leading-snug outline-none focus-visible:outline-none md:text-base"
+					className={`${hairlineInputClass} h-auto w-full resize-none py-3 text-[15px] leading-snug md:text-base`}
 					maxLength={PREFERENCES_MAX_CHARS}
 					onChange={(event) => setPreferences(event.target.value)}
 					onKeyDown={(event) => {
@@ -151,11 +143,7 @@ const NextBagRun = lazy(async () => {
 });
 
 const SignedInPane = () => {
-	const [now, setNow] = useState(Date.now);
-	useEffect(() => {
-		const timer = window.setInterval(() => setNow(Date.now()), 30_000);
-		return () => window.clearInterval(timer);
-	}, []);
+	const now = useTicker(true, 30_000);
 	const fresh = useQuery(api.recommendations.latest, { now });
 	// Each tick is a new subscription and `fresh` is undefined until it
 	// answers; showing a Loader every 30 seconds read as a stutter. Keep the
@@ -185,12 +173,7 @@ const PaneContent = () => {
 		return <Loader />;
 	}
 	if (!isAuthenticated) {
-		return (
-			<div className="space-y-4">
-				<p className="text-sm">Sign in to ask for a shortlist.</p>
-				<SignInCta />
-			</div>
-		);
+		return <SignInPrompt>Sign in to ask for a shortlist.</SignInPrompt>;
 	}
 	return <SignedInPane />;
 };
@@ -217,28 +200,17 @@ export const NextBagSheet = () => {
 		});
 	};
 	return (
-		<Sheet modal onOpenChange={setOpen} open={open}>
-			<SheetContent
-				aria-describedby={undefined}
-				className="px-5 pt-3 pb-16 md:px-8 md:pt-4"
-			>
-				<div className="flex items-center justify-between">
-					<SheetTitle className="label-caps inline-flex min-h-11 items-center font-semibold">
-						Find my next bag
-					</SheetTitle>
-					<SheetClose className={navLinkClass}>Close</SheetClose>
+		<Pane onOpenChange={setOpen} open={open} title="Find my next bag">
+			<div className="mt-6">
+				<p className="text-muted-foreground text-sm">
+					Describe the coffee you&apos;re after. Our agent searches the catalog
+					to find the best match based on tasting notes, origin, price, and any
+					other criteria you specify.
+				</p>
+				<div className="mt-4">
+					<PaneContent />
 				</div>
-				<div className="mt-6">
-					<p className="text-muted-foreground text-sm">
-						Describe the coffee you&apos;re after. Our agent searches the
-						catalog to find the best match based on tasting notes, origin,
-						price, and any other criteria you specify.
-					</p>
-					<div className="mt-4">
-						<PaneContent />
-					</div>
-				</div>
-			</SheetContent>
-		</Sheet>
+			</div>
+		</Pane>
 	);
 };

@@ -6,7 +6,7 @@ import type { FunctionReturnType } from "convex/server";
 import { useState } from "react";
 
 import Loader from "@/components/loader";
-import { PageTitle } from "@/components/page-title";
+import { EmptyLine, Page, PageTitle } from "@/components/page";
 import { SearchField } from "@/components/search-field";
 import { ArrowCell } from "@/components/table";
 import { WatchButton } from "@/components/watch-button";
@@ -88,13 +88,13 @@ const Directory = ({
 	}
 	if (visible.length === 0) {
 		return (
-			<p className="text-muted-foreground py-16 text-center text-[15px]">
+			<EmptyLine>
 				No roaster matches that.{" "}
 				<Link className="text-foreground underline" to="/roasters/submit">
 					Add one
 				</Link>
 				?
-			</p>
+			</EmptyLine>
 		);
 	}
 	return (
@@ -163,34 +163,34 @@ const RoastersComponent = () => {
 			: roasters.filter((roaster) => matchesRoaster(roaster, search));
 
 	return (
-		<main>
-			<div className="px-5 pt-10 md:px-10 md:pt-14">
-				<PageTitle count={roasters?.length} title="Roasters">
-					{isAuthenticated && (
-						<Link className={navLinkClass} to="/settings/alerts">
-							Your watches
-						</Link>
-					)}
-					<Link className={navLinkClass} to="/roasters/submit">
-						Add a roaster
+		<Page>
+			<PageTitle
+				count={roasters?.length}
+				lede="The specialty roasters we're watching around the clock."
+				title="Roasters"
+			>
+				{isAuthenticated && (
+					<Link className={navLinkClass} to="/settings/alerts">
+						Your watches
 					</Link>
-				</PageTitle>
-				<p className="text-muted-foreground mt-4 max-w-prose text-sm md:text-[15px]">
-					The specialty roasters we&apos;re watching around the clock.
-				</p>
-				<div className="mt-10 md:mt-12">
-					<SearchField
-						label="Search by name, city or state"
-						onChange={setSearch}
-						value={search}
-					/>
-				</div>
-				<Directory canWatch={isAuthenticated} visible={visible} />
+				)}
+				<Link className={navLinkClass} to="/roasters/submit">
+					Add a roaster
+				</Link>
+			</PageTitle>
+			<div className="mt-10 md:mt-12">
+				<SearchField
+					label="Search by name, city or state"
+					onChange={setSearch}
+					value={search}
+				/>
 			</div>
-		</main>
+			<Directory canWatch={isAuthenticated} visible={visible} />
+		</Page>
 	);
 };
 
 export const Route = createFileRoute("/roasters/")({
 	component: RoastersComponent,
+	head: () => ({ meta: [{ title: "Roasters | Nouveau" }] }),
 });

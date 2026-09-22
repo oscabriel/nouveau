@@ -1,14 +1,15 @@
 import { api } from "@nouveau/backend/convex/_generated/api";
 import {
 	createFileRoute,
-	Link,
 	useNavigate,
-	useParams,
+	getRouteApi,
 } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { useEffect } from "react";
 
-import Loader from "@/components/loader";
+import { MissingPage, PageLoader } from "@/components/page";
+
+const route = getRouteApi("/lots/$lotId");
 
 /**
  * The retired /lots/$lotId address (ADR-0011): a real route that resolves
@@ -16,7 +17,7 @@ import Loader from "@/components/loader";
  * Unknown ids say so instead of redirecting.
  */
 const LotRedirect = () => {
-	const { lotId } = useParams({ from: "/lots/$lotId" });
+	const { lotId } = route.useParams();
 	const address = useQuery(api.lots.addressById, { lotId });
 	const navigate = useNavigate();
 	useEffect(() => {
@@ -30,17 +31,13 @@ const LotRedirect = () => {
 		});
 	}, [address, navigate]);
 	if (address === undefined) {
-		return <Loader />;
+		return <PageLoader />;
 	}
 	if (address === null) {
 		return (
-			<p className="text-muted-foreground px-5 py-24 text-center text-[15px] md:px-10">
-				No lot at this address.{" "}
-				<Link className="text-foreground underline" to="/roasters">
-					Browse the roasters
-				</Link>
-				.
-			</p>
+			<MissingPage linkLabel="Browse the roasters" to="/roasters">
+				No lot at this address.
+			</MissingPage>
 		);
 	}
 	return null;

@@ -9,6 +9,7 @@ import { LatestTiles } from "@/components/latest-tiles";
 import Loader from "@/components/loader";
 import { NextBagLink } from "@/components/next-bag-sheet";
 import { SignInCta } from "@/components/sign-in-cta";
+import { BRANCH_HEIGHT, BRANCH_SRC, BRANCH_WIDTH } from "@/lib/branch";
 
 /*
  * Direction contract (owner-pinned references, 2026-09-16):
@@ -91,9 +92,9 @@ const BranchLink = () => {
 				alt=""
 				className="h-full w-auto max-w-none"
 				fetchPriority="high"
-				height={1160}
-				src="/coffea-arabica.webp"
-				width={1112}
+				height={BRANCH_HEIGHT}
+				src={BRANCH_SRC}
+				width={BRANCH_WIDTH}
 			/>
 			<span
 				aria-hidden
@@ -104,9 +105,9 @@ const BranchLink = () => {
 				style={{
 					background:
 						"radial-gradient(circle at var(--glow-x, 50%) var(--glow-y, 50%), rgb(255 255 255 / 0.55), transparent 28%)",
-					maskImage: "url(/coffea-arabica.webp)",
+					maskImage: `url(${BRANCH_SRC})`,
 					maskSize: "100% 100%",
-					WebkitMaskImage: "url(/coffea-arabica.webp)",
+					WebkitMaskImage: `url(${BRANCH_SRC})`,
 					WebkitMaskSize: "100% 100%",
 				}}
 			/>

@@ -9,7 +9,13 @@ import { toast } from "sonner";
 
 import { DotToggle } from "@/components/dot-toggle";
 import Loader from "@/components/loader";
-import { SignInCta } from "@/components/sign-in-cta";
+import { SignInPrompt } from "@/components/sign-in-cta";
+import { describeMutationError } from "@/lib/errors";
+import {
+	hairlineInputClass,
+	primaryButtonClass,
+	quietLinkClass,
+} from "@/lib/ui";
 
 type Me = NonNullable<FunctionReturnType<typeof api.users.getCurrentUser>>;
 
@@ -38,9 +44,7 @@ const AccountForm = ({ me }: { me: Me }) => {
 			await update({ handle, name, weightUnit });
 			toast.success("Saved.");
 		} catch (error) {
-			toast.error(
-				error instanceof Error ? error.message : "Something went wrong."
-			);
+			toast.error(describeMutationError(error, "Could not save."));
 		}
 		setSaving(false);
 	};
@@ -69,7 +73,7 @@ const AccountForm = ({ me }: { me: Me }) => {
 					</label>
 					<input
 						autoComplete="name"
-						className="focus-visible:border-foreground mt-2 h-11 w-full border-b bg-transparent text-sm outline-none md:text-[15px]"
+						className={`${hairlineInputClass} mt-2 w-full text-sm md:text-[15px]`}
 						id="account-name"
 						onChange={(event) => {
 							setName(event.target.value);
@@ -94,7 +98,7 @@ const AccountForm = ({ me }: { me: Me }) => {
 							autoCapitalize="off"
 							autoComplete="off"
 							autoCorrect="off"
-							className="focus-visible:border-foreground h-11 w-full border-b bg-transparent text-sm outline-none md:text-[15px]"
+							className={`${hairlineInputClass} w-full text-sm md:text-[15px]`}
 							id="account-handle"
 							onChange={(event) => {
 								setHandle(event.target.value);
@@ -128,7 +132,7 @@ const AccountForm = ({ me }: { me: Me }) => {
 				</fieldset>
 				<div className="flex items-center gap-4">
 					<button
-						className="label-caps bg-foreground text-background inline-flex min-h-11 items-center px-5 transition-opacity hover:opacity-80"
+						className={primaryButtonClass}
 						disabled={saving}
 						type="submit"
 					>
@@ -139,7 +143,7 @@ const AccountForm = ({ me }: { me: Me }) => {
 
 			<div className="mt-16 md:mt-24">
 				<button
-					className="label-caps text-muted-foreground hover:text-foreground inline-flex min-h-11 items-center hover:underline"
+					className={quietLinkClass}
 					onClick={() => {
 						void signOutAndToast();
 					}}
@@ -168,14 +172,9 @@ const AccountComponent = () => {
 	// check has to come before the loading check or the spinner never ends.
 	if (!isAuthenticated || me === null) {
 		return (
-			<div className="mt-10">
-				<p className="text-muted-foreground max-w-prose text-sm">
-					Sign in to edit your name, handle and units.
-				</p>
-				<div className="mt-6">
-					<SignInCta />
-				</div>
-			</div>
+			<SignInPrompt className="mt-10">
+				Sign in to edit your name, handle and units.
+			</SignInPrompt>
 		);
 	}
 	if (me === undefined) {

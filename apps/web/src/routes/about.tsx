@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 
-import { PageTitle } from "@/components/page-title";
+import { Page, PageTitle } from "@/components/page";
+import { BRANCH_HEIGHT, BRANCH_SRC, BRANCH_WIDTH } from "@/lib/branch";
 
 /**
  * The about page (ADR-0012): what the product does and how to use every
@@ -58,10 +59,10 @@ const Plate = () => (
 			<img
 				alt="A branch of Coffea arabica with leaves, white blossoms and red berries, engraved and hand-colored for Robert John Thornton in 1808"
 				className="w-full"
-				height={1160}
+				height={BRANCH_HEIGHT}
 				loading="lazy"
-				src="/coffea-arabica.webp"
-				width={1112}
+				src={BRANCH_SRC}
+				width={BRANCH_WIDTH}
 			/>
 		</a>
 		<figcaption className="text-muted-foreground mt-4 text-right text-xs">
@@ -84,16 +85,13 @@ const Plate = () => (
 );
 
 const AboutComponent = () => (
-	<main>
-		<div className="px-5 pt-10 md:px-10 md:pt-14 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-x-16">
+	<Page>
+		<div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-x-16">
 			<div>
-				<PageTitle title="About" />
-				<p className="text-muted-foreground mt-4 max-w-prose text-sm md:text-[15px]">
-					Nouveau is a live index of specialty coffee and a place to remember
-					what you tried. The catalog updates around the clock from the
-					roasters&apos; own shops. Buying happens at the roaster: Nouveau links
-					out and is not a store.
-				</p>
+				<PageTitle
+					lede="Nouveau is a live index of specialty coffee and a place to remember what you tried. The catalog updates around the clock from the roasters' own shops. Buying happens at the roaster: Nouveau links out and is not a store."
+					title="About"
+				/>
 				<div className="mt-12 max-w-prose md:mt-16">
 					{sections.map((section) => (
 						<section className="mt-10 first:mt-0" key={section.title}>
@@ -123,9 +121,10 @@ const AboutComponent = () => (
 			</div>
 			<Plate />
 		</div>
-	</main>
+	</Page>
 );
 
 export const Route = createFileRoute("/about")({
 	component: AboutComponent,
+	head: () => ({ meta: [{ title: "About | Nouveau" }] }),
 });

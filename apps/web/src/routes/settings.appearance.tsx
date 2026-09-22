@@ -2,7 +2,7 @@ import { useConvexAuth } from "@convex-dev/auth/react";
 import { createFileRoute } from "@tanstack/react-router";
 
 import Loader from "@/components/loader";
-import { SignInCta } from "@/components/sign-in-cta";
+import { SignInPrompt } from "@/components/sign-in-cta";
 import { ThemeSwitch } from "@/components/theme-switch";
 
 /**
@@ -12,13 +12,16 @@ import { ThemeSwitch } from "@/components/theme-switch";
  */
 const AppearanceComponent = () => {
 	const { isAuthenticated, isLoading } = useConvexAuth();
-	let control: React.ReactNode;
 	if (isLoading) {
-		control = <Loader />;
-	} else if (isAuthenticated) {
-		control = <ThemeSwitch />;
-	} else {
-		control = <SignInCta />;
+		return <Loader />;
+	}
+	if (!isAuthenticated) {
+		return (
+			<SignInPrompt className="mt-10">
+				Nouveau follows the theme of your operating system. Sign in to invert
+				it.
+			</SignInPrompt>
+		);
 	}
 	return (
 		<div className="mt-10 max-w-xl">
@@ -28,7 +31,9 @@ const AppearanceComponent = () => {
 				it; when the OS changes, the page changes with it. The choice stays on
 				this browser.
 			</p>
-			<div className="mt-4">{control}</div>
+			<div className="mt-4">
+				<ThemeSwitch />
+			</div>
 		</div>
 	);
 };

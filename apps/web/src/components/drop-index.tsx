@@ -2,18 +2,34 @@ import { Link } from "@tanstack/react-router";
 import { Fragment, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { EmptyLine } from "@/components/page";
 import { ArrowCell, TableHoverImage } from "@/components/table";
 import { DROP_TYPE_LABEL, formatDropDate } from "@/lib/drops";
 import type { DropRow, DropType } from "@/lib/drops";
 import { displayPriceCents, formatPrice } from "@/lib/format";
 import { bodyCell, headCell, headCellRight } from "@/lib/ui";
 
-type Filter = "all" | DropType;
+/** A drop-type tab: every event, or one of the three types. */
+export type DropFilter = "all" | DropType;
 
-const FILTERS: Filter[] = ["all", "new", "back_in_stock", "price_drop"];
+const FILTERS: DropFilter[] = ["all", "new", "back_in_stock", "price_drop"];
 
-const filterLabel = (filter: Filter): string =>
+const filterLabel = (filter: DropFilter): string =>
 	filter === "all" ? "All" : DROP_TYPE_LABEL[filter];
+
+/** How many rows each tab would show. */
+export const countByType = (rows: DropRow[]): Record<DropFilter, number> => {
+	const counts: Record<DropFilter, number> = {
+		all: rows.length,
+		back_in_stock: 0,
+		new: 0,
+		price_drop: 0,
+	};
+	for (const row of rows) {
+		counts[row.type] += 1;
+	}
+	return counts;
+};
 
 /** One row per lot: the feed carries an event per variant, the index a lot. */
 const onePerLot = (rows: DropRow[]): DropRow[] => {
@@ -27,14 +43,20 @@ const onePerLot = (rows: DropRow[]): DropRow[] => {
 	});
 };
 
-const FilterTabs = ({
+/**
+ * The type tabs over a drop table: ALL and the three event types, each
+ * with its count, the active one underlined in ink. Centered; scrolls
+ * sideways below the width they need. Shared by the landing index and
+ * /drops.
+ */
+export const DropTypeTabs = ({
 	counts,
 	filter,
 	onChange,
 }: {
-	counts: Record<Filter, number>;
-	filter: Filter;
-	onChange: (next: Filter) => void;
+	counts: Record<DropFilter, number>;
+	filter: DropFilter;
+	onChange: (next: DropFilter) => void;
 }) => (
 	<div className="flex overflow-x-auto">
 		<div
@@ -265,26 +287,18 @@ export const DropTable = <Row extends DropRow>({
  * collapsed to one row per lot, with tabs by event type above the table.
  */
 export const DropIndex = ({ rows: events }: { rows: DropRow[] }) => {
-	const [filter, setFilter] = useState<Filter>("all");
+	const [filter, setFilter] = useState<DropFilter>("all");
 	const rows = onePerLot(events);
-	const counts: Record<Filter, number> = {
-		all: rows.length,
-		back_in_stock: 0,
-		new: 0,
-		price_drop: 0,
-	};
-	for (const row of rows) {
-		counts[row.type] += 1;
-	}
+	const counts = countByType(rows);
 	const shown = filter === "all" ? rows : rows.filter((r) => r.type === filter);
 
 	return (
 		<section aria-label="Recent drops">
-			<FilterTabs counts={counts} filter={filter} onChange={setFilter} />
+			<DropTypeTabs counts={counts} filter={filter} onChange={setFilter} />
 			{shown.length === 0 ? (
-				<p className="text-muted-foreground py-16 text-center text-[15px]">
+				<EmptyLine>
 					No drops yet. The crawlers are out there checking.
-				</p>
+				</EmptyLine>
 			) : (
 				<DropTable className="mt-16" rows={shown} />
 			)}

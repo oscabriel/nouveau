@@ -3,7 +3,7 @@ import { useQuery } from "convex/react";
 
 import Loader from "@/components/loader";
 import { LogCard } from "@/components/log-card";
-import { PageTitle } from "@/components/page-title";
+import { PageTitle } from "@/components/page";
 
 /**
  * The global activity feed (build spec §14.3): recent logs, newest first,
@@ -19,11 +19,9 @@ export const ActivityFeed = () => {
 				count={
 					feed === undefined || feed.length === 0 ? undefined : feed.length
 				}
+				lede="What people are tasting from around the world."
 				title="Activity"
 			/>
-			<p className="text-muted-foreground mt-4 max-w-prose text-sm md:text-[15px]">
-				What people are tasting from around the world.
-			</p>
 			<div className="mt-12 md:mt-16">
 				{feed === undefined && <Loader />}
 				{feed !== undefined && feed.length === 0 && (

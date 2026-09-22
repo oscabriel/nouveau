@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 
-import { PageTitle } from "@/components/page-title";
+import { Page, PageTitle } from "@/components/page";
 import { navLinkClass } from "@/lib/ui";
 
 /** The settings tabs, in the order the row lists them. */
@@ -18,29 +18,28 @@ const TABS = [
  * mount (ADR-0013).
  */
 const SettingsLayout = () => (
-	<main>
-		<div className="px-5 pt-10 md:px-10 md:pt-14">
-			<PageTitle title="Settings" />
-			<nav
-				aria-label="Settings"
-				className="mt-4 flex items-center gap-x-4 md:gap-x-5"
-			>
-				{TABS.map((tab) => (
-					<Link
-						activeProps={{ className: "underline" }}
-						className={navLinkClass}
-						key={tab.to}
-						to={tab.to}
-					>
-						{tab.label}
-					</Link>
-				))}
-			</nav>
-			<Outlet />
-		</div>
-	</main>
+	<Page>
+		<PageTitle title="Settings" />
+		<nav
+			aria-label="Settings"
+			className="mt-4 flex items-center gap-x-4 md:gap-x-5"
+		>
+			{TABS.map((tab) => (
+				<Link
+					activeProps={{ className: "underline" }}
+					className={navLinkClass}
+					key={tab.to}
+					to={tab.to}
+				>
+					{tab.label}
+				</Link>
+			))}
+		</nav>
+		<Outlet />
+	</Page>
 );
 
 export const Route = createFileRoute("/settings")({
 	component: SettingsLayout,
+	head: () => ({ meta: [{ title: "Settings | Nouveau" }] }),
 });

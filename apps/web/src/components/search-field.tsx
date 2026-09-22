@@ -1,3 +1,5 @@
+import { hairlineInputClass } from "@/lib/ui";
+
 /**
  * The index's search: one hairline under a line of type, no box. The label
  * is the placeholder; screen readers get it as the accessible name. The
@@ -15,7 +17,7 @@ export const SearchField = ({
 	<input
 		aria-label={label}
 		autoComplete="off"
-		className="placeholder:text-muted-foreground focus-visible:border-foreground h-11 w-full border-b bg-transparent text-[15px] outline-none focus-visible:outline-none md:text-base [&::-webkit-search-cancel-button]:hidden"
+		className={`${hairlineInputClass} w-full text-[15px] md:text-base`}
 		onChange={(event) => {
 			onChange(event.target.value);
 		}}

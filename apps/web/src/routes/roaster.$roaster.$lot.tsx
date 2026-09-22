@@ -1,21 +1,28 @@
 import { useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
-import { createFileRoute, Link, useParams } from "@tanstack/react-router";
+import { createFileRoute, Link, getRouteApi } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { ArrowUpRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import Loader from "@/components/loader";
 import { LogCard } from "@/components/log-card";
 import { LogSheet } from "@/components/log-form";
-import { PageTitle } from "@/components/page-title";
+import {
+	MissingPage,
+	Page,
+	PageLoader,
+	PageTitle,
+	SectionHeading,
+} from "@/components/page";
 import { SaveButton } from "@/components/save-button";
 import { SignInCta } from "@/components/sign-in-cta";
 import { formatPrice } from "@/lib/format";
-import { bodyCell, headCell, navLinkClass } from "@/lib/ui";
+import { bodyCell, headCell, ledeClass, navLinkClass } from "@/lib/ui";
 import { useFormatWeight } from "@/lib/weight";
+
+const route = getRouteApi("/roaster/$roaster/$lot");
 
 export type LotPageData = FunctionReturnType<typeof api.lots.get>;
 type LotData = NonNullable<LotPageData>["lot"];
@@ -128,9 +135,7 @@ const SizeTable = ({
 	variants: NonNullable<LotData>["variants"];
 }) => (
 	<section aria-labelledby="sizes-heading" className="mt-16 md:mt-24">
-		<h2 className="text-xl md:text-2xl" id="sizes-heading">
-			Sizes
-		</h2>
+		<SectionHeading id="sizes-heading">Sizes</SectionHeading>
 		<table className="mt-6 w-full border-collapse">
 			<thead>
 				<tr className="border-b">
@@ -180,7 +185,7 @@ const LotDetail = ({
 	return (
 		<>
 			<PageTitle title={lot.name}>{controls}</PageTitle>
-			<p className="text-muted-foreground mt-4 text-sm md:text-[15px]">
+			<p className={ledeClass}>
 				<Link
 					className="hover:underline"
 					params={{ roaster: roaster.slug }}
@@ -247,9 +252,7 @@ const LotDetail = ({
 };
 
 const LotComponent = () => {
-	const { roaster: roasterSlug, lot: handle } = useParams({
-		from: "/roaster/$roaster/$lot",
-	});
+	const { roaster: roasterSlug, lot: handle } = route.useParams();
 	// The pair is whatever the URL holds; the query resolves bad ones to null.
 	const page = useQuery(api.lots.get, { lot: handle, roaster: roasterSlug });
 	const me = useQuery(api.users.getCurrentUser);
@@ -288,23 +291,13 @@ const LotComponent = () => {
 	// The viewer query decides only EDIT and DELETE on log rows; the page
 	// does not wait for it.
 	if (page === undefined) {
-		return (
-			<main className="py-24">
-				<Loader />
-			</main>
-		);
+		return <PageLoader />;
 	}
 	if (page === null) {
 		return (
-			<main>
-				<p className="text-muted-foreground px-5 py-24 text-center text-[15px] md:px-10">
-					No lot at this address.{" "}
-					<Link className="text-foreground underline" to="/roasters">
-						Browse the roasters
-					</Link>
-					.
-				</p>
-			</main>
+			<MissingPage linkLabel="Browse the roasters" to="/roasters">
+				No lot at this address.
+			</MissingPage>
 		);
 	}
 
@@ -337,7 +330,7 @@ const LotComponent = () => {
 	);
 
 	return (
-		<main>
+		<Page>
 			{isAuthenticated && (
 				<LogSheet
 					lotId={lot.id}
@@ -349,49 +342,45 @@ const LotComponent = () => {
 					}
 				/>
 			)}
-			<div className="px-5 pt-10 md:px-10 md:pt-14">
-				<LotDetail
-					controls={controls}
-					lot={lot}
-					reading={reading}
-					roaster={roaster}
-				/>
-				<section aria-labelledby="logs-heading" className="mt-16 md:mt-24">
-					<h2 className="text-xl md:text-2xl" id="logs-heading">
-						{page.logsTruncated ? "Recent logs" : "Logs"}
-						{page.logs.length > 0 && (
-							<span className="text-muted-foreground tnum ml-2 text-xs">
-								({page.logs.length})
-							</span>
-						)}
-					</h2>
-					{page.logs.length === 0 && (
-						<p className="text-muted-foreground mt-4 max-w-prose text-sm">
-							{isAuthenticated
-								? "Nobody has logged this lot yet. You could be the first."
-								: "No logs yet."}
-						</p>
-					)}
-					{page.logs.length > 0 && (
-						<div className="mt-6">
-							{page.logs.map((log) => (
-								<LogCard
-									isMine={log.user.id === me?.id}
-									key={log.logId}
-									log={log}
-									showLot={false}
-								/>
-							))}
-						</div>
-					)}
-					{!isAuthenticated && (
-						<div className="mt-8">
-							<SignInCta />
-						</div>
-					)}
-				</section>
-			</div>
-		</main>
+			<LotDetail
+				controls={controls}
+				lot={lot}
+				reading={reading}
+				roaster={roaster}
+			/>
+			<section aria-labelledby="logs-heading" className="mt-16 md:mt-24">
+				<SectionHeading
+					count={page.logs.length > 0 ? page.logs.length : undefined}
+					id="logs-heading"
+				>
+					{page.logsTruncated ? "Recent logs" : "Logs"}
+				</SectionHeading>
+				{page.logs.length === 0 && (
+					<p className="text-muted-foreground mt-4 max-w-prose text-sm">
+						{isAuthenticated
+							? "Nobody has logged this lot yet. You could be the first."
+							: "No logs yet."}
+					</p>
+				)}
+				{page.logs.length > 0 && (
+					<div className="mt-6">
+						{page.logs.map((log) => (
+							<LogCard
+								isMine={log.user.id === me?.id}
+								key={log.logId}
+								log={log}
+								showLot={false}
+							/>
+						))}
+					</div>
+				)}
+				{!isAuthenticated && (
+					<div className="mt-8">
+						<SignInCta />
+					</div>
+				)}
+			</section>
+		</Page>
 	);
 };
 

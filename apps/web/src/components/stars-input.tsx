@@ -1,6 +1,8 @@
 import { Star } from "lucide-react";
 import { useRef, useState } from "react";
 
+import { quietLinkClass } from "@/lib/ui";
+
 const STAR_COUNT = 5;
 const HALF = 0.5;
 
@@ -108,7 +110,7 @@ export const StarsInput = ({
 			</span>
 			{value !== null && (
 				<button
-					className="label-caps text-muted-foreground hover:text-foreground inline-flex min-h-11 items-center"
+					className={quietLinkClass}
 					onClick={() => {
 						onChange(null);
 					}}

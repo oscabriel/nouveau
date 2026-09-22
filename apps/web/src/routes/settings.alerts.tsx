@@ -1,24 +1,11 @@
 import { useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
-import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 
-import { DotToggle } from "@/components/dot-toggle";
 import Loader from "@/components/loader";
-import { SignInCta } from "@/components/sign-in-cta";
-
-const SignedOutAlertSettings = () => (
-	<div className="mt-10">
-		<p className="text-muted-foreground max-w-prose text-sm">
-			Sign in to see where your alerts are delivered and which roasters are
-			muted.
-		</p>
-		<div className="mt-6">
-			<SignInCta />
-		</div>
-	</div>
-);
+import { MuteToggle } from "@/components/mute-toggle";
+import { SignInPrompt } from "@/components/sign-in-cta";
 
 /**
  * The alerts tab: where alerts go and which watches are muted. The title
@@ -33,21 +20,17 @@ const AlertSettingsComponent = () => {
 		api.watches.listMyWatches,
 		isAuthenticated ? {} : "skip"
 	);
-	const setMuted = useMutation(api.watches.setWatchMuted);
-
-	const toggleMute = async (muted: boolean, roasterId: Id<"roasters">) => {
-		try {
-			await setMuted({ muted: !muted, roasterId });
-		} catch {
-			// The query refreshes; a failed toggle keeps state.
-		}
-	};
 
 	if (isLoading) {
 		return <Loader />;
 	}
 	if (!isAuthenticated) {
-		return <SignedOutAlertSettings />;
+		return (
+			<SignInPrompt className="mt-10">
+				Sign in to see where your alerts are delivered and which roasters are
+				muted.
+			</SignInPrompt>
+		);
 	}
 	if (me === undefined || watches === undefined) {
 		return <Loader />;
@@ -96,14 +79,7 @@ const AlertSettingsComponent = () => {
 								>
 									{watch.roaster.name}
 								</Link>
-								<DotToggle
-									onClick={() => {
-										void toggleMute(watch.muted, watch.roaster.id);
-									}}
-									pressed={watch.muted}
-								>
-									{watch.muted ? "Muted" : "Mute"}
-								</DotToggle>
+								<MuteToggle muted={watch.muted} roasterId={watch.roaster.id} />
 							</li>
 						))}
 					</ul>

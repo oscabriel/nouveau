@@ -1,32 +1,26 @@
 import { useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
-import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
-import { Button } from "@nouveau/ui/components/button";
-import { Input } from "@nouveau/ui/components/input";
-import { Label } from "@nouveau/ui/components/label";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import Loader from "@/components/loader";
-import { SignInCta } from "@/components/sign-in-cta";
+import { Page, PageTitle, SectionHeading } from "@/components/page";
+import { SignInPrompt } from "@/components/sign-in-cta";
 import { StatusChip } from "@/components/status-chip";
-
-const SignedOut = () => (
-	<div className="container mx-auto max-w-3xl px-4 py-8">
-		<h1 className="mb-2 font-serif text-[2rem] leading-none font-normal">
-			Add a roaster
-		</h1>
-		<p className="text-muted-foreground mb-4 max-w-prose text-sm">
-			Sign in to add a roaster we don&apos;t watch yet. Paste the page that
-			lists their coffees; we read the shop and start watching it for you.
-		</p>
-		<SignInCta />
-	</div>
-);
+import { describeMutationError } from "@/lib/errors";
+import {
+	hairlineInputClass,
+	navLinkClass,
+	primaryButtonClass,
+	quietLinkClass,
+} from "@/lib/ui";
 
 type Submission = (typeof api.submissions.mine._returnType)[number];
+
+const LEDE =
+	"Paste a US roaster's shop. We work out how to read it, load their current coffees, and start watching. You'll be watching it too as soon as the first read lands.";
 
 /** The one line a submission row needs beyond the chip. */
 const submissionLine = (submission: Submission): string | null => {
@@ -63,14 +57,14 @@ const SubmissionRow = ({ submission }: { submission: Submission }) => {
 					`Try again in ${Math.ceil(result.retryAfter / 60_000)} min.`
 				);
 			}
-		} catch {
-			toast.error("Couldn't start a retry.");
+		} catch (error) {
+			toast.error(describeMutationError(error, "Couldn't start a retry."));
 		}
 		setBusy(false);
 	};
 
 	return (
-		<li className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-1 py-4">
+		<li className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b py-4 last:border-b-0">
 			<div className="min-w-0">
 				<div className="flex items-baseline gap-3">
 					{submission.status === "active" ? (
@@ -99,9 +93,11 @@ const SubmissionRow = ({ submission }: { submission: Submission }) => {
 			</div>
 			{failed && (
 				<button
-					className="hover:bg-accent rounded-md border px-3 py-1.5 text-sm transition-colors disabled:opacity-50"
+					className={quietLinkClass}
 					disabled={busy}
-					onClick={retryNow}
+					onClick={() => {
+						void retryNow();
+					}}
 					type="button"
 				>
 					Retry
@@ -111,10 +107,35 @@ const SubmissionRow = ({ submission }: { submission: Submission }) => {
 	);
 };
 
+/** A caps label over a hairline field, the account form's shape. */
+const Field = ({
+	children,
+	hint,
+	id,
+	label,
+}: {
+	children: React.ReactNode;
+	hint?: string;
+	id: string;
+	label: string;
+}) => (
+	<div>
+		<label className="label-caps text-foreground" htmlFor={id}>
+			{label}
+		</label>
+		<div className="mt-2">{children}</div>
+		{hint !== undefined && (
+			<p className="text-muted-foreground mt-2 max-w-prose text-sm">{hint}</p>
+		)}
+	</div>
+);
+
+const fieldClass = `${hairlineInputClass} w-full text-sm md:text-[15px]`;
+
 const SubmitForm = ({
 	onSubmitted,
 }: {
-	onSubmitted: (roasterId: Id<"roasters">) => void;
+	onSubmitted: (roasterId: Submission["id"]) => void;
 }) => {
 	const submit = useMutation(api.submissions.submit);
 	const quota = useQuery(api.submissions.quota, {});
@@ -170,72 +191,80 @@ const SubmitForm = ({
 					result satisfies never;
 				}
 			}
-		} catch {
-			toast.error("Couldn't submit that.");
+		} catch (error) {
+			toast.error(describeMutationError(error, "Couldn't submit that."));
 		}
 		setSaving(false);
 	};
 
 	return (
-		<form className="grid gap-4" onSubmit={send}>
-			<div className="grid gap-1.5">
-				<Label htmlFor="submit-url">Shop page</Label>
-				<Input
+		<form className="flex flex-col gap-6" onSubmit={send}>
+			<Field
+				hint="The page that lists their coffees. The domain is what we watch."
+				id="submit-url"
+				label="Shop page"
+			>
+				<input
 					autoComplete="url"
+					className={fieldClass}
 					id="submit-url"
 					inputMode="url"
 					onChange={(event) => setUrl(event.target.value)}
 					placeholder="roaster.com/collections/coffee"
 					required
+					type="text"
 					value={url}
 				/>
-				<p className="text-muted-foreground text-xs">
-					The page that lists their coffees. The domain is what we watch.
-				</p>
-			</div>
-			<div className="grid gap-1.5">
-				<Label htmlFor="submit-name">Roaster name</Label>
-				<Input
+			</Field>
+			<Field id="submit-name" label="Roaster name">
+				<input
+					className={fieldClass}
 					id="submit-name"
 					maxLength={80}
 					onChange={(event) => setName(event.target.value)}
 					required
+					type="text"
 					value={name}
 				/>
-			</div>
-			<div className="grid grid-cols-[1fr_5rem] gap-4">
-				<div className="grid gap-1.5">
-					<Label htmlFor="submit-city">City</Label>
-					<Input
+			</Field>
+			<div className="grid grid-cols-[minmax(0,1fr)_5rem] gap-6">
+				<Field id="submit-city" label="City">
+					<input
 						autoComplete="address-level2"
+						className={fieldClass}
 						id="submit-city"
 						maxLength={60}
 						onChange={(event) => setCity(event.target.value)}
 						required
+						type="text"
 						value={city}
 					/>
-				</div>
-				<div className="grid gap-1.5">
-					<Label htmlFor="submit-state">State</Label>
-					<Input
+				</Field>
+				<Field id="submit-state" label="State">
+					<input
 						autoComplete="address-level1"
-						className="uppercase"
+						className={`${fieldClass} uppercase`}
 						id="submit-state"
 						maxLength={2}
 						onChange={(event) => setState(event.target.value)}
 						pattern="[A-Za-z]{2}"
 						placeholder="WI"
 						required
+						type="text"
 						value={state}
 					/>
-				</div>
+				</Field>
 			</div>
 			<div className="flex flex-wrap items-center gap-4">
-				<Button disabled={saving || blocked} type="submit">
+				<button
+					className={primaryButtonClass}
+					disabled={saving || blocked}
+					type="submit"
+				>
 					{saving ? "Adding" : "Add roaster"}
-				</Button>
+				</button>
 				{quota !== undefined && quota !== null && (
-					<span className="text-muted-foreground text-xs">
+					<span className="text-muted-foreground tnum text-xs">
 						{quota.todayOk
 							? `${quota.activeLeft} of 5 slots left`
 							: "Three a day; more tomorrow"}
@@ -255,10 +284,14 @@ const SubmissionList = ({
 		return <Loader />;
 	}
 	if (submissions.length === 0) {
-		return <p className="text-muted-foreground py-4 text-sm">None yet.</p>;
+		return (
+			<p className="text-muted-foreground mt-4 max-w-prose text-sm">
+				None yet.
+			</p>
+		);
 	}
 	return (
-		<ul className="divide-y">
+		<ul className="mt-6">
 			{submissions.map((submission) => (
 				<SubmissionRow key={submission.id} submission={submission} />
 			))}
@@ -266,45 +299,63 @@ const SubmissionList = ({
 	);
 };
 
+/**
+ * Add a roaster: the same inner-page shell as the directory it comes
+ * from, the form in the account form's shape (caps label, hairline field),
+ * the filled block to submit, and the visitor's own submissions as rows
+ * under a section heading. Signed out, the page says what it is for and
+ * offers sign-in.
+ */
 const SubmitComponent = () => {
 	const { isAuthenticated, isLoading } = useConvexAuth();
 	const mine = useQuery(api.submissions.mine, isAuthenticated ? {} : "skip");
 
+	let body: React.ReactNode;
 	if (isLoading) {
-		return <Loader />;
-	}
-	if (!isAuthenticated) {
-		return <SignedOut />;
+		body = <Loader />;
+	} else if (isAuthenticated) {
+		body = (
+			<>
+				<div className="mt-10 max-w-xl">
+					<SubmitForm
+						onSubmitted={() => {
+							toast.success("Added. Reading the shop now.");
+						}}
+					/>
+				</div>
+				<section
+					aria-labelledby="submissions-heading"
+					className="mt-16 md:mt-24"
+				>
+					<SectionHeading id="submissions-heading">
+						Your submissions
+					</SectionHeading>
+					<SubmissionList submissions={mine} />
+				</section>
+			</>
+		);
+	} else {
+		body = (
+			<SignInPrompt className="mt-10">
+				Sign in to add a roaster we don&apos;t watch yet. Paste the page that
+				lists their coffees; we read the shop and start watching it for you.
+			</SignInPrompt>
+		);
 	}
 
 	return (
-		<div className="container mx-auto max-w-3xl px-4 py-8">
-			<header className="mb-6 flex items-baseline justify-between gap-4">
-				<h1 className="font-serif text-[2rem] leading-none font-normal">
-					Add a roaster
-				</h1>
-				<Link className="text-sm hover:underline" to="/roasters">
+		<Page>
+			<PageTitle lede={LEDE} title="Add a roaster">
+				<Link className={navLinkClass} to="/roasters">
 					All roasters
 				</Link>
-			</header>
-			<p className="text-muted-foreground mb-6 max-w-prose text-sm">
-				Paste a US roaster&apos;s shop. We work out how to read it, load their
-				current coffees, and start watching. You&apos;ll be watching it too as
-				soon as the first read lands.
-			</p>
-			<SubmitForm
-				onSubmitted={() => {
-					toast.success("Added. Reading the shop now.");
-				}}
-			/>
-			<section className="mt-10">
-				<h2 className="mb-2 text-lg font-semibold">Your submissions</h2>
-				<SubmissionList submissions={mine} />
-			</section>
-		</div>
+			</PageTitle>
+			{body}
+		</Page>
 	);
 };
 
 export const Route = createFileRoute("/roasters/submit")({
 	component: SubmitComponent,
+	head: () => ({ meta: [{ title: "Add a roaster | Nouveau" }] }),
 });

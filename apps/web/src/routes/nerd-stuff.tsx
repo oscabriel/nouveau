@@ -1,10 +1,6 @@
 import { api } from "@nouveau/backend/convex/_generated/api";
 import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
-import {
-	createFileRoute,
-	useNavigate,
-	useSearch,
-} from "@tanstack/react-router";
+import { createFileRoute, getRouteApi } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { Fragment, useState } from "react";
 
@@ -21,6 +17,8 @@ import type { Run } from "@/components/nerd/stat-strip";
 import { TraceDetail } from "@/components/nerd/trace-detail";
 import { TraceRow } from "@/components/nerd/trace-row";
 import type { Trace } from "@/components/nerd/trace-row";
+
+const route = getRouteApi("/nerd-stuff");
 
 /*
  * Direction contract (ADR-0018, 2026-09-21):
@@ -211,8 +209,8 @@ const Title = ({ roasterName }: { roasterName: string | undefined }) => (
 );
 
 const NerdStuffComponent = () => {
-	const { run: runParam } = useSearch({ from: "/nerd-stuff" });
-	const navigate = useNavigate({ from: "/nerd-stuff" });
+	const { run: runParam } = route.useSearch();
+	const navigate = route.useNavigate();
 	const run = useRun(runParam);
 	const { runTraces, tail } = useTraces(run);
 	const roasters = useQuery(api.roasters.listActive);

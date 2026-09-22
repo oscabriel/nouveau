@@ -7,11 +7,19 @@ import { useRef, useState } from "react";
 
 import { DotToggle } from "@/components/dot-toggle";
 import Loader from "@/components/loader";
+import { EmptyLine, SectionHeading } from "@/components/page";
 import { SearchField } from "@/components/search-field";
 import { ArrowCell, TableHoverImage } from "@/components/table";
 import { TastingPill } from "@/components/tasting-pill";
 import { displayPriceCents, formatPrice } from "@/lib/format";
-import { bodyCell, headCell, headCellRight } from "@/lib/ui";
+import {
+	bodyCell,
+	hairlineInputClass,
+	hairlineSelectClass,
+	headCell,
+	headCellRight,
+	navLinkClass,
+} from "@/lib/ui";
 import { useFormatWeight } from "@/lib/weight";
 
 type LotRow = FunctionReturnType<typeof api.roasters.listLots>["page"][number];
@@ -129,11 +137,11 @@ const LotsBody = ({
 	}
 	if (visible.length === 0) {
 		return (
-			<p className="text-muted-foreground py-16 text-center text-[15px]">
+			<EmptyLine>
 				{searching
 					? `No lots match "${term}".`
 					: "No lots match these filters."}
-			</p>
+			</EmptyLine>
 		);
 	}
 	return (
@@ -171,7 +179,7 @@ const LotsBody = ({
 			{!searching && pages.status === "CanLoadMore" && (
 				<div className="flex justify-center pt-8">
 					<button
-						className="label-caps inline-flex min-h-11 items-center hover:underline"
+						className={navLinkClass}
 						onClick={() => {
 							pages.loadMore(PAGE_SIZE);
 						}}
@@ -225,7 +233,7 @@ const LotFilterRow = ({
 			</DotToggle>
 			<select
 				aria-label="Bag size"
-				className="text-muted-foreground h-11 max-w-40 border-b bg-transparent text-sm outline-none"
+				className={hairlineSelectClass}
 				onChange={(event) => {
 					onSize(event.target.value === "" ? null : Number(event.target.value));
 				}}
@@ -241,7 +249,7 @@ const LotFilterRow = ({
 			<input
 				aria-label="Price at most, dollars"
 				autoComplete="off"
-				className="placeholder:text-muted-foreground focus-visible:border-foreground h-11 w-28 border-b bg-transparent text-sm outline-none"
+				className={`${hairlineInputClass} w-28 text-sm`}
 				min="0"
 				onChange={(event) => {
 					onPrice(event.target.value);
@@ -254,7 +262,7 @@ const LotFilterRow = ({
 			<input
 				aria-label="Origin contains"
 				autoComplete="off"
-				className="placeholder:text-muted-foreground focus-visible:border-foreground h-11 w-40 border-b bg-transparent text-sm outline-none [&::-webkit-search-cancel-button]:hidden"
+				className={`${hairlineInputClass} w-40 text-sm`}
 				onChange={(event) => {
 					onOrigin(event.target.value);
 				}}
@@ -338,9 +346,7 @@ export const Lots = ({
 	return (
 		<section aria-labelledby="lots-heading">
 			<div className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-4">
-				<h2 className="text-xl md:text-2xl" id="lots-heading">
-					Lots
-				</h2>
+				<SectionHeading id="lots-heading">Lots</SectionHeading>
 				<div className="w-full sm:w-72">
 					<SearchField
 						label="Search lots"

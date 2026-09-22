@@ -9,8 +9,9 @@ import { LogSheet } from "@/components/log-form";
 import { SaveButton } from "@/components/save-button";
 import { Stars } from "@/components/stars";
 import { TastingPill } from "@/components/tasting-pill";
+import { describeMutationError } from "@/lib/errors";
 import { relativeTime } from "@/lib/format";
-import { navLinkClass } from "@/lib/ui";
+import { navLinkClass, quietLinkClass } from "@/lib/ui";
 
 /** One hydrated log, exactly as recentLogs and profile return it (spec §14). */
 export type LogCardData = FunctionReturnType<
@@ -96,9 +97,7 @@ export const LogCard = ({
 			await remove({ logId: log.logId });
 			toast.success("Log deleted.");
 		} catch (error) {
-			toast.error(
-				error instanceof Error ? error.message : "Something went wrong."
-			);
+			toast.error(describeMutationError(error, "Could not delete the log."));
 			setDeleting(false);
 		}
 	};
@@ -173,7 +172,7 @@ export const LogCard = ({
 						Edit
 					</button>
 					<button
-						className={`${navLinkClass} text-muted-foreground hover:text-foreground disabled:no-underline`}
+						className={quietLinkClass}
 						disabled={deleting}
 						onClick={() => {
 							void deleteLog();
