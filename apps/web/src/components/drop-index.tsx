@@ -47,7 +47,9 @@ const onePerLot = (rows: DropRow[]): DropRow[] => {
  * The type tabs over a drop table: ALL and the three event types, each
  * with its count, the active one underlined in ink. Centered; scrolls
  * sideways below the width they need. Shared by the landing index and
- * /drops.
+ * /drops. These are filters over one table, not tabs over panels, so they
+ * are plain pressed buttons; a tablist would promise arrow-key movement
+ * and tabpanels this row does not have.
  */
 export const DropTypeTabs = ({
 	counts,
@@ -59,15 +61,12 @@ export const DropTypeTabs = ({
 	onChange: (next: DropFilter) => void;
 }) => (
 	<div className="flex overflow-x-auto">
-		<div
-			className="mx-auto flex shrink-0 gap-5 border-b md:gap-8"
-			role="tablist"
-		>
+		<div className="mx-auto flex shrink-0 gap-5 border-b md:gap-8">
 			{FILTERS.map((option) => {
 				const active = option === filter;
 				return (
 					<button
-						aria-selected={active}
+						aria-pressed={active}
 						className={`-mb-px inline-flex min-h-11 shrink-0 items-baseline gap-1 border-b pb-3 text-lg transition-colors md:text-2xl ${
 							active
 								? "border-foreground text-foreground"
@@ -75,7 +74,6 @@ export const DropTypeTabs = ({
 						}`}
 						key={option}
 						onClick={() => onChange(option)}
-						role="tab"
 						type="button"
 					>
 						{filterLabel(option)}
