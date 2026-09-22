@@ -85,7 +85,7 @@ const LandingComponent = () => {
 			<section className="flex flex-col items-center px-5 pt-[14vw] text-center md:pt-[9vw]">
 				<Wordmark />
 				<p className="mt-[9vw] max-w-[44rem] font-serif text-[1.5rem] leading-[1.25] text-balance md:text-[1.875rem]">
-					Never forget your favorite cup or miss the next one.
+					Never forget your favorite cup or miss the next big drop.
 				</p>
 				<div className="mt-6 min-h-11">
 					<PrimarySlot />
