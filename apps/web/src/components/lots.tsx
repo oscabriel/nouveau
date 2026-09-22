@@ -75,8 +75,8 @@ const LotTableRow = ({
 			<td
 				className={`${bodyCell} hidden max-w-0 pr-4 md:table-cell md:w-[40%]`}
 			>
-				{/* Pills, one row, clipped at the cell's edge: the row stays one line tall. */}
-				<div className="flex gap-1.5 overflow-hidden">
+				{/* Pills, one row, fading out at the cell's edge: the row stays one line tall. */}
+				<div className="flex gap-1.5 overflow-hidden [mask-image:linear-gradient(to_right,black_88%,transparent)]">
 					{lot.roasterTags.map(({ family, note }) => (
 						<TastingPill family={family} key={note} link>
 							{note}
