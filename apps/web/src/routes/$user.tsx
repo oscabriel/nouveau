@@ -25,6 +25,7 @@ import { StatusChip } from "@/components/status-chip";
 import { describeMutationError } from "@/lib/errors";
 import { plural } from "@/lib/format";
 import { ledeClass, quietLinkClass } from "@/lib/ui";
+import { useDocumentTitle } from "@/lib/use-document-title";
 
 const route = getRouteApi("/$user");
 
@@ -186,6 +187,7 @@ const ProfileComponent = () => {
 	// retired handles and legacy user ids alike (ADR-0011).
 	const profile = useQuery(api.logs.profile, { address });
 	const navigate = useNavigate();
+	useDocumentTitle(profile?.user.name ?? (profile ? "A taster" : undefined));
 
 	// Adopt the canonical address: a legacy id or a retired handle resolves
 	// here, then the URL moves to the user's current handle. Absent on rows
@@ -243,4 +245,5 @@ const ProfileComponent = () => {
 
 export const Route = createFileRoute("/$user")({
 	component: ProfileComponent,
+	head: () => ({ meta: [{ title: "Taster | Nouveau" }] }),
 });

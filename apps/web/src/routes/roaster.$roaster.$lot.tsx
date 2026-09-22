@@ -20,6 +20,7 @@ import { SaveButton } from "@/components/save-button";
 import { SignInCta } from "@/components/sign-in-cta";
 import { formatPrice } from "@/lib/format";
 import { bodyCell, headCell, ledeClass, navLinkClass } from "@/lib/ui";
+import { useDocumentTitle } from "@/lib/use-document-title";
 import { useFormatWeight } from "@/lib/weight";
 
 const route = getRouteApi("/roaster/$roaster/$lot");
@@ -257,6 +258,7 @@ const LotComponent = () => {
 	const page = useQuery(api.lots.get, { lot: handle, roaster: roasterSlug });
 	const me = useQuery(api.users.getCurrentUser);
 	const { isAuthenticated } = useConvexAuth();
+	useDocumentTitle(page?.lot.name);
 	const [logging, setLogging] = useState(false);
 	const requestPageFacts = useMutation(api.pageFacts.request);
 	// The clock the page-read state is judged against; ticks only while a
@@ -386,4 +388,5 @@ const LotComponent = () => {
 
 export const Route = createFileRoute("/roaster/$roaster/$lot")({
 	component: LotComponent,
+	head: () => ({ meta: [{ title: "Lot | Nouveau" }] }),
 });
