@@ -8,11 +8,10 @@ import {
 } from "@nouveau/ui/components/sheet";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
 import { DotToggle } from "@/components/dot-toggle";
 import Loader from "@/components/loader";
-import { NextBagRun } from "@/components/next-bag-run";
 import { SignInCta } from "@/components/sign-in-cta";
 import { describeMutationError } from "@/lib/errors";
 import { closeNextBag, openNextBag } from "@/lib/next-bag-search";
@@ -140,6 +139,18 @@ const RequestBox = ({ busy }: { busy: boolean }) => {
 	);
 };
 
+/**
+ * The run view pulls in the agent client (and with it the AI SDK and zod),
+ * about a third of the main bundle when it was imported statically. The
+ * sheet mounts on every page, so the chunk loads only once a signed-in
+ * visitor opens it.
+ */
+const NextBagRun = lazy(() =>
+	import("@/components/next-bag-run").then((module) => ({
+		default: module.NextBagRun,
+	}))
+);
+
 const SignedInPane = () => {
 	const [now, setNow] = useState(Date.now);
 	useEffect(() => {
@@ -152,7 +163,11 @@ const SignedInPane = () => {
 		<>
 			<RequestBox busy={busy} />
 			{latest === undefined && <Loader />}
-			{latest && <NextBagRun run={latest} />}
+			{latest && (
+				<Suspense fallback={<Loader />}>
+					<NextBagRun run={latest} />
+				</Suspense>
+			)}
 		</>
 	);
 };
