@@ -2,6 +2,7 @@ import { useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
+import { useState } from "react";
 
 import { DropIndex } from "@/components/drop-index";
 import { LatestTiles } from "@/components/latest-tiles";
@@ -49,30 +50,83 @@ const PrimarySlot = () => {
 };
 
 /**
+ * The branch behind the V: a link to the species' Wikipedia article, with a
+ * soft glow inside the drawing that follows the cursor (owner, 2026-09-21).
+ * The glow is a radial gradient masked to the webp's own alpha, so it lights
+ * the leaves and berries and never the paper around them. Mouse only: the
+ * position updates on mouse pointer moves, and `motion-reduce` hides the
+ * layer. The V stays in front and outside the link.
+ */
+const BranchLink = () => {
+	const [glow, setGlow] = useState<{ x: number; y: number } | null>(null);
+	return (
+		<a
+			aria-label="Coffea arabica on Wikipedia"
+			className="absolute top-1/2 left-1/2 z-10 block h-[2.05em] -translate-x-1/2 -translate-y-[54%]"
+			href="https://en.wikipedia.org/wiki/Coffea_arabica"
+			onPointerLeave={() => {
+				setGlow(null);
+			}}
+			onPointerMove={(event) => {
+				if (event.pointerType !== "mouse") {
+					return;
+				}
+				const box = event.currentTarget.getBoundingClientRect();
+				setGlow({
+					x: ((event.clientX - box.left) / box.width) * 100,
+					y: ((event.clientY - box.top) / box.height) * 100,
+				});
+			}}
+			rel="noreferrer"
+			target="_blank"
+		>
+			<img
+				alt=""
+				className="h-full w-auto max-w-none"
+				fetchPriority="high"
+				height={1160}
+				src="/coffea-arabica.webp"
+				width={1112}
+			/>
+			<span
+				aria-hidden
+				className={`pointer-events-none absolute inset-0 transition-opacity duration-300 motion-reduce:hidden ${
+					glow === null ? "opacity-0" : "opacity-100"
+				}`}
+				style={{
+					background: `radial-gradient(circle at ${glow?.x ?? 50}% ${glow?.y ?? 50}%, rgb(255 255 255 / 0.55), transparent 28%)`,
+					maskImage: "url(/coffea-arabica.webp)",
+					maskSize: "100% 100%",
+					WebkitMaskImage: "url(/coffea-arabica.webp)",
+					WebkitMaskSize: "100% 100%",
+				}}
+			/>
+		</a>
+	);
+};
+
+/**
  * The wordmark (owner's mock, 2026-09-21): NOUVEAU in Garamond italic
  * spanning the viewport, three layers deep. NOU and EAU sit at the back, the Thornton
  * branch in front of them, and the V in front of the branch, so the branch
- * threads through the word instead of sitting beside it.
+ * threads through the word instead of sitting beside it. The letters are
+ * hidden from assistive tech (the h1 carries the name); the branch link is
+ * not, so it stays reachable.
  */
 const Wordmark = () => (
 	<h1
 		aria-label="Nouveau"
 		className="relative w-full font-serif text-[17.5vw] leading-none font-normal tracking-[-0.01em] uppercase italic"
 	>
-		<span aria-hidden="true" className="flex items-baseline justify-center">
-			<span>Nou</span>
+		<span className="flex items-baseline justify-center">
+			<span aria-hidden="true">Nou</span>
 			<span className="relative inline-block">
-				<img
-					alt=""
-					className="pointer-events-none absolute top-1/2 left-1/2 z-10 h-[2.05em] w-auto max-w-none -translate-x-1/2 -translate-y-[54%]"
-					fetchPriority="high"
-					height={1160}
-					src="/coffea-arabica.webp"
-					width={1112}
-				/>
-				<span className="relative z-20">V</span>
+				<BranchLink />
+				<span aria-hidden="true" className="relative z-20">
+					V
+				</span>
 			</span>
-			<span>eau</span>
+			<span aria-hidden="true">eau</span>
 		</span>
 	</h1>
 );

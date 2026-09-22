@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 
+import { PageTitle } from "@/components/page-title";
+
 /**
  * The about page (ADR-0012): what the product does and how to use every
  * feature, one caps-labeled section per feature, in the tone PRODUCT.md
@@ -45,44 +47,81 @@ const sections = [
 	},
 ] as const;
 
+/**
+ * The plate on the right (owner, 2026-09-21): the landing's branch export,
+ * large, filling the column the prose leaves empty, with a caption crediting
+ * the plate's author. Hidden below `lg`, where the prose takes the width.
+ */
+const Plate = () => (
+	<figure className="hidden lg:sticky lg:top-14 lg:block lg:self-start">
+		<a href="https://en.wikipedia.org/wiki/Coffea_arabica">
+			<img
+				alt="A branch of Coffea arabica with leaves, white blossoms and red berries, engraved and hand-colored for Robert John Thornton in 1808"
+				className="w-full"
+				height={1160}
+				loading="lazy"
+				src="/coffea-arabica.webp"
+				width={1112}
+			/>
+		</a>
+		<figcaption className="text-muted-foreground mt-4 text-right text-xs">
+			<a
+				className="hover:text-foreground hover:underline"
+				href="https://en.wikipedia.org/wiki/Coffea_arabica"
+			>
+				<i>Coffea arabica</i>
+			</a>
+			,{" "}
+			<a
+				className="hover:text-foreground hover:underline"
+				href="https://en.wikipedia.org/wiki/Robert_John_Thornton"
+			>
+				Robert John Thornton
+			</a>
+			, 1808
+		</figcaption>
+	</figure>
+);
+
 const AboutComponent = () => (
 	<main>
-		<div className="px-5 pt-10 md:px-10 md:pt-14">
-			<h1 className="font-serif text-[2rem] leading-none font-normal md:text-[2.75rem]">
-				About
-			</h1>
-			<p className="text-muted-foreground mt-6 max-w-prose text-sm md:text-[15px]">
-				Nouveau is a live index of specialty coffee and a place to remember what
-				you tried. The catalog updates around the clock from the roasters&apos;
-				own shops. Buying happens at the roaster: Nouveau links out and is not a
-				store.
-			</p>
-			<div className="mt-12 max-w-prose md:mt-16">
-				{sections.map((section) => (
-					<section className="mt-10 first:mt-0" key={section.title}>
-						<h2 className="label-caps text-foreground">{section.title}</h2>
-						{section.how.map((paragraph) => (
-							<p
-								className="text-muted-foreground mt-3 text-sm md:text-[15px]"
-								key={paragraph.slice(0, 24)}
-							>
-								{paragraph}
-							</p>
-						))}
-					</section>
-				))}
+		<div className="px-5 pt-10 md:px-10 md:pt-14 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-x-16">
+			<div>
+				<PageTitle title="About" />
+				<p className="text-muted-foreground mt-4 max-w-prose text-sm md:text-[15px]">
+					Nouveau is a live index of specialty coffee and a place to remember
+					what you tried. The catalog updates around the clock from the
+					roasters&apos; own shops. Buying happens at the roaster: Nouveau links
+					out and is not a store.
+				</p>
+				<div className="mt-12 max-w-prose md:mt-16">
+					{sections.map((section) => (
+						<section className="mt-10 first:mt-0" key={section.title}>
+							<h2 className="label-caps text-foreground">{section.title}</h2>
+							{section.how.map((paragraph) => (
+								<p
+									className="text-muted-foreground mt-3 text-sm md:text-[15px]"
+									key={paragraph.slice(0, 24)}
+								>
+									{paragraph}
+								</p>
+							))}
+						</section>
+					))}
+				</div>
+				<p className="text-muted-foreground mt-12 max-w-prose text-sm md:text-[15px]">
+					See{" "}
+					<Link className="text-foreground underline" to="/activity">
+						what people are tasting
+					</Link>{" "}
+					right now, or{" "}
+					<Link className="text-foreground underline" to="/roasters">
+						browse the roasters
+					</Link>{" "}
+					we watch.
+				</p>
 			</div>
-			<p className="text-muted-foreground mt-12 max-w-prose text-sm md:text-[15px]">
-				See{" "}
-				<Link className="text-foreground underline" to="/activity">
-					what people are tasting
-				</Link>{" "}
-				right now, or{" "}
-				<Link className="text-foreground underline" to="/roasters">
-					browse the roasters
-				</Link>{" "}
-				we watch.
-			</p>
+			<Plate />
 		</div>
 	</main>
 );
