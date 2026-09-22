@@ -10,6 +10,8 @@ import {
 	isValidHandle,
 } from "./handles";
 import { optionalUserId, requireUserId } from "./identity";
+import { DEFAULT_WEIGHT_UNIT, weightUnitValidator } from './weightUnit';
+import type { WeightUnit } from './weightUnit';
 
 /**
  * Create the user row for a first-time Google sign-in and return its id. The
@@ -67,6 +69,7 @@ export const updateMe = mutation({
 	args: {
 		handle: v.optional(v.string()),
 		name: v.optional(v.string()),
+		weightUnit: v.optional(weightUnitValidator),
 	},
 	handler: async (ctx, args) => {
 		const userId = await requireUserId(ctx);
@@ -74,7 +77,11 @@ export const updateMe = mutation({
 		if (user === null) {
 			throw new Error("Unknown user");
 		}
-		const patch: { handle?: string; name?: string } = {};
+		const patch: { handle?: string; name?: string; weightUnit?: WeightUnit } =
+			{};
+		if (args.weightUnit !== undefined) {
+			patch.weightUnit = args.weightUnit;
+		}
 		if (args.name !== undefined) {
 			const name = args.name.trim();
 			if (name === "") {
@@ -181,6 +188,8 @@ export const getCurrentUser = query({
 			id: user._id,
 			imageUrl: user.imageUrl,
 			name: user.name,
+			// Display only; metric when the row never chose.
+			weightUnit: user.weightUnit ?? DEFAULT_WEIGHT_UNIT,
 		};
 	},
 	returns: v.union(
@@ -191,6 +200,7 @@ export const getCurrentUser = query({
 			id: v.id("users"),
 			imageUrl: v.optional(v.string()),
 			name: v.optional(v.string()),
+			weightUnit: weightUnitValidator,
 		})
 	),
 });

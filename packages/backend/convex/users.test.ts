@@ -151,6 +151,22 @@ describe("user handles", () => {
 });
 
 describe("updateMe (ADR-0011, ADR-0016)", () => {
+	test("the weight unit defaults to metric and saves imperial", async () => {
+		const { t } = await setup();
+		const userId = await createUser(t, "Ada Lovelace", "google-ada");
+		const before = await asUser(t, userId).query(api.users.getCurrentUser);
+		expect(before?.weightUnit).toBe("metric");
+		await asUser(t, userId).mutation(api.users.updateMe, {
+			weightUnit: "imperial",
+		});
+		const after = await asUser(t, userId).query(api.users.getCurrentUser);
+		expect(after?.weightUnit).toBe("imperial");
+		// Saving the unit alone leaves name and handle as they were.
+		const user = await t.run((ctx) => ctx.db.get("users", userId));
+		expect(user?.handle).toBe("ada-lovelace");
+		expect(user?.name).toBe("Ada Lovelace");
+	});
+
 	test("changes the name alone", async () => {
 		const { t } = await setup();
 		const userId = await createUser(t, "Ada Lovelace", "google-ada");

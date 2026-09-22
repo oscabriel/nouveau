@@ -18,6 +18,7 @@ import {
 import { shopMarketValidator } from "./shopMarket";
 import { sourceModeValidator } from "./sourceMode";
 import { tastingNoteValidator } from "./tasting";
+import { weightUnitValidator } from "./weightUnit";
 
 export default defineSchema({
 	// Singleton config row (at most one document). Holds the shared AgentMail
@@ -409,6 +410,10 @@ export default defineSchema({
 		imageUrl: v.optional(v.string()),
 		name: v.optional(v.string()),
 		providerAccountId: v.string(),
+		// How the site shows bag weights to this user (owner, 2026-09-21):
+		// grams and kilograms, or ounces and pounds. Grams stay the stored
+		// unit everywhere; this is display only. Absent reads as metric.
+		weightUnit: v.optional(weightUnitValidator),
 	})
 		.index("by_provider_account_id", ["providerAccountId"])
 		.index("by_handle", ["handle"])
