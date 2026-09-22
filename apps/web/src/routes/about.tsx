@@ -12,25 +12,25 @@ import { BRANCH_HEIGHT, BRANCH_SRC, BRANCH_WIDTH } from "@/lib/branch";
 const sections = [
 	{
 		how: [
-			"Open Find my next bag from the home page or your profile and write what you're after, in plain words: \"a floral Ethiopian under $30\". Our agent searches the catalog, checks each lot's stock and price, and hands you up to five picks as cards. Turn on Include my logs and each pick explains itself against what you've tried.",
+			'Open "Find my next bag" from any page and write what you\'re after in plain words: "a floral Ethiopian under $30". The agent searches the catalog, checks each lot\'s stock and price, and hands you in-stock picks one card at a time. Turn on "Include my logs" and each pick explains itself against what you\'ve tried.',
 		],
 		title: "Find my next bag",
 	},
 	{
 		how: [
-			"Open any lot and press Log this lot. Rate it one to five stars, pick up to four tasting notes, and write what you tasted in your own words. Your logs live on your profile page, and every lot page shows what other people thought of it.",
+			'Open any lot and press "Log this lot". Rate it one to five stars, note up to four flavors in your own words, and write what you tasted. Your logs live on your profile page, and every lot page shows what other people thought of it.',
 		],
 		title: "Logging",
 	},
 	{
 		how: [
-			"Press Watch on a roaster and Nouveau emails you when a new lot lands, a sold-out one comes back, or the price drops. Mute a roaster on the settings page when you want a break. Every watcher gets their own inbox, so replies never cross people.",
+			'Press "Watch" on a roaster and Nouveau emails you when a new lot lands, a sold-out one comes back, or the price drops. Press "Check now" on the roaster\'s page when you can\'t wait for the next look. "Mute" a roaster in the alert settings when you want a break. Alerts come from one shared inbox, and replies land back there threaded per roaster, so nothing crosses people.',
 		],
 		title: "Watching",
 	},
 	{
 		how: [
-			"Press Save on any lot to keep it on your try list. When you log it, the save clears itself and offers to undo. Your try list is private; nobody else sees it.",
+			'Press "Save" on any lot to keep it on your try list. When you log it, the save clears itself and offers to undo. Your try list is private; nobody else sees it.',
 		],
 		title: "The try list",
 	},
@@ -42,7 +42,7 @@ const sections = [
 	},
 	{
 		how: [
-			"Buying happens at the roaster. Every Buy link goes straight to that lot's page on the roaster's shop; Nouveau is an index and a memory, not a store.",
+			"Buying happens at the roaster. Every \"Buy\" link goes straight to that lot's page on the roaster's shop; Nouveau is an index and a memory, not a store.",
 		],
 		title: "Buying",
 	},
