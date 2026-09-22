@@ -15,14 +15,14 @@ import {
 } from "./constants";
 import { redirectTarget } from "./handles";
 import { optionalUserId, requireUserId } from "./identity";
-import { joinNotes } from "./lotFacts";
+import { joinNotes, notesList } from "./lotFacts";
 import { findSave, savedCards, savedCoffeeValidator } from "./savedCoffees";
 import {
-	familiesOf,
 	MAX_TASTING_NOTE_LENGTH,
 	MAX_TASTING_NOTES,
 	normalizeTastingNote,
-	tastingFamilyValidator,
+	taggedNoteValidator,
+	tagNotes,
 	tastingNoteValidator,
 } from "./tasting";
 import { watchCards, watchCardValidator } from "./watches";
@@ -102,6 +102,9 @@ export const logCardValidator = v.object({
 		id: v.id("products"),
 		name: v.string(),
 		roasterNotes: v.union(v.string(), v.null()),
+		// The same descriptors one by one with their wheel family, for the
+		// card's colored pills; empty when there are none.
+		roasterTags: v.array(taggedNoteValidator),
 		url: v.string(),
 	}),
 	notes: v.union(v.string(), v.null()),
@@ -111,15 +114,7 @@ export const logCardValidator = v.object({
 	// on the log; the roaster's descriptors live beside them on
 	// lot.roasterNotes. Each note with the wheel family it resolves to, or
 	// null when the wheel does not know the word (tasting.ts).
-	tastingNotes: v.union(
-		v.array(
-			v.object({
-				family: v.union(tastingFamilyValidator, v.null()),
-				note: v.string(),
-			})
-		),
-		v.null()
-	),
+	tastingNotes: v.union(v.array(taggedNoteValidator), v.null()),
 	user: tasterValidator,
 });
 
@@ -149,18 +144,14 @@ const hydrateLog = async (
 			id: product._id,
 			name: product.name,
 			roasterNotes: joinNotes(product.roasterNotes),
+			roasterTags: tagNotes(notesList(product.roasterNotes)),
 			url: `${roaster.websiteUrl}/products/${product.handle}`,
 		},
 		notes: log.notes ?? null,
 		rating: log.rating ?? null,
 		roaster: { name: roaster.name, slug: roaster.slug },
 		tastingNotes:
-			log.tastingNotes === undefined
-				? null
-				: log.tastingNotes.map((note) => ({
-						family: familiesOf([note])[0] ?? null,
-						note,
-					})),
+			log.tastingNotes === undefined ? null : tagNotes(log.tastingNotes),
 		user: {
 			handle: user.handle,
 			id: user._id,

@@ -236,6 +236,17 @@ describe("roasters", () => {
 		);
 		// The feed's own notes still win over the page's.
 		expect(byName["Feed-notes lot"]?.roasterNotes).toBe("peach, melon");
+		// The tagged copy carries each word with its wheel family for the pills.
+		expect(byName["Page-notes lot"]?.roasterTags).toEqual([
+			// "Tart Apple" is not a wheel term (the wheel has "apple"): no family.
+			{ family: null, note: "Tart Apple" },
+			{ family: "nutty/cocoa", note: "Pecan" },
+			{ family: "fruity", note: "Fig" },
+		]);
+		expect(byName["Feed-notes lot"]?.roasterTags).toEqual([
+			{ family: "fruity", note: "peach" },
+			{ family: "fruity", note: "melon" },
+		]);
 	});
 
 	test("lotWeightOptions is the catalog's distinct sizes, ascending", async () => {

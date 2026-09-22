@@ -12,6 +12,7 @@
 // colors and the /drops filter; the schema stores strings; feed cards and
 // log cards carry the families their notes resolve to.
 
+import type { Infer } from "convex/values";
 import { v } from "convex/values";
 
 /**
@@ -37,6 +38,18 @@ export const tastingFamilyValidator = v.union(
 
 /** A stored tasting note: the taster's word, trimmed and lowercased. */
 export const tastingNoteValidator = v.string();
+
+/**
+ * A note with the wheel family it resolves to, or null when the wheel does
+ * not know the word. The shape every colored pill renders from, the
+ * taster's picks and the roaster's descriptors alike.
+ */
+export const taggedNoteValidator = v.object({
+	family: v.union(tastingFamilyValidator, v.null()),
+	note: v.string(),
+});
+
+export type TaggedNote = Infer<typeof taggedNoteValidator>;
 
 /** How many tasting notes one log may carry. Was four with the picker. */
 export const MAX_TASTING_NOTES = 8;
@@ -372,6 +385,10 @@ export const familyOf = (note: string): TastingFamily | null => {
 	}
 	return null;
 };
+
+/** Each note paired with its family (tagged pills need both). */
+export const tagNotes = (notes: readonly string[]): TaggedNote[] =>
+	notes.map((note) => ({ family: familyOf(note), note }));
 
 /** The distinct families a list of notes resolves to, in wheel order. */
 export const familiesOf = (notes: readonly string[]): TastingFamily[] => {

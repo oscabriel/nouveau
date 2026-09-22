@@ -537,7 +537,13 @@ describe("logs", () => {
 
 		const profile = await t.query(api.logs.profile, { address: userId });
 		expect(profile?.logs[0]).toMatchObject({
-			lot: { roasterNotes: "peach, melon" },
+			lot: {
+				roasterNotes: "peach, melon",
+				roasterTags: [
+					{ family: "fruity", note: "peach" },
+					{ family: "fruity", note: "melon" },
+				],
+			},
 			tastingNotes: [
 				{ family: "floral", note: "floral" },
 				{ family: "fruity", note: "berry" },

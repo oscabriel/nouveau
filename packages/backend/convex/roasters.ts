@@ -13,6 +13,7 @@ import { followerCounts } from "./followerCounts";
 import { crawlStatusValidator, getCrawlStatus } from "./health";
 import { joinNotes, mergedFacts } from "./lotFacts";
 import { lotAvailability, lotAvailabilityValidator } from "./lotStock";
+import { taggedNoteValidator, tagNotes } from "./tasting";
 
 /** Roaster fields every roaster surface renders (directory, watches, page). */
 export const roasterCardValidator = v.object({
@@ -112,6 +113,9 @@ const lotRowValidator = v.object({
 	// while picking a lot and while logging it. Feed notes first, else the
 	// page read's (ADR-0008: the grid column is what the sweep fills).
 	roasterNotes: v.union(v.string(), v.null()),
+	// The same descriptors one by one with their wheel family, for the
+	// table's colored pills (owner, 2026-09-21); empty when there are none.
+	roasterTags: v.array(taggedNoteValidator),
 	status: v.union(v.literal("current"), v.literal("archived")),
 });
 
@@ -125,6 +129,7 @@ const toLotRow = (lot: Doc<"products">): Infer<typeof lotRowValidator> => ({
 	name: lot.name,
 	origin: lot.origin ?? null,
 	roasterNotes: joinNotes(mergedFacts(lot).notes),
+	roasterTags: tagNotes(mergedFacts(lot).notes),
 	status: lot.status,
 });
 
