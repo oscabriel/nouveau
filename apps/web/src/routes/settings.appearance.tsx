@@ -1,7 +1,7 @@
 import { useConvexAuth } from "@convex-dev/auth/react";
 import { createFileRoute } from "@tanstack/react-router";
 
-import Loader from "@/components/loader";
+import { Loader } from "@/components/loader";
 import { SignInPrompt } from "@/components/sign-in-cta";
 import { ThemeSwitch } from "@/components/theme-switch";
 

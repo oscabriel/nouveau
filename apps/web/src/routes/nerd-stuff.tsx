@@ -4,7 +4,7 @@ import { createFileRoute, getRouteApi } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { Fragment, useState } from "react";
 
-import Loader from "@/components/loader";
+import { Loader } from "@/components/loader";
 import {
 	LiveRow,
 	STAGES,

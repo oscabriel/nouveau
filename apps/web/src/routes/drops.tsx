@@ -10,7 +10,7 @@ import { useState } from "react";
 import { DotToggle } from "@/components/dot-toggle";
 import { countByType, DropTable, DropTypeTabs } from "@/components/drop-index";
 import type { DropFilter } from "@/components/drop-index";
-import Loader from "@/components/loader";
+import { Loader } from "@/components/loader";
 import { EmptyLine, Page, pagePadding, PageTitle } from "@/components/page";
 import {
 	hairlineInputClass,

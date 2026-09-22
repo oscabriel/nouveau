@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { LinkProps } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import Loader from "@/components/loader";
+import { Loader } from "@/components/loader";
 import { ledeClass } from "@/lib/ui";
 
 /** The side padding and top gap on their own, for `bleed` pages. */

@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { useState } from "react";
 
 import { DotToggle } from "@/components/dot-toggle";
-import Loader from "@/components/loader";
+import { Loader } from "@/components/loader";
 import { Stars } from "@/components/stars";
 import { thumbUrl } from "@/lib/drops";
 

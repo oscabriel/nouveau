@@ -6,7 +6,7 @@ import type { FunctionArgs, FunctionReturnType } from "convex/server";
 import { useRef, useState } from "react";
 
 import { DotToggle } from "@/components/dot-toggle";
-import Loader from "@/components/loader";
+import { Loader } from "@/components/loader";
 import { EmptyLine, SectionHeading } from "@/components/page";
 import { SearchField } from "@/components/search-field";
 import { ArrowCell, TableHoverImage } from "@/components/table";

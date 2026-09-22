@@ -135,7 +135,7 @@ const HandleMenu = ({ label, path }: { label: string; path: string }) => {
  * name carries the dropdown, so settings, theme and sign out are one click
  * deep.
  */
-const Header = () => {
+export const Header = () => {
 	const { isAuthenticated, isLoading } = useConvexAuth();
 	const me = useQuery(api.users.getCurrentUser, isAuthenticated ? {} : "skip");
 	// Lazily provisions the shared alert inbox on sign-in; the mutation is a
@@ -213,5 +213,3 @@ const Header = () => {
 		</header>
 	);
 };
-
-export default Header;

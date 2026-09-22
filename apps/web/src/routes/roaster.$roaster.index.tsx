@@ -7,7 +7,7 @@ import type { FunctionReturnType } from "convex/server";
 
 import { CheckNowButton } from "@/components/check-now-button";
 import { DropTable } from "@/components/drop-index";
-import Loader from "@/components/loader";
+import { Loader } from "@/components/loader";
 import { Lots } from "@/components/lots";
 import {
 	EmptyLine,
@@ -21,6 +21,7 @@ import { StatusChip } from "@/components/status-chip";
 import { WatchButton } from "@/components/watch-button";
 import { plural } from "@/lib/format";
 import { ledeClass } from "@/lib/ui";
+import { useDocumentTitle } from "@/lib/use-document-title";
 
 const route = getRouteApi("/roaster/$roaster/");
 
@@ -68,6 +69,7 @@ const RoasterComponent = () => {
 	const { roaster: slug } = route.useParams();
 	const roaster = useQuery(api.roasters.getBySlug, { slug });
 	const { isAuthenticated } = useConvexAuth();
+	useDocumentTitle(roaster?.name);
 
 	if (roaster === undefined) {
 		return <PageLoader />;
@@ -111,4 +113,5 @@ const RoasterComponent = () => {
 
 export const Route = createFileRoute("/roaster/$roaster/")({
 	component: RoasterComponent,
+	head: () => ({ meta: [{ title: "Roaster | Nouveau" }] }),
 });

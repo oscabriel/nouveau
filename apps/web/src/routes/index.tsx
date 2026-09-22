@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 
 import { DropIndex } from "@/components/drop-index";
 import { LatestTiles } from "@/components/latest-tiles";
-import Loader from "@/components/loader";
+import { Loader } from "@/components/loader";
 import { NextBagLink } from "@/components/next-bag-sheet";
 import { SignInCta } from "@/components/sign-in-cta";
 import { BRANCH_HEIGHT, BRANCH_SRC, BRANCH_WIDTH } from "@/lib/branch";

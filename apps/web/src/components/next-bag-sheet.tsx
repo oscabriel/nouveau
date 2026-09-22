@@ -5,7 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import { lazy, Suspense, useRef, useState } from "react";
 
 import { DotToggle } from "@/components/dot-toggle";
-import Loader from "@/components/loader";
+import { Loader } from "@/components/loader";
 import { Pane } from "@/components/pane";
 import { SignInPrompt } from "@/components/sign-in-cta";
 import { describeMutationError } from "@/lib/errors";

@@ -1,7 +1,7 @@
 import { api } from "@nouveau/backend/convex/_generated/api";
 import { useQuery } from "convex/react";
 
-import Loader from "@/components/loader";
+import { Loader } from "@/components/loader";
 import { LogCard } from "@/components/log-card";
 import { PageTitle } from "@/components/page";
 

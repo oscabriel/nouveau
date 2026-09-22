@@ -8,7 +8,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { DotToggle } from "@/components/dot-toggle";
-import Loader from "@/components/loader";
+import { Loader } from "@/components/loader";
 import { SignInPrompt } from "@/components/sign-in-cta";
 import { describeMutationError } from "@/lib/errors";
 import {

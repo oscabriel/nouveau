@@ -3,7 +3,7 @@ import { api } from "@nouveau/backend/convex/_generated/api";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 
-import Loader from "@/components/loader";
+import { Loader } from "@/components/loader";
 import { MuteToggle } from "@/components/mute-toggle";
 import { SignInPrompt } from "@/components/sign-in-cta";
 

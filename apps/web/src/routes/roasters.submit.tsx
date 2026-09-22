@@ -5,7 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import Loader from "@/components/loader";
+import { Loader } from "@/components/loader";
 import { Page, PageTitle, SectionHeading } from "@/components/page";
 import { SignInPrompt } from "@/components/sign-in-cta";
 import { StatusChip } from "@/components/status-chip";

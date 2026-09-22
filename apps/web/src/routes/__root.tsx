@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 
-import Header from "@/components/header";
+import { Header } from "@/components/header";
 import { NextBagSheet } from "@/components/next-bag-sheet";
 import { MissingPage } from "@/components/page";
 import { SiteFooter } from "@/components/site-footer";

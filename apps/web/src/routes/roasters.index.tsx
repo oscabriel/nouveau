@@ -5,7 +5,7 @@ import { useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useState } from "react";
 
-import Loader from "@/components/loader";
+import { Loader } from "@/components/loader";
 import { EmptyLine, Page, PageTitle } from "@/components/page";
 import { SearchField } from "@/components/search-field";
 import { ArrowCell } from "@/components/table";
