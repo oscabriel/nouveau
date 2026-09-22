@@ -145,11 +145,10 @@ const RequestBox = ({ busy }: { busy: boolean }) => {
  * sheet mounts on every page, so the chunk loads only once a signed-in
  * visitor opens it.
  */
-const NextBagRun = lazy(() =>
-	import("@/components/next-bag-run").then((module) => ({
-		default: module.NextBagRun,
-	}))
-);
+const NextBagRun = lazy(async () => {
+	const module = await import("@/components/next-bag-run");
+	return { default: module.NextBagRun };
+});
 
 const SignedInPane = () => {
 	const [now, setNow] = useState(Date.now);
