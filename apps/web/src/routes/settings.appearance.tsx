@@ -2,13 +2,12 @@ import { useConvexAuth } from "@convex-dev/auth/react";
 import { createFileRoute } from "@tanstack/react-router";
 
 import Loader from "@/components/loader";
-import { PageTitle } from "@/components/page-title";
 import { SignInCta } from "@/components/sign-in-cta";
 import { ThemeSwitch } from "@/components/theme-switch";
 
 /**
- * The appearance settings: the single LIGHT / DARK switch (ADR-0013), one of
- * its two mounts. Signed out, the visitor gets the system theme with no
+ * The appearance tab: the single LIGHT / DARK switch (ADR-0013), one of
+ * its two mounts. The title and tabs come from the /settings layout. Signed out, the visitor gets the system theme with no
  * control, so the page says so and offers sign-in.
  */
 const AppearanceComponent = () => {
@@ -22,17 +21,15 @@ const AppearanceComponent = () => {
 		control = <SignInCta />;
 	}
 	return (
-		<main>
-			<div className="px-5 pt-10 md:px-10 md:pt-14">
-				<PageTitle title="Appearance" />
-				<p className="text-muted-foreground mt-4 max-w-prose text-sm md:text-[15px]">
-					Nouveau follows the theme of your operating system. The switch inverts
-					it; when the OS changes, the page changes with it. The choice stays on
-					this browser.
-				</p>
-				<div className="mt-6">{control}</div>
-			</div>
-		</main>
+		<div className="mt-10 max-w-xl">
+			<h2 className="label-caps text-foreground">Theme</h2>
+			<p className="text-muted-foreground mt-3 max-w-prose text-sm md:text-[15px]">
+				Nouveau follows the theme of your operating system. The switch inverts
+				it; when the OS changes, the page changes with it. The choice stays on
+				this browser.
+			</p>
+			<div className="mt-4">{control}</div>
+		</div>
 	);
 };
 

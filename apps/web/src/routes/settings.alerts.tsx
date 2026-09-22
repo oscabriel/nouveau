@@ -4,22 +4,28 @@ import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 
+import { DotToggle } from "@/components/dot-toggle";
 import Loader from "@/components/loader";
 import { SignInCta } from "@/components/sign-in-cta";
 
 const SignedOutAlertSettings = () => (
-	<div className="container mx-auto max-w-3xl px-4 py-8">
-		<h1 className="mb-2 font-serif text-[2rem] leading-none font-normal">
-			Alert settings
-		</h1>
-		<p className="text-muted-foreground mb-4 max-w-prose text-sm">
+	<div className="mt-10">
+		<p className="text-muted-foreground max-w-prose text-sm">
 			Sign in to see where your alerts are delivered and which roasters are
 			muted.
 		</p>
-		<SignInCta />
+		<div className="mt-6">
+			<SignInCta />
+		</div>
 	</div>
 );
 
+/**
+ * The alerts tab: where alerts go and which watches are muted. The title
+ * and tabs come from the /settings layout; the sections are caps-labeled
+ * like every inner page, and Mute is the same DotToggle the profile's
+ * watch rows use.
+ */
 const AlertSettingsComponent = () => {
 	const { isAuthenticated, isLoading } = useConvexAuth();
 	const me = useQuery(api.users.getCurrentUser, isAuthenticated ? {} : "skip");
@@ -48,74 +54,56 @@ const AlertSettingsComponent = () => {
 	}
 
 	return (
-		<div className="container mx-auto max-w-3xl px-4 py-8">
-			<header className="mb-6 flex items-baseline justify-between gap-4">
-				<h1 className="font-serif text-[2rem] leading-none font-normal">
-					Alert settings
-				</h1>
-				{me !== null && (
-					<Link
-						className="text-sm hover:underline"
-						params={{ user: me.handle ?? me.id }}
-						to="/$user"
-					>
-						Your watches
-					</Link>
-				)}
-			</header>
-			<section className="mb-8">
-				<h2 className="mb-2 text-lg font-medium">Alert inbox</h2>
+		<div className="mt-10 max-w-xl">
+			<section>
+				<h2 className="label-caps text-foreground">Alert inbox</h2>
 				{me?.alertInboxAddress === undefined ? (
-					<p className="text-muted-foreground max-w-prose text-sm">
+					<p className="text-muted-foreground mt-3 max-w-prose text-sm md:text-[15px]">
 						Alerts are still being set up. They fire only once the alert inbox
 						exists; nothing is held in the meantime.
 					</p>
 				) : (
-					<p className="max-w-prose text-sm">
+					<p className="text-muted-foreground mt-3 max-w-prose text-sm md:text-[15px]">
 						Alerts are delivered from the Nouveau alert inbox{" "}
-						<span className="font-mono">{me.alertInboxAddress}</span> to your
-						sign-in email.
+						<span className="text-foreground font-mono">
+							{me.alertInboxAddress}
+						</span>{" "}
+						to your sign-in email.
 					</p>
 				)}
 			</section>
-			<section>
-				<h2 className="mb-2 text-lg font-medium">Watches</h2>
+			<section className="mt-10">
+				<h2 className="label-caps text-foreground">Watches</h2>
 				{watches.length === 0 ? (
-					<p className="text-muted-foreground max-w-prose text-sm">
+					<p className="text-muted-foreground mt-3 max-w-prose text-sm md:text-[15px]">
 						You&apos;re not watching any roasters yet.{" "}
-						<Link className="underline" to="/roasters">
+						<Link className="text-foreground underline" to="/roasters">
 							Browse the roasters
 						</Link>{" "}
 						to start.
 					</p>
 				) : (
-					<ul className="divide-y">
+					<ul className="mt-3">
 						{watches.map((watch) => (
 							<li
-								className="flex items-center justify-between gap-x-4 px-1 py-3"
+								className="flex items-center justify-between gap-x-4 border-b py-2 last:border-b-0"
 								key={watch.roaster.id}
 							>
 								<Link
-									className="text-sm hover:underline"
+									className="text-sm hover:underline md:text-[15px]"
 									params={{ roaster: watch.roaster.slug }}
 									to="/roaster/$roaster"
 								>
 									{watch.roaster.name}
 								</Link>
-								<div className="flex items-center gap-2">
-									{watch.muted && (
-										<span className="text-muted-foreground text-xs">muted</span>
-									)}
-									<button
-										className="hover:bg-accent rounded-md border px-3 py-1.5 text-sm transition-colors"
-										onClick={() => {
-											toggleMute(watch.muted, watch.roaster.id);
-										}}
-										type="button"
-									>
-										{watch.muted ? "Unmute" : "Mute"}
-									</button>
-								</div>
+								<DotToggle
+									onClick={() => {
+										void toggleMute(watch.muted, watch.roaster.id);
+									}}
+									pressed={watch.muted}
+								>
+									{watch.muted ? "Muted" : "Mute"}
+								</DotToggle>
 							</li>
 						))}
 					</ul>

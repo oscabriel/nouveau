@@ -1,16 +1,23 @@
 import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "@nouveau/backend/convex/_generated/api";
+import type { WeightUnit } from "@nouveau/backend/convex/weightUnit";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { DotToggle } from "@/components/dot-toggle";
 import Loader from "@/components/loader";
-import { PageTitle } from "@/components/page-title";
 import { SignInCta } from "@/components/sign-in-cta";
 
 type Me = NonNullable<FunctionReturnType<typeof api.users.getCurrentUser>>;
+
+/** The two display units as the form names them. */
+const WEIGHT_UNIT_OPTIONS: { label: string; value: WeightUnit }[] = [
+	{ label: "Grams", value: "metric" },
+	{ label: "Ounces", value: "imperial" },
+];
 
 /**
  * The account form: the name the header shows and the handle the profile is
@@ -20,6 +27,7 @@ type Me = NonNullable<FunctionReturnType<typeof api.users.getCurrentUser>>;
 const AccountForm = ({ me }: { me: Me }) => {
 	const [name, setName] = useState(me.name ?? "");
 	const [handle, setHandle] = useState(me.handle ?? "");
+	const [weightUnit, setWeightUnit] = useState<WeightUnit>(me.weightUnit);
 	const [saving, setSaving] = useState(false);
 	const update = useMutation(api.users.updateMe);
 	const { signOut } = useAuthActions();
@@ -27,7 +35,7 @@ const AccountForm = ({ me }: { me: Me }) => {
 	const save = async () => {
 		setSaving(true);
 		try {
-			await update({ handle, name });
+			await update({ handle, name, weightUnit });
 			toast.success("Saved.");
 		} catch (error) {
 			toast.error(
@@ -101,6 +109,23 @@ const AccountForm = ({ me }: { me: Me }) => {
 						follow you here.
 					</p>
 				</div>
+				<fieldset>
+					<legend className="label-caps text-foreground">Weights</legend>
+					{/* Display only: every bag is stored in grams (weight.ts). */}
+					<div className="mt-2 flex items-center gap-x-5">
+						{WEIGHT_UNIT_OPTIONS.map((option) => (
+							<DotToggle
+								key={option.value}
+								onClick={() => {
+									setWeightUnit(option.value);
+								}}
+								pressed={weightUnit === option.value}
+							>
+								{option.label}
+							</DotToggle>
+						))}
+					</div>
+				</fieldset>
 				<div className="flex items-center gap-4">
 					<button
 						className="label-caps bg-foreground text-background inline-flex min-h-11 items-center px-5 transition-opacity hover:opacity-80"
@@ -128,9 +153,9 @@ const AccountForm = ({ me }: { me: Me }) => {
 };
 
 /**
- * The account settings: name, handle, sign out (ADR-0016). The handle lives
- * in `nouveau.coffee/$handle`; changing it keeps the old one resolving
- * (ADR-0011).
+ * The account tab: name, handle, weight unit, sign out (ADR-0016). The
+ * handle lives in `nouveau.coffee/$handle`; changing it keeps the old one
+ * resolving (ADR-0011). The title and tabs come from the /settings layout.
  */
 const AccountComponent = () => {
 	const { isAuthenticated, isLoading } = useConvexAuth();
@@ -143,31 +168,21 @@ const AccountComponent = () => {
 	// check has to come before the loading check or the spinner never ends.
 	if (!isAuthenticated || me === null) {
 		return (
-			<main>
-				<div className="px-5 pt-10 md:px-10 md:pt-14">
-					<PageTitle title="Account" />
-					<p className="text-muted-foreground mt-4 max-w-prose text-sm">
-						Sign in to edit your name and handle.
-					</p>
-					<div className="mt-6">
-						<SignInCta />
-					</div>
+			<div className="mt-10">
+				<p className="text-muted-foreground max-w-prose text-sm">
+					Sign in to edit your name, handle and units.
+				</p>
+				<div className="mt-6">
+					<SignInCta />
 				</div>
-			</main>
+			</div>
 		);
 	}
 	if (me === undefined) {
 		return <Loader />;
 	}
 
-	return (
-		<main>
-			<div className="px-5 pt-10 md:px-10 md:pt-14">
-				<PageTitle title="Account" />
-				<AccountForm me={me} />
-			</div>
-		</main>
-	);
+	return <AccountForm me={me} />;
 };
 
 export const Route = createFileRoute("/settings/account")({

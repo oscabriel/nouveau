@@ -2,14 +2,14 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 /**
- * /settings has no page of its own yet; it lands on the one child that
- * exists, /settings/alerts (ADR-0011). /settings/appearance and
- * /settings/account arrive with their batches.
+ * /settings lands on the first tab, Account (owner, 2026-09-21): the page
+ * that edits the name, handle and weight unit. The tabs live in the
+ * settings layout route.
  */
 const SettingsRedirect = () => {
 	const navigate = useNavigate();
 	useEffect(() => {
-		void navigate({ replace: true, to: "/settings/alerts" });
+		void navigate({ replace: true, to: "/settings/account" });
 	}, [navigate]);
 	return null;
 };
