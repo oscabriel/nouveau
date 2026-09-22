@@ -219,7 +219,12 @@ const CALL_SCRIPT = (tool: string, input: string) => `(async () => {
 	}
 	let result = raw;
 	try { result = JSON.parse(raw); } catch {}
-	return { result, resultChars: typeof raw === "string" ? raw.length : null, tool: name };
+	return {
+		pageAfter: location.pathname,
+		result,
+		resultChars: typeof raw === "string" ? raw.length : null,
+		tool: name,
+	};
 })()`;
 
 const main = async () => {

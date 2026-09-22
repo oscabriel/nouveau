@@ -68,11 +68,13 @@ cd apps/web && bunx vitest run          # web tests, including the site tool con
 
 ### Site tools (WebMCP)
 
-The web app registers three tools on `document.modelContext` for browser agents (`apps/web/src/lib/site-tools.ts`): `get_context`, `get_lot`, `save_lot`. To act as the agent locally, run the dev server, then drive the system Chromium (153 or newer) through `scripts/webmcp-harness.ts`:
+The web app registers seven tools on `document.modelContext` for browser agents (`apps/web/src/lib/site-tools.ts`). Reads: `get_context` (where the user is), `find_available_lots` (in-stock lots under a budget, from the same bounded catalog search the next-bag agent runs, via `packages/backend/convex/catalogSearch.ts`), `get_lot`, `list_saved_lots`. Writes: `save_lot`, `unsave_lot` (the private try list, nothing else), and `open_page` (home, saved, a roaster, or a lot). Lots are addressed by roaster slug and lot handle, never by id, and no tool takes or returns a user id. To act as the agent locally, run the dev server, then drive the system Chromium (153 or newer) through `scripts/webmcp-harness.ts`:
 
 ```sh
 bun run webmcp list                                     # the tools the home page registers
+bun run webmcp call find_available_lots '{"preferences":"floral washed","maxPriceCents":3000}'
 bun run webmcp call get_lot http://127.0.0.1:3004/roaster/<roaster>/<lot>
+bun run webmcp call open_page '{"page":"saved"}'        # pageAfter in the output shows where it landed
 bun run webmcp call save_lot --headed --profile /tmp/nv # sign in once in that window, run again to save
 ```
 

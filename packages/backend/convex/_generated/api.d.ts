@@ -9,6 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as catalogSearch from "../catalogSearch.js";
 import type * as checkNow from "../checkNow.js";
 import type * as constants from "../constants.js";
 import type * as crawlSources from "../crawlSources.js";
@@ -67,6 +68,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  catalogSearch: typeof catalogSearch;
   checkNow: typeof checkNow;
   constants: typeof constants;
   crawlSources: typeof crawlSources;

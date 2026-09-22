@@ -31,12 +31,18 @@ export const SiteTools = () => {
 		const controller = new AbortController();
 		const tools = buildSiteTools({
 			auth: () => authRef.current,
+			findLots: (args) => convex.query(api.catalogSearch.findAvailable, args),
 			getLot: (address) => convex.query(api.lots.get, address),
+			listSaved: (paginationOpts) =>
+				convex.query(api.savedCoffees.listMine, { paginationOpts }),
+			navigate: (href) => router.navigate({ href }),
 			origin: window.location.origin,
 			pathname: () => router.state.location.pathname,
 			saveLot: (productId) =>
 				convex.mutation(api.savedCoffees.save, { productId }),
 			savedLotIds: () => convex.query(api.savedCoffees.mySavedProductIds, {}),
+			unsaveLot: (productId) =>
+				convex.mutation(api.savedCoffees.unsave, { productId }),
 		});
 		void registerSiteTools(modelContext, tools, controller.signal);
 		return () => {

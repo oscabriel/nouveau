@@ -3,14 +3,23 @@ import { describe, expect, test } from "vitest";
 
 import {
 	buildSiteTools,
+	describeFound,
 	describeLot,
+	FOUND_LOTS_CLIP,
 	lotAddressFromPath,
 	PARAM_DESCRIPTION_LIMIT,
+	SAVED_PAGE_SIZE,
 	TOOL_DESCRIPTION_LIMIT,
 	TOOL_NAME_LIMIT,
 	TOOL_OUTPUT_LIMIT,
 } from "./site-tools";
-import type { LotPage, SiteToolDeps } from "./site-tools";
+import type {
+	FindLotsArgs,
+	FoundLots,
+	LotPage,
+	PageRequest,
+	SiteToolDeps,
+} from "./site-tools";
 
 const LOT_ID = "products:mullugeta" as Id<"products">;
 const OTHER_ID = "products:other" as Id<"products">;
@@ -53,9 +62,48 @@ const page: LotPage = {
 	roaster: { name: "Sey", slug: "sey" },
 };
 
+/** A search result with `count` long rows, for the budget check. */
+const foundRows = (count: number): FoundLots => ({
+	applied: { maxGrams: null, maxPriceCents: 5000, minGrams: 200 },
+	considered: count,
+	lots: Array.from({ length: count }, (_, index) => ({
+		confirmedAt: 1_800_000_000_000,
+		grams: 250,
+		handle: `a-rather-long-lot-handle-number-${index}`,
+		name: `Colombia Finca La Esperanza Pink Bourbon Lot ${index}`,
+		priceCents: 2800 + index,
+		productId: `products:found${index}` as Id<"products">,
+		roasterName: "A Roaster With A Long Name",
+		roasterSlug: "a-roaster-with-a-long-slug",
+		says: "Sweet and juicy. ".repeat(30),
+		url: `https://roaster.example.com/products/lot-${index}`,
+		variantName: "250g",
+	})),
+});
+
+const savedCard = (index: number) => ({
+	available: index % 2 === 0,
+	fromRunId: null,
+	lot: {
+		handle: `saved-lot-handle-number-${index}`,
+		id: `products:saved${index}` as Id<"products">,
+		imageUrl: null,
+		name: `Ethiopia Guji Uraga Natural Lot ${index}`,
+		status: "current" as const,
+		url: `https://sey.example.com/products/saved-${index}`,
+	},
+	roaster: { name: "Sey Coffee Roasters", slug: "sey" },
+	savedAt: 1_800_000_000_000 - index,
+	savedId: `savedCoffees:${index}` as Id<"savedCoffees">,
+});
+
 interface Fake {
 	deps: SiteToolDeps;
+	finds: FindLotsArgs[];
+	pages: PageRequest[];
 	saves: Id<"products">[];
+	unsaves: Id<"products">[];
+	visits: string[];
 }
 
 const fake = (
@@ -64,18 +112,46 @@ const fake = (
 		isLoading: boolean;
 		pathname: string;
 		saved: Id<"products">[];
+		savedCount: number;
+		found: FoundLots;
 	}> = {}
 ): Fake => {
 	const saves = [...(overrides.saved ?? [])];
+	const unsaves: Id<"products">[] = [];
+	const finds: FindLotsArgs[] = [];
+	const pages: PageRequest[] = [];
+	const visits: string[] = [];
+	const cards = Array.from({ length: overrides.savedCount ?? 0 }, (_, i) =>
+		savedCard(i)
+	);
 	const deps: SiteToolDeps = {
 		auth: () => ({
 			isAuthenticated: overrides.isAuthenticated ?? true,
 			isLoading: overrides.isLoading ?? false,
 		}),
+		findLots: (args) => {
+			finds.push(args);
+			return Promise.resolve(overrides.found ?? foundRows(0));
+		},
 		getLot: (address) =>
 			Promise.resolve(
 				address.roaster === "sey" && address.lot === "mullugeta" ? page : null
 			),
+		listSaved: (request) => {
+			pages.push(request);
+			const start = request.cursor === null ? 0 : Number(request.cursor);
+			const slice = cards.slice(start, start + request.numItems);
+			const end = start + slice.length;
+			return Promise.resolve({
+				continueCursor: String(end),
+				isDone: end >= cards.length,
+				page: slice,
+			});
+		},
+		navigate: (pathname) => {
+			visits.push(pathname);
+			return Promise.resolve();
+		},
 		origin: "https://nouveau.coffee",
 		pathname: () => overrides.pathname ?? "/roaster/sey/mullugeta",
 		saveLot: (lotId) => {
@@ -83,8 +159,16 @@ const fake = (
 			return Promise.resolve(null);
 		},
 		savedLotIds: () => Promise.resolve([...saves]),
+		unsaveLot: (lotId) => {
+			unsaves.push(lotId);
+			const at = saves.indexOf(lotId);
+			if (at !== -1) {
+				saves.splice(at, 1);
+			}
+			return Promise.resolve(null);
+		},
 	};
-	return { deps, saves };
+	return { deps, finds, pages, saves, unsaves, visits };
 };
 
 const tool = (fx: Fake, name: string) => {
@@ -100,8 +184,12 @@ describe("site tool contracts", () => {
 		const tools = buildSiteTools(fake().deps);
 		expect(tools.map((t) => t.name)).toEqual([
 			"get_context",
+			"find_available_lots",
 			"get_lot",
+			"list_saved_lots",
 			"save_lot",
+			"unsave_lot",
+			"open_page",
 		]);
 		for (const t of tools) {
 			expect(t.name.length).toBeLessThanOrEqual(TOOL_NAME_LIMIT);
@@ -122,9 +210,21 @@ describe("site tool contracts", () => {
 		const readOnly = tools.map((t) => [t.name, t.annotations.readOnlyHint]);
 		expect(readOnly).toEqual([
 			["get_context", true],
+			["find_available_lots", true],
 			["get_lot", true],
+			["list_saved_lots", true],
 			["save_lot", false],
+			["unsave_lot", false],
+			["open_page", false],
 		]);
+	});
+
+	test("results that quote roaster copy say so", () => {
+		const tools = buildSiteTools(fake().deps);
+		const quoting = tools
+			.filter((t) => t.annotations.untrustedContentHint === true)
+			.map((t) => t.name);
+		expect(quoting).toEqual(["find_available_lots", "get_lot"]);
 	});
 });
 
@@ -296,5 +396,191 @@ describe("save_lot", () => {
 		});
 		expect(result).toMatchObject({ error: { code: "unknown_lot" }, ok: false });
 		expect(fx.saves).toEqual([]);
+	});
+});
+
+describe("find_available_lots", () => {
+	test("passes the constraints through and returns address pairs", async () => {
+		const fx = fake({ found: foundRows(2) });
+		const result = await tool(fx, "find_available_lots").execute({
+			maxPriceCents: 5000,
+			minGrams: 200,
+			preferences: "floral washed",
+		});
+		expect(fx.finds).toEqual([
+			{ maxPriceCents: 5000, minGrams: 200, preferences: "floral washed" },
+		]);
+		expect(result).toMatchObject({
+			applied: { maxGrams: null, maxPriceCents: 5000, minGrams: 200 },
+			bounded: true,
+			considered: 2,
+			ok: true,
+		});
+		const { lots } = result as ReturnType<typeof describeFound>;
+		expect(lots).toHaveLength(2);
+		expect(lots[0]).toMatchObject({
+			grams: 250,
+			lot: "a-rather-long-lot-handle-number-0",
+			priceCents: 2800,
+			roaster: "a-roaster-with-a-long-slug",
+		});
+		expect(lots[0]?.says.endsWith("…")).toBe(true);
+	});
+
+	test("works signed out", async () => {
+		const fx = fake({ found: foundRows(1), isAuthenticated: false });
+		const result = await tool(fx, "find_available_lots").execute({
+			preferences: "chocolate",
+		});
+		expect(result).toMatchObject({ ok: true });
+	});
+
+	test("empty or missing preferences is invalid input", async () => {
+		const fx = fake();
+		expect(
+			await tool(fx, "find_available_lots").execute({ preferences: "  " })
+		).toMatchObject({ error: { code: "invalid_input" }, ok: false });
+		expect(await tool(fx, "find_available_lots").execute({})).toMatchObject({
+			error: { code: "invalid_input" },
+			ok: false,
+		});
+		expect(fx.finds).toEqual([]);
+	});
+
+	test("a full page of long rows fits the output budget", () => {
+		const result = describeFound(foundRows(10));
+		expect(result.lots).toHaveLength(FOUND_LOTS_CLIP);
+		expect(result.considered).toBe(10);
+		expect(JSON.stringify(result).length).toBeLessThanOrEqual(
+			TOOL_OUTPUT_LIMIT
+		);
+	});
+});
+
+describe("list_saved_lots", () => {
+	test("pages newest first with a cursor, within the output budget", async () => {
+		const fx = fake({ savedCount: SAVED_PAGE_SIZE + 2 });
+		const first = await tool(fx, "list_saved_lots").execute({});
+		expect(fx.pages).toEqual([{ cursor: null, numItems: SAVED_PAGE_SIZE }]);
+		expect(first).toMatchObject({
+			nextCursor: String(SAVED_PAGE_SIZE),
+			ok: true,
+		});
+		const { lots } = first as { lots: unknown[] };
+		expect(lots).toHaveLength(SAVED_PAGE_SIZE);
+		expect(lots[0]).toEqual({
+			available: true,
+			lot: "saved-lot-handle-number-0",
+			name: "Ethiopia Guji Uraga Natural Lot 0",
+			roaster: "sey",
+			roasterName: "Sey Coffee Roasters",
+			savedAt: 1_800_000_000_000,
+			status: "current",
+		});
+		expect(JSON.stringify(first).length).toBeLessThanOrEqual(TOOL_OUTPUT_LIMIT);
+
+		const second = await tool(fx, "list_saved_lots").execute({
+			cursor: String(SAVED_PAGE_SIZE),
+		});
+		expect(second).toMatchObject({ nextCursor: null, ok: true });
+		expect((second as { lots: unknown[] }).lots).toHaveLength(2);
+	});
+
+	test("signed out, nothing is read", async () => {
+		const fx = fake({ isAuthenticated: false, savedCount: 3 });
+		const result = await tool(fx, "list_saved_lots").execute({});
+		expect(result).toMatchObject({
+			error: { code: "sign_in_required" },
+			ok: false,
+		});
+		expect(fx.pages).toEqual([]);
+	});
+});
+
+describe("unsave_lot", () => {
+	test("removes a save and returns a receipt", async () => {
+		const fx = fake({ saved: [LOT_ID, OTHER_ID] });
+		const result = await tool(fx, "unsave_lot").execute({});
+		expect(result).toEqual({
+			lotId: LOT_ID,
+			lotPageUrl: "https://nouveau.coffee/roaster/sey/mullugeta",
+			name: "Ethiopia Mullugeta Muntasha",
+			ok: true,
+			status: "unsaved",
+		});
+		expect(fx.unsaves).toEqual([LOT_ID]);
+		expect(fx.saves).toEqual([OTHER_ID]);
+	});
+
+	test("a lot that is not saved reports not_saved and writes nothing", async () => {
+		const fx = fake({ saved: [OTHER_ID] });
+		const result = await tool(fx, "unsave_lot").execute({
+			lot: "mullugeta",
+			roaster: "sey",
+		});
+		expect(result).toMatchObject({ ok: true, status: "not_saved" });
+		expect(fx.unsaves).toEqual([]);
+	});
+
+	test("signed out, nothing is removed", async () => {
+		const fx = fake({ isAuthenticated: false, saved: [LOT_ID] });
+		const result = await tool(fx, "unsave_lot").execute({});
+		expect(result).toMatchObject({
+			error: { code: "sign_in_required" },
+			ok: false,
+		});
+		expect(fx.saves).toEqual([LOT_ID]);
+	});
+});
+
+describe("open_page", () => {
+	test("opens the fixed pages", async () => {
+		const fx = fake();
+		expect(await tool(fx, "open_page").execute({ page: "home" })).toEqual({
+			ok: true,
+			pathname: "/",
+		});
+		expect(await tool(fx, "open_page").execute({ page: "saved" })).toEqual({
+			ok: true,
+			pathname: "/saved",
+		});
+		expect(fx.visits).toEqual(["/", "/saved"]);
+	});
+
+	test("opens a roaster by slug and a lot by address, encoded", async () => {
+		const fx = fake({ pathname: "/" });
+		expect(
+			await tool(fx, "open_page").execute({ page: "roaster", roaster: "sey" })
+		).toEqual({ ok: true, pathname: "/roaster/sey" });
+		expect(
+			await tool(fx, "open_page").execute({
+				lot: "mullugeta",
+				page: "lot",
+				roaster: "sey",
+			})
+		).toEqual({ ok: true, pathname: "/roaster/sey/mullugeta" });
+		expect(fx.visits).toEqual(["/roaster/sey", "/roaster/sey/mullugeta"]);
+	});
+
+	test("an unknown lot, a missing roaster, or an unknown page opens nothing", async () => {
+		const fx = fake({ pathname: "/" });
+		expect(
+			await tool(fx, "open_page").execute({
+				lot: "nope",
+				page: "lot",
+				roaster: "sey",
+			})
+		).toMatchObject({ error: { code: "unknown_lot" }, ok: false });
+		expect(
+			await tool(fx, "open_page").execute({ page: "roaster" })
+		).toMatchObject({ error: { code: "invalid_input" }, ok: false });
+		expect(
+			await tool(fx, "open_page").execute({ page: "settings" })
+		).toMatchObject({ error: { code: "invalid_input" }, ok: false });
+		expect(await tool(fx, "open_page").execute({ page: "lot" })).toMatchObject({
+			error: { code: "no_lot_on_page" },
+			ok: false,
+		});
+		expect(fx.visits).toEqual([]);
 	});
 });

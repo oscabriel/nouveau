@@ -10,7 +10,11 @@ export interface ToolInputSchema {
 	type: "object";
 	properties: Record<
 		string,
-		{ type: "string" | "number" | "boolean"; description?: string }
+		{
+			type: "string" | "number" | "boolean";
+			description?: string;
+			enum?: readonly string[];
+		}
 	>;
 	required?: string[];
 	additionalProperties: false;

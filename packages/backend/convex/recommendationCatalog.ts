@@ -282,6 +282,30 @@ export const selectCandidates = async (
 	return candidates;
 };
 
+/**
+ * Candidates best preference match first (ADR-0017): the lexical score over
+ * the name and every evidence passage. Ranks, never filters. Returns a new
+ * array; the input is left as selected.
+ */
+export const rankCandidates = (
+	candidates: Candidate[],
+	preferences: string
+): Candidate[] => {
+	const tokens = preferenceTokens(preferences);
+	const scored = candidates.map((candidate) => ({
+		candidate,
+		score: preferenceScore(
+			[candidate.name, ...candidate.evidence.map((item) => item.passage)].join(
+				" "
+			),
+			tokens
+		),
+	}));
+	// oxlint-disable-next-line unicorn/no-array-sort -- ES2021 backend; map created a new array
+	scored.sort((a, b) => b.score - a.score);
+	return scored.map((item) => item.candidate);
+};
+
 /** Recheck the same size, not a cheaper substitute, before exposing a shop link. */
 export const candidateStillAvailable = async (
 	ctx: QueryCtx,

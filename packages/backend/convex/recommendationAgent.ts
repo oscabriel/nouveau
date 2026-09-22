@@ -21,7 +21,7 @@ import { z } from "zod";
 import { components, internal } from "./_generated/api";
 import type { DataModel, Id } from "./_generated/dataModel";
 import { env, internalQuery } from "./_generated/server";
-import { selectCandidates } from "./recommendationCatalog";
+import { rankCandidates, selectCandidates } from "./recommendationCatalog";
 import type { Candidate } from "./recommendationRules";
 import {
 	budgetFilters,
@@ -29,8 +29,6 @@ import {
 	FLAVOUR_BUCKET_NAMES,
 	MAX_STEPS,
 	OPENAI_MODEL,
-	preferenceScore,
-	preferenceTokens,
 	WHY_MAX_CHARS,
 } from "./recommendationRules";
 
@@ -132,21 +130,8 @@ export const searchCatalogQuery = internalQuery({
 		};
 		const candidates = await selectCandidates(ctx, filters, args.now);
 		// The lexical ranking is the search tool's result ordering (ADR-0017).
-		const tokens = preferenceTokens(args.query);
-		const scored = candidates
-			.map((candidate) => ({
-				candidate,
-				score: preferenceScore(
-					[
-						candidate.name,
-						...candidate.evidence.map((item) => item.passage),
-					].join(" "),
-					tokens
-				),
-			}))
-			// oxlint-disable-next-line unicorn/no-array-sort -- ES2021 backend; map created a new array
-			.sort((a, b) => b.score - a.score);
-		const rows: CatalogRow[] = scored.map(({ candidate }) => ({
+		const ranked = rankCandidates(candidates, args.query);
+		const rows: CatalogRow[] = ranked.map((candidate) => ({
 			details: candidate.evidence
 				.map((item) => item.passage)
 				.join(" ")
@@ -157,7 +142,7 @@ export const searchCatalogQuery = internalQuery({
 			productId: candidate.productId,
 			roasterName: candidate.roasterName,
 		}));
-		return { candidates: scored.map((item) => item.candidate), rows };
+		return { candidates: ranked, rows };
 	},
 	returns: v.object({
 		candidates: v.array(candidateValidator),
