@@ -1,5 +1,5 @@
 import type { Id } from "@nouveau/backend/convex/_generated/dataModel";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
 	buildSiteTools,
@@ -16,6 +16,7 @@ import {
 import type {
 	FindLotsArgs,
 	FoundLots,
+	LotAddress,
 	LotPage,
 	PageRequest,
 	SiteToolDeps,
@@ -100,6 +101,8 @@ const savedCard = (index: number) => ({
 interface Fake {
 	deps: SiteToolDeps;
 	finds: FindLotsArgs[];
+	/** Every getLot call, for the cancellation tests. */
+	lookups: LotAddress[];
 	pages: PageRequest[];
 	saves: Id<"products">[];
 	unsaves: Id<"products">[];
@@ -114,11 +117,18 @@ const fake = (
 		saved: Id<"products">[];
 		savedCount: number;
 		found: FoundLots;
+		/** getLot resolves only when this does. */
+		lotGate: PromiseWithResolvers<LotPage | null>;
+		/** saveLot resolves only when this does. */
+		saveGate: PromiseWithResolvers<null>;
+		/** What every dependency throws instead of answering. */
+		throws: Error;
 	}> = {}
 ): Fake => {
 	const saves = [...(overrides.saved ?? [])];
 	const unsaves: Id<"products">[] = [];
 	const finds: FindLotsArgs[] = [];
+	const lookups: LotAddress[] = [];
 	const pages: PageRequest[] = [];
 	const visits: string[] = [];
 	const cards = Array.from({ length: overrides.savedCount ?? 0 }, (_, i) =>
@@ -131,12 +141,23 @@ const fake = (
 		}),
 		findLots: (args) => {
 			finds.push(args);
+			if (overrides.throws !== undefined) {
+				return Promise.reject(overrides.throws);
+			}
 			return Promise.resolve(overrides.found ?? foundRows(0));
 		},
-		getLot: (address) =>
-			Promise.resolve(
+		getLot: (address) => {
+			lookups.push(address);
+			if (overrides.throws !== undefined) {
+				return Promise.reject(overrides.throws);
+			}
+			if (overrides.lotGate !== undefined) {
+				return overrides.lotGate.promise;
+			}
+			return Promise.resolve(
 				address.roaster === "sey" && address.lot === "mullugeta" ? page : null
-			),
+			);
+		},
 		listSaved: (request) => {
 			pages.push(request);
 			const start = request.cursor === null ? 0 : Number(request.cursor);
@@ -155,8 +176,11 @@ const fake = (
 		origin: "https://nouveau.coffee",
 		pathname: () => overrides.pathname ?? "/roaster/sey/mullugeta",
 		saveLot: (lotId) => {
+			if (overrides.throws !== undefined) {
+				return Promise.reject(overrides.throws);
+			}
 			saves.push(lotId);
-			return Promise.resolve(null);
+			return overrides.saveGate?.promise ?? Promise.resolve(null);
 		},
 		savedLotIds: () => Promise.resolve([...saves]),
 		unsaveLot: (lotId) => {
@@ -168,7 +192,7 @@ const fake = (
 			return Promise.resolve(null);
 		},
 	};
-	return { deps, finds, pages, saves, unsaves, visits };
+	return { deps, finds, lookups, pages, saves, unsaves, visits };
 };
 
 const tool = (fx: Fake, name: string) => {
@@ -217,6 +241,14 @@ describe("site tool contracts", () => {
 			["unsave_lot", false],
 			["open_page", false],
 		]);
+	});
+
+	test("only the writes to the try list ask for confirmation", () => {
+		const tools = buildSiteTools(fake().deps);
+		const consequential = tools
+			.filter((t) => t.annotations.consequentialHint === true)
+			.map((t) => t.name);
+		expect(consequential).toEqual(["save_lot", "unsave_lot"]);
 	});
 
 	test("results that quote roaster copy say so", () => {
@@ -582,5 +614,107 @@ describe("open_page", () => {
 			ok: false,
 		});
 		expect(fx.visits).toEqual([]);
+	});
+});
+
+describe("cancellation", () => {
+	test("a signal already aborted stops the call before any read", async () => {
+		const fx = fake();
+		const controller = new AbortController();
+		controller.abort();
+		const result = await tool(fx, "save_lot").execute(
+			{},
+			{ signal: controller.signal }
+		);
+		expect(result).toMatchObject({ error: { code: "cancelled" }, ok: false });
+		expect(fx.lookups).toEqual([]);
+		expect(fx.saves).toEqual([]);
+	});
+
+	test("aborting during a read abandons it and never reaches the write", async () => {
+		const lotGate = Promise.withResolvers<LotPage | null>();
+		const fx = fake({ lotGate });
+		const controller = new AbortController();
+		const pending = tool(fx, "save_lot").execute(
+			{},
+			{ signal: controller.signal }
+		);
+		expect(fx.lookups).toHaveLength(1);
+		controller.abort();
+		expect(await pending).toMatchObject({
+			error: { code: "cancelled" },
+			ok: false,
+		});
+		lotGate.resolve(page);
+		await Promise.resolve();
+		expect(fx.saves).toEqual([]);
+	});
+
+	test("a write already sent runs to the end and the receipt says so", async () => {
+		const saveGate = Promise.withResolvers<null>();
+		const fx = fake({ saveGate });
+		const controller = new AbortController();
+		const pending = tool(fx, "save_lot").execute(
+			{},
+			{ signal: controller.signal }
+		);
+		await vi.waitFor(() => expect(fx.saves).toEqual([LOT_ID]));
+		controller.abort();
+		saveGate.resolve(null);
+		expect(await pending).toMatchObject({ ok: true, status: "saved" });
+	});
+
+	test("reads honour the signal too", async () => {
+		const fx = fake({ found: foundRows(1) });
+		const controller = new AbortController();
+		controller.abort();
+		expect(
+			await tool(fx, "find_available_lots").execute(
+				{ preferences: "floral" },
+				{ signal: controller.signal }
+			)
+		).toMatchObject({ error: { code: "cancelled" }, ok: false });
+		expect(
+			await tool(fx, "open_page").execute(
+				{ page: "saved" },
+				{ signal: controller.signal }
+			)
+		).toMatchObject({ error: { code: "cancelled" }, ok: false });
+		expect(fx.finds).toEqual([]);
+		expect(fx.visits).toEqual([]);
+	});
+
+	test("without a signal, calls run as before", async () => {
+		const fx = fake();
+		expect(await tool(fx, "save_lot").execute({})).toMatchObject({
+			ok: true,
+			status: "saved",
+		});
+	});
+});
+
+describe("thrown dependency errors", () => {
+	test("come back as a backend_error envelope, never a throw", async () => {
+		const fx = fake({ throws: new Error("[CONVEX Q(lots:get)] Server Error") });
+		const result = await tool(fx, "get_lot").execute({});
+		expect(result).toMatchObject({
+			error: { code: "backend_error" },
+			ok: false,
+		});
+		expect((result as { error: { message: string } }).error.message).toContain(
+			"Server Error"
+		);
+	});
+
+	test("a sign-out during the call reads as sign_in_required", async () => {
+		const fx = fake({
+			throws: new Error("Server Error Uncaught Error: Sign in required"),
+		});
+		const result = await tool(fx, "save_lot").execute({});
+		expect(result).toMatchObject({
+			error: { code: "sign_in_required" },
+			ok: false,
+		});
+		expect(fx.saves).toEqual([]);
 	});
 });
